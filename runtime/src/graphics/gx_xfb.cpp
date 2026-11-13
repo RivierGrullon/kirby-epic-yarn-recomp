@@ -42,14 +42,14 @@ struct GxRenderer::XfbState {
     std::vector<PendingTexture> pending;
     uint64_t presented = 0;
     std::vector<uint8_t> Read(const aurora::gfx::TextureHandle& texture, uint32_t format,
-                              uint32_t width, uint32_t height, bool quantize) {
+                              uint32_t width, uint32_t height, bool quantize, bool includePending=true) {
         using namespace aurora;
         namespace rb = gfx::readback;
         const auto sequence = rb::next_sequence(stream);
         if (!sequence) throw std::runtime_error("Aurora display-copy readback stream is invalid");
         struct Source { gfx::TextureHandle texture; uint32_t format, width, height; bool quantize; };
         std::vector<Source> sources;
-        for (const auto& entry : pending)
+        if (includePending) for (const auto& entry : pending)
             sources.push_back({entry.texture,entry.copy.format,entry.copy.width,entry.copy.height,false});
         sources.push_back({texture,format,width,height,quantize});
         std::vector<rb::Output> outputs;
@@ -101,7 +101,7 @@ struct GxRenderer::XfbState {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         } while (true);
         aurora_wait_for_frame_worker();
-        for (size_t i=0;i<pending.size();++i) {
+        for (size_t i=0;includePending && i<pending.size();++i) {
             const auto* output = packet->find(i+1);
             if (!output) throw std::runtime_error("GPU texture-copy batch result is missing");
             const auto payload = packet->payload_of(*output);
@@ -116,8 +116,49 @@ struct GxRenderer::XfbState {
 };
 
 void GxRenderer::SetDeferredTextureCopies(bool enabled) {
-    if (!enabled) FlushTextureCopies();
+    if (!enabled || gpuResidentTextureCopies_) FlushTextureCopies();
+    gpuResidentTextureCopies_=false;
     deferredTextureCopies_ = enabled;
+}
+void GxRenderer::SetGpuResidentTextureCopies(bool enabled) {
+    FlushTextureCopies();
+    deferredTextureCopies_=gpuResidentTextureCopies_=enabled;
+}
+void GxRenderer::WritebackTextureCopiesForRange(uint32_t address,uint64_t size) {
+    if (!gpuResidentTextureCopies_) { FlushTextureCopiesForRange(address,size); return; }
+    if (!size || !xfb_) return;
+    const uint32_t physical=address & 0x1FFFFFFF;
+    if (size>0x20000000ull-physical)
+        throw std::runtime_error("GPU-resident cache writeback crosses a guest alias boundary");
+    struct Written { uint32_t address; std::vector<uint8_t> bytes; };
+    std::vector<Written> written;
+    for (auto it=xfb_->pending.begin();it!=xfb_->pending.end();) {
+        const auto& copy=it->copy;
+        const auto start=std::max(physical,copy.address);
+        const auto end=std::min(uint64_t(physical)+size,uint64_t(copy.address)+copy.bytes);
+        if (start>=end) { ++it; continue; }
+        if (start==copy.address && end==uint64_t(copy.address)+copy.bytes) {
+            // CPU writeback supplies this entire destination; no GPU bytes survive.
+            it=xfb_->pending.erase(it);
+        } else {
+            const auto bytes=resolve_(start,end-start);
+            written.push_back({start,{bytes.begin(),bytes.end()}});
+            // Only the explicitly published cache lines may have changed.
+            std::copy(bytes.begin(),bytes.end(),it->before.begin()+start-copy.address);
+            ++it;
+        }
+    }
+    if (!written.empty()) {
+        FlushTextureCopies();
+        for (const auto& entry : written) write_(entry.address,entry.bytes);
+    }
+    for (auto it=xfb_->textures.begin();it!=xfb_->textures.end();) {
+        const auto& copy=it->second.copy;
+        if (physical<uint64_t(copy.address)+copy.bytes && copy.address<uint64_t(physical)+size) {
+            aurora::gx::evict_copy_texture(resolve_(copy.address,copy.bytes).data());
+            it=xfb_->textures.erase(it);
+        } else ++it;
+    }
 }
 void GxRenderer::FlushTextureCopiesForRange(uint32_t address, uint64_t size) {
     if (!size || !xfb_ || xfb_->pending.empty()) return;
@@ -176,6 +217,8 @@ void GxRenderer::CopyDisplay(uint32_t value) {
     }
     if (!xfb_->entries.contains(copy.address) && xfb_->entries.size() >= 16)
         throw std::runtime_error("GX display-copy destination cache limit reached");
+    // Complete an aliased texture destination before replacing its RAM with YUYV.
+    if (gpuResidentTextureCopies_) FlushTextureCopiesForRange(copy.address,copy.bytes);
     // Each RAM destination owns a snapshot; Aurora's default single texture would
     // otherwise overwrite the previous XFB before VI switches to the next one.
     state.displayCopyTexture.reset();
@@ -185,8 +228,8 @@ void GxRenderer::CopyDisplay(uint32_t value) {
     // Pack the RAM-visible YUYV image on the GPU. This halves readback bytes
     // and avoids a second full-image conversion on the guest execution thread.
     ++readbacks_;
-    auto bytes=xfb_->Read(texture,rb::XfbYuyv,copy.width,copy.height,false);
-    CommitTextureCopies();
+    auto bytes=xfb_->Read(texture,rb::XfbYuyv,copy.width,copy.height,false,!gpuResidentTextureCopies_);
+    if (!gpuResidentTextureCopies_) CommitTextureCopies();
     write_(copy.address, bytes);
     const bool firstDestination = !xfb_->entries.contains(copy.address);
     xfb_->entries.insert_or_assign(copy.address, XfbState::Entry{copy, texture, std::move(bytes), ++displayCopies_});
@@ -209,8 +252,13 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
     if (copy.x+copy.sourceWidth>extent.x || copy.y+copy.sourceHeight>extent.y)
         throw std::runtime_error("GX texture-copy source lies outside the EFB");
     if (!xfb_) { xfb_=std::make_shared<XfbState>(); xfb_->stream=gfx::readback::create_stream(); }
-    // Reusing an allocation must complete its earlier copy before the GPU
-    // handle can be overwritten. Distinct pending destinations may be batched.
+    // Complete packed overwrites make the previous resident RAM value obsolete.
+    // Partial/strided overwrites must materialize bytes outside the new copy.
+    if (gpuResidentTextureCopies_ && copy.stride==copy.rowBytes)
+        std::erase_if(xfb_->pending,[&](const auto& entry) {
+            return copy.address<=entry.copy.address &&
+                uint64_t(copy.address)+copy.bytes>=uint64_t(entry.copy.address)+entry.copy.bytes;
+        });
     if (xfb_->pending.size() >= 16 || std::ranges::any_of(xfb_->pending,[&](const auto& entry) {
         return uint64_t(copy.address)<uint64_t(entry.copy.address)+entry.copy.bytes &&
                uint64_t(entry.copy.address)<uint64_t(copy.address)+copy.bytes;

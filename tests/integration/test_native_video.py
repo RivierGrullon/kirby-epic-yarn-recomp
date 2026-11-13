@@ -43,9 +43,14 @@ class NativeVideoTests(unittest.TestCase):
             self.assertEqual(result, 0, output)
             self.assertIn("host exit requested; shutting down native runtime", output)
             self.assertNotIn("[kirby] blocked:", output)
+            if "--gpu-resident-copies" in arguments:
+                self.assertIn("experimental GPU-resident texture copies enabled", output)
 
     def test_sigterm_exits_after_native_video_controller_and_ax_task_startup(self):
         self.check_startup_and_exit()
 
     def test_native_video_without_vsync_starts_and_exits_normally(self):
         self.check_startup_and_exit("--no-vsync")
+
+    def test_experimental_performance_mode_starts_and_exits_normally(self):
+        self.check_startup_and_exit("--gpu-resident-copies", "--no-vsync")

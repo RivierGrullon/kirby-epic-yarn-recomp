@@ -140,6 +140,7 @@ int main(int argc, char** argv) {
     std::filesystem::path dataRoot = "disc/DATA";
     float masterVolume = 100;
     bool vsync = true;
+    bool gpuResidentCopies = false;
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument = argv[i];
         if (argument == "--volume" && i + 1 < argc) {
@@ -150,6 +151,7 @@ int main(int argc, char** argv) {
                 return 2;
             }
         } else if (argument == "--no-vsync") vsync = false;
+        else if (argument == "--gpu-resident-copies") gpuResidentCopies = true;
         else if (argument == "--game-data" && i + 1 < argc) dataRoot = argv[++i];
         else if (argument == "--headless" || argument == "--video" || argument == "--video-hidden" || argument == "--probe-ax-task" || argument == "--probe-thread-fault" || argument == "--probe-threads" || argument == "--probe-wpad" || argument == "--probe-sdl-controller" || argument == "--monitor-controller" || argument == "--probe-video-retrace" || argument == "--verify-bootstrap" || argument == "--probe-init" ||
                  argument == "--probe-alarms" || argument == "--probe-interrupt-init" || argument == "--probe-exi-init" || argument == "--probe-si-init" ||
@@ -157,7 +159,7 @@ int main(int argc, char** argv) {
                  argument == "--probe-audio-clock" || argument == "--probe-dsp-init" ||
                  argument == "--probe-ipc-client" || argument == "--probe-stm-init" || argument == "--probe-system-config" || argument == "--probe-disc" || argument == "--probe-es-metadata" || argument == "--probe-ave") mode = argument;
         else {
-            std::cerr << "Usage: WiiCompiled [--headless|--video|--video-hidden|--probe-alarms|--probe-ax-task|--probe-thread-fault|--probe-threads|--probe-wpad|--probe-sdl-controller|--monitor-controller|--probe-video-retrace|--verify-bootstrap|--probe-init|--probe-interrupt-init|--probe-exi-init|--probe-si-init|--probe-sram-init|--probe-boot-memory|--probe-audio-clock|--probe-dsp-init|--probe-ipc-client|--probe-stm-init|--probe-system-config|--probe-disc|--probe-es-metadata|--probe-ave] [--game-data DATA] [--volume 0..100] [--no-vsync]\n";
+            std::cerr << "Usage: WiiCompiled [--headless|--video|--video-hidden|--probe-alarms|--probe-ax-task|--probe-thread-fault|--probe-threads|--probe-wpad|--probe-sdl-controller|--monitor-controller|--probe-video-retrace|--verify-bootstrap|--probe-init|--probe-interrupt-init|--probe-exi-init|--probe-si-init|--probe-sram-init|--probe-boot-memory|--probe-audio-clock|--probe-dsp-init|--probe-ipc-client|--probe-stm-init|--probe-system-config|--probe-disc|--probe-es-metadata|--probe-ave] [--game-data DATA] [--volume 0..100] [--no-vsync] [--gpu-resident-copies]\n";
             return 2;
         }
     }
@@ -222,7 +224,8 @@ int main(int argc, char** argv) {
             for (const auto& [address,name] : cacheHooks) {
                 for (const uint32_t length : {0u,61u}) {
                     unsigned observed=0;
-                    Kirby::ObserveDataCache([&](uint32_t start,uint64_t size) {
+                    Kirby::ObserveDataCache([&](uint32_t start,uint64_t size,Kirby::CacheOperation operation) {
+                        Require(operation==(address==KirbyBootConfig::DCInvalidateRange ? Kirby::CacheOperation::Invalidate : Kirby::CacheOperation::Writeback),"Native cache operation mismatch");
                         Require(start==0x90000000 && size==64,"Native cache observer range mismatch");
                         ++observed;
                     });
@@ -683,11 +686,14 @@ int main(int argc, char** argv) {
             });
             if (mode == "--video" || mode == "--video-hidden") {
                 renderer->OpenWindow(mode == "--video-hidden", vsync);
+                renderer->SetGpuResidentTextureCopies(gpuResidentCopies);
+                if (gpuResidentCopies) std::cout << "[kirby] experimental GPU-resident texture copies enabled\n";
                 Kirby::SetWpadWindowActive(true);
             }
             Kirby::Devices().ObserveVideo([&](const auto& output) { renderer->PollVideo(output); });
-            Kirby::ObserveDataCache([&](uint32_t address,uint64_t size) {
-                renderer->FlushTextureCopiesForRange(address,size);
+            Kirby::ObserveDataCache([&](uint32_t address,uint64_t size,Kirby::CacheOperation operation) {
+                if (operation==Kirby::CacheOperation::Writeback) renderer->WritebackTextureCopiesForRange(address,size);
+                else renderer->FlushTextureCopiesForRange(address,size);
             });
             Kirby::GraphicsFifo().Configure(ResolveDspMemory, [&](auto bytes) { renderer->Feed(bytes); });
         }

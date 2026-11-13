@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add an opt-in **Experimental performance mode** to the launcher and native
+  `--gpu-resident-copies` argument. Copied textures stay on the GPU until CPU
+  invalidation or a RAM-consuming graphics command requires their bytes.
+- Distinguish cache invalidation from CPU writeback, including full replacement
+  and partial writes that preserve the remaining GPU pixels.
 - Add five audited native SDK cache boundaries, preserving register effects and
   completing overlapping pending GPU copies across guest memory aliases.
 - Add experimental batched texture readback with completion/alias tests. It stays

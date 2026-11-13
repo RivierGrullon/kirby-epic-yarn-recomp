@@ -362,6 +362,45 @@ void GpuXfb(bool startHidden = false) {
     Check(renderer.Readbacks()==cacheStart+1 && memory[0x12600]==255 && memory[0x12620]==255,
           "CPU cache maintenance on an uncached alias completes the overlapping GPU copy");
     renderer.SetDeferredTextureCopies(false);
+    renderer.SetGpuResidentTextureCopies(true);
+    Bp(renderer,0x4B000940); Bp(renderer,0x52000063);
+    const auto residentStart=renderer.Readbacks();
+    Bp(renderer,0x45000002); Bp(renderer,0x48000017);
+    Check(renderer.Readbacks()==residentStart && memory[0x12800]==0xCD,
+          "resident copies do not download RAM at GPU finish or token commands");
+    Bp(renderer,0x94000940); renderer.Feed(quad);
+    Bp(renderer,0x4A000000 | (3<<10) | 31); Bp(renderer,0x4D000002);
+    Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
+    Check(renderer.Readbacks()==residentStart+1 && memory[0x12800]==0xCD &&
+          std::equal(green.begin(),green.end(),memory.begin()+0x1000+2*64+16*2),
+          "display sampling uses resident GPU pixels with only the display readback");
+    renderer.FlushTextureCopiesForRange(0x80012800,32);
+    Check(renderer.Readbacks()==residentStart+2 && memory[0x12800]==255 && memory[0x12820]==255,
+          "CPU invalidation downloads the resident copy on demand");
+    Bp(renderer,0x94000070); renderer.Feed(quad);
+    Bp(renderer,0x4A000000 | (7<<10) | 7); Bp(renderer,0x4D000004);
+    Bp(renderer,0x4B000940); Bp(renderer,0x52000063);
+    std::fill_n(memory.begin()+0x12800,256,0x3A);
+    const auto writebackStart=renderer.Readbacks();
+    renderer.WritebackTextureCopiesForRange(0xC0012800,256);
+    Check(renderer.Readbacks()==writebackStart && memory[0x12800]==0x3A &&
+          !aurora::gx::g_gxState.copyTextures.contains(memory.data()+0x12800),
+          "full CPU writeback replaces a resident copy without downloading obsolete pixels");
+    Bp(renderer,0x4B000950); Bp(renderer,0x52000063);
+    std::fill_n(memory.begin()+0x12A00,32,0x1C);
+    renderer.WritebackTextureCopiesForRange(0x80012A00,32);
+    Check(memory[0x12A00]==0x1C && memory[0x12A1F]==0x1C && memory[0x12A20]==255 && memory[0x12A21]==0,
+          "partial CPU writeback preserves CPU cache-line bytes and materializes the remaining GPU bytes");
+    Bp(renderer,0x4B000958); Bp(renderer,0x52000063);
+    const auto replacementStart=renderer.Readbacks();
+    Bp(renderer,0x94000040); renderer.Feed(quad);
+    Bp(renderer,0x52000063);
+    Check(renderer.Readbacks()==replacementStart,"a full GPU overwrite replaces an unobserved resident copy");
+    renderer.FlushTextureCopiesForRange(0x80012B00,256);
+    Check(memory[0x12B00]==255 && memory[0x12B01]==255 && memory[0x12B20]==0,
+          "invalidation after GPU overwrite returns the latest red copy");
+    renderer.SetGpuResidentTextureCopies(false);
+    Bp(renderer,0x94000070); renderer.Feed(quad);
     Bp(renderer,0x49000000); Bp(renderer,0x4A000000 | (7<<10) | 7);
     Bp(renderer,0x4B000050); Bp(renderer,0x4D000002); Bp(renderer,0x52000263);
     Check(memory[0xA00]==255 && memory[0xA01]==0 && memory[0xA20]==255 && memory[0xA21]==0,

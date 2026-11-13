@@ -17,6 +17,7 @@
 #include <spawn.h>
 #include <string>
 #include <string_view>
+#include <vector>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -86,6 +87,7 @@ int main(int argc, char** argv) {
     const auto settings = root / "local/user/launcher.cfg";
     float volume = 100;
     bool vsync = true;
+    bool performanceMode = false;
     if (!selfTest) {
         std::ifstream input(settings); std::string saved;
         if (std::getline(input, saved) && !saved.empty()) data = saved;
@@ -93,6 +95,8 @@ int main(int argc, char** argv) {
         if (input >> savedVolume && savedVolume >= 0 && savedVolume <= 100) volume = savedVolume;
         int savedVsync;
         if (input >> savedVsync) vsync = savedVsync != 0;
+        int savedPerformance;
+        if (input >> savedPerformance) performanceMode = savedPerformance == 1;
     }
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) { std::fprintf(stderr,"%s\n",SDL_GetError()); return 1; }
     SDL_Window* window = SDL_CreateWindow("Kirby - native launcher", 960, 680,
@@ -145,7 +149,7 @@ int main(int argc, char** argv) {
         ImGui::BeginDisabled(!valid || game > 0 || selfTest);
         if (ImGui::Button("Play", {170,42})) {
             fs::create_directories(settings.parent_path());
-            std::ofstream output(settings); output << data.string() << '\n' << volume << '\n' << vsync << '\n';
+            std::ofstream output(settings); output << data.string() << '\n' << volume << '\n' << vsync << '\n' << performanceMode << '\n';
             valid = Verify(data,status);
             if (valid && fs::exists(executable)) {
                 const auto libs = (root / "local/host-libs").string();
@@ -153,14 +157,17 @@ int main(int argc, char** argv) {
                 const std::string libraryPath = libs + (previous ? std::string(":") + previous : "");
                 setenv("LD_LIBRARY_PATH", libraryPath.c_str(), 1);
                 std::string exe = executable.string(), dataArg = data.string(), gain = std::to_string(volume);
-                char* args[]{exe.data(),const_cast<char*>("--video"),const_cast<char*>("--game-data"),dataArg.data(),const_cast<char*>("--volume"),gain.data(),vsync ? nullptr : const_cast<char*>("--no-vsync"),nullptr};
+                std::vector<char*> args{exe.data(),const_cast<char*>("--video"),const_cast<char*>("--game-data"),dataArg.data(),const_cast<char*>("--volume"),gain.data()};
+                if (!vsync) args.push_back(const_cast<char*>("--no-vsync"));
+                if (performanceMode) args.push_back(const_cast<char*>("--gpu-resident-copies"));
+                args.push_back(nullptr);
                 fs::create_directories(root / "build-logs");
                 posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
                 posix_spawn_file_actions_addopen(&actions,STDOUT_FILENO,(root/"build-logs/launcher-game.log").c_str(),O_WRONLY|O_CREAT|O_APPEND,0600);
                 posix_spawn_file_actions_adddup2(&actions,STDOUT_FILENO,STDERR_FILENO);
                 // The development build keeps its established save paths relative to the repository.
                 fs::current_path(root);
-                const int error = posix_spawn(&game,exe.c_str(),&actions,nullptr,args,environ);
+                const int error = posix_spawn(&game,exe.c_str(),&actions,nullptr,args.data(),environ);
                 posix_spawn_file_actions_destroy(&actions);
                 if (error) { game = -1; status = "Could not start the native executable"; }
                 else { status = "Game running"; SDL_MinimizeWindow(window); }
@@ -176,6 +183,8 @@ int main(int argc, char** argv) {
         ImGui::TextDisabled("Applied next launch. In-game audio is still under investigation.");
         ImGui::Checkbox("VSync", &vsync);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Off can reduce presentation stalls; driver behavior varies.");
+        ImGui::Checkbox("Experimental performance mode", &performanceMode);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reduces GPU waits. Compatibility testing is ongoing. Applied next launch.");
         ImGui::TextWrapped("Display: native resolution. Stable 30 / 60 FPS modes are not validated yet.");
         ImGui::TextWrapped("Controls: D-pad to move, south / cross to jump, east / circle for yarn, Start for +.");
         int count = 0; SDL_JoystickID* controllers = SDL_GetGamepads(&count);

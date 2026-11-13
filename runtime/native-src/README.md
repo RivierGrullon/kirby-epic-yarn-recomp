@@ -68,3 +68,8 @@ test compares register effects against the locally generated original functions;
 Full translation is required after adding these overrides so previously inlined
 cache loops cannot bypass the observer. Deferred GPU copies remain disabled by
 default; these hooks alone do not establish whole-game copy coherence.
+The observer distinguishes invalidation from writeback. Experimental resident
+mode uses the former to download GPU bytes and the latter to replace full copies
+or preserve the CPU's changed cache lines during partial materialization. The
+`--gpu-resident-copies` option enables this path; normal mode retains the previous
+completion behavior.

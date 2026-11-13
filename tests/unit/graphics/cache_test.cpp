@@ -29,7 +29,9 @@ int main() {
                     expected.gpr[3]=base+offset; expected.gpr[4]=length;
                     auto actual=expected;
                     unsigned calls=0;
-                    Kirby::ObserveDataCache([&](uint32_t start,uint64_t size) {
+                    const auto operation=f==0 ? Kirby::CacheOperation::Invalidate : Kirby::CacheOperation::Writeback;
+                    Kirby::ObserveDataCache([&](uint32_t start,uint64_t size,Kirby::CacheOperation observed) {
+                        if (observed!=operation) throw std::runtime_error("Cache operation kind mismatch");
                         if (start!=base || size!=((uint64_t(offset)+length+31)&~uint64_t(31)))
                             throw std::runtime_error("Cache observer did not cover whole cache lines");
                         if (actual.gpr[3]!=base+offset || actual.gpr[4]!=length)
@@ -37,7 +39,7 @@ int main() {
                         ++calls;
                     });
                     systemCalls=0; originals[f](&expected); const auto expectedCalls=systemCalls;
-                    systemCalls=0; Kirby::MaintainDataCache(&actual,f==1 || f==2);
+                    systemCalls=0; Kirby::MaintainDataCache(&actual,f==1 || f==2,operation);
                     if (std::memcmp(&expected,&actual,sizeof(actual)) || calls!=(length!=0) || systemCalls!=expectedCalls)
                         throw std::runtime_error("Native cache boundary differs from translated SDK ABI");
                     ++checks;

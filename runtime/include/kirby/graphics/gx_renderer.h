@@ -24,6 +24,9 @@ public:
     void PollVideo(const VideoOutput& output);
     // Call FlushTextureCopies before the CPU reads or writes a deferred destination.
     void SetDeferredTextureCopies(bool enabled);
+    // Experimental: cached CPU readers must invalidate before accessing copies.
+    void SetGpuResidentTextureCopies(bool enabled);
+    void WritebackTextureCopiesForRange(uint32_t address, uint64_t size);
     void FlushTextureCopies();
     void FlushTextureCopiesForRange(uint32_t address, uint64_t size);
     uint64_t Readbacks() const { return readbacks_; }
@@ -44,6 +47,7 @@ private:
     GxStream stream_;
     bool initialized_ = false;
     bool deferredTextureCopies_ = false;
+    bool gpuResidentTextureCopies_ = false;
     uint64_t readbacks_ = 0;
     std::string userPath_, cachePath_;
     uint64_t registerWrites_ = 0, draws_ = 0;

@@ -435,6 +435,62 @@ Logs: `stage38-translate.log`, `stage38-native-build-final.log`,
 `stage38-tests.log`, `stage38-ctest.log`, `stage38-range-green.log`, and
 `stage38-launcher-route.log` under ignored `build-logs/`.
 
+## Experimental GPU-resident texture copies (2026-11-13)
+
+The launcher now offers **Experimental performance mode**. The native argument
+is `--gpu-resident-copies`; both defaults remain off. The launcher stores the
+selection after the existing path, volume and VSync values, so old three-line
+settings files retain their existing choices. The user's current local setting
+was enabled on request for testing. Changes apply at the next launch.
+
+This mode keeps eligible packed RGB8-to-RGBA8 copies GPU-authoritative across
+logical token/finish completion. Display copies still download YUYV to RAM.
+CPU invalidation materializes copied bytes on demand. Full CPU writeback or a
+complete packed GPU overwrite retires the obsolete copy without downloading it.
+Partial CPU writeback materializes the remaining pixels and restores the CPU's
+published cache-line bytes. Display-list reads, indexed XF/vertex reads, palette
+loads, aliased texture sampling and overlapping display destinations complete
+pending copies before consuming RAM. Copies that do not qualify retain the
+synchronous path. Queues and caches remain bounded.
+
+Two same-process off/on/off comparisons used Quilty Square, a continuously
+connected virtual PAD, a hidden window, muted output and no VSync:
+
+| Interval duration | Mode off | Mode on | Mode off again |
+| --- | ---: | ---: | ---: |
+| 6 seconds | 37.50 | 46.41 | 40.77 |
+| 10 seconds | 39.94 | 41.93 | 37.21 |
+
+Values are VI submissions/s, not compositor-displayed FPS. Readbacks per
+presentation changed from approximately **2 to 1**, returning to 2 when disabled.
+The increase was present in both comparisons, but its magnitude varied; this is
+not a sustained frame-pacing or 60 FPS result. Captures showed the normal scene
+without a controller-disconnection dialog. Evidence: `stage39-resident-rate.json`,
+`stage39-repeat-rate.json`, their debugger logs and enabled captures in ignored
+`build-logs/`.
+
+With the mode enabled, an isolated native run reached Grass Land and Fountain
+Gardens. Read-only player observations after virtual input were start
+`(15.85,20.925)`, right `(18.53,20.925)`, left `(16.05,20.925)` and jump
+`(15.976,23.135)`, with the jump changing player state from 1 to 2. Captures and
+logs are `stage39-grassland*`, `stage39-fountain*`. This did not complete the level
+or validate a physical controller or audible output.
+
+The published executable has build ID `2bbb614f48e819cb22a5d8022bb72dd27ca80742`
+and SHA-256 `0fb0a6b20982edeeabac13b64d08b8d9b4f60f553a7b6ac12948f132bb04a8cd`.
+It passed 42 Python tests, 21 CTest targets and 398 synthetic Vulkan checks.
+The new CLI option passed startup/exit verification. The launcher and game
+executables were each compared byte-for-byte against their tested candidates.
+Logs: `stage39-final-{build,tests,ctest}.log`,
+`stage39-resident-{red,green}.log`, and `stage39-publish-build.log`.
+
+Compatibility remains experimental. Cached CPU reads must use the audited
+invalidate boundary to obtain GPU bytes; raw CPU reads, uncached accesses and
+external DMA writes are not intercepted by this implementation. Unexpected RAM
+writes outside an explicit writeback range fail at materialization rather than
+silently being overwritten. Broader scene/consumer coverage, visible pacing and
+listening tests are required before enabling this mode by default.
+
 ## Reproduce checks
 
 ```bash

@@ -24,7 +24,11 @@ uint32_t Available(uint32_t address) {
 }
 }
 GxRenderer::GxRenderer(GxStream::Resolve resolve, WriteMemory write) : resolve_(std::move(resolve)), write_(std::move(write)),
-    stream_([this](auto bytes) { Packet(bytes); }, [this](auto format) { return VertexSize(format); }, resolve_) {}
+    stream_([this](auto bytes) { Packet(bytes); }, [this](auto format) { return VertexSize(format); },
+        [this](uint32_t address,uint32_t size) {
+            FlushTextureCopiesForRange(address,size);
+            return resolve_(address,size);
+        }) {}
 GxRenderer::~GxRenderer() { if (initialized_) { CloseXfb(); aurora_shutdown(); } }
 void GxRenderer::OpenWindow(bool startHidden, bool vsync) {
     if (initialized_) throw std::runtime_error("Aurora window is already initialized");
@@ -116,6 +120,8 @@ void GxRenderer::Packet(std::span<const uint8_t> bytes) {
         const auto offset = index * array.stride;
         if (!array.data || offset > array.size || words * 4 > array.size - offset)
             throw std::runtime_error("GX indexed XF load lies outside guest array");
+        const auto base=g_gxState.cpRegCache[0xA0+GX_POS_MTX_ARRAY-GX_VA_POS+(opcode-0x20)/8] & 0x1FFFFFFF;
+        FlushTextureCopiesForRange(base+offset,words*4);
         if (!fifo::copy_xf_data(field & 0xFFF, static_cast<const uint8_t*>(array.data) + offset, words, std::endian::big))
             throw std::runtime_error("GX indexed XF destination is unsupported by Aurora");
         ++registerWrites_; return;
@@ -131,8 +137,9 @@ void GxRenderer::Packet(std::span<const uint8_t> bytes) {
         if (reg == 0x65) { LoadPalette(value); ++registerWrites_; return; }
         fifo::handle_bp(value);
         const auto effective = g_gxState.bpRegCache[reg];
-        // Publish copied RAM before a guest-visible GPU completion event.
-        if (reg == 0x47 || reg == 0x48 || (reg == 0x45 && (effective & 0xFF) == 2))
+        // Resident copies remain GPU-authoritative across logical completion;
+        // CPU invalidation and RAM-consuming GX commands materialize them.
+        if (!gpuResidentTextureCopies_ && (reg == 0x47 || reg == 0x48 || (reg == 0x45 && (effective & 0xFF) == 2)))
             FlushTextureCopies();
         if (reg == 0x47 || reg == 0x48) Pixels().SetToken(effective & 0xFFFF, reg == 0x48);
         if (reg == 0x45 && (effective & 0xFF) == 2) Pixels().Finish();

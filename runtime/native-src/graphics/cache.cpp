@@ -3,11 +3,11 @@
 #include "generated/KirbyBootConfig.h"
 #include "kirby/graphics/cache.h"
 
-extern "C" void KirbyDCInvalidateRange(CpuContext* ctx) { Kirby::MaintainDataCache(ctx,false); }
-extern "C" void KirbyDCFlushRange(CpuContext* ctx) { Kirby::MaintainDataCache(ctx,true); }
-extern "C" void KirbyDCStoreRange(CpuContext* ctx) { Kirby::MaintainDataCache(ctx,true); }
-extern "C" void KirbyDCFlushRangeNoSync(CpuContext* ctx) { Kirby::MaintainDataCache(ctx,false); }
-extern "C" void KirbyDCStoreRangeNoSync(CpuContext* ctx) { Kirby::MaintainDataCache(ctx,false); }
+extern "C" void KirbyDCInvalidateRange(CpuContext* ctx) { Kirby::MaintainDataCache(ctx,false,Kirby::CacheOperation::Invalidate); }
+extern "C" void KirbyDCFlushRange(CpuContext* ctx) { Kirby::MaintainDataCache(ctx,true,Kirby::CacheOperation::Writeback); }
+extern "C" void KirbyDCStoreRange(CpuContext* ctx) { Kirby::MaintainDataCache(ctx,true,Kirby::CacheOperation::Writeback); }
+extern "C" void KirbyDCFlushRangeNoSync(CpuContext* ctx) { Kirby::MaintainDataCache(ctx,false,Kirby::CacheOperation::Writeback); }
+extern "C" void KirbyDCStoreRangeNoSync(CpuContext* ctx) { Kirby::MaintainDataCache(ctx,false,Kirby::CacheOperation::Writeback); }
 
 // These are audited Kirby addresses; never apply upstream region mapping.
 #undef REGISTER_NATIVE_FUNCTION

@@ -19,6 +19,7 @@ void GxRenderer::LoadPalette(uint32_t value) {
     const uint32_t source = (g_gxState.bpRegCache[0x64] & 0xFFFFFF) << 5;
     if (!size || uint64_t(destination)+size > 0x80000)
         throw std::runtime_error("GX palette load exceeds palette TMEM");
+    FlushTextureCopiesForRange(source,size);
     const auto memory = resolve_(source, size);
     if (memory.size() != size) throw std::runtime_error("GX palette source lies outside guest RAM");
     if (paletteMemory_.empty()) { paletteMemory_.resize(0x80000); paletteValid_.resize(0x80000); }
@@ -65,6 +66,7 @@ void GxRenderer::Draw(std::span<const uint8_t> bytes) {
         const uint64_t size = uint64_t(maximum)*array.stride + elementBytes;
         if (size > 16*1024*1024) throw std::runtime_error("GX indexed array exceeds bounded upload capacity");
         const auto address = state.cpRegCache[0xA0+attr-GX_VA_POS] & 0x1FFFFFFF;
+        FlushTextureCopiesForRange(address,size);
         const auto memory = resolve_(address,size);
         if (memory.size() != size) throw std::runtime_error("GX indexed array lies outside guest RAM");
         auto& snapshot = indexedSnapshots_[attr];
