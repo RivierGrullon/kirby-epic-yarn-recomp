@@ -39,13 +39,14 @@ bool AudioDma::Write16(uint32_t address, uint16_t value) {
     default: return false;
     }
 }
-bool AudioDma::Poll() {
+bool AudioDma::Poll(bool stopAtInterrupt) {
     if (!(control_ & 0x8000)) return false;
     const uint64_t elapsed = clock_()-epoch_;
     // 200 Broadway cycles (rounded to 17 TB ticks), matching the reference's
     // delayed first IRQ. Exact hardware scheduling is not claimed.
     bool irq = startIrq_ && elapsed >= 17;
     if (irq) startIrq_ = false;
+    if (irq && stopAtInterrupt) return true;
     const uint64_t due = elapsed/60750000*4000 + elapsed%60750000*4000/60750000;
     // DMA keeps cycling while guest execution is paused or a shader stalls.
     // Advance expired fetches without flooding the host sink with old audio.
@@ -68,6 +69,7 @@ bool AudioDma::Poll() {
         consumed_ += skipped;
         dropped_ += skipped;
     }
+    if (irq && stopAtInterrupt) return true;
     while (consumed_ < due) {
         const auto data = memory_(cursor_, 32);
         if (!data) throw std::runtime_error("Audio DMA source exceeds guest RAM");
@@ -77,6 +79,7 @@ bool AudioDma::Poll() {
             const auto count = control_ & 0x7FFF;
             if (!Valid(source_, count)) throw std::runtime_error("Audio DMA reload exceeds guest RAM or has zero length");
             cursor_ = source_; remaining_ = count; irq = true;
+            if (stopAtInterrupt) return true;
         }
     }
     return irq;

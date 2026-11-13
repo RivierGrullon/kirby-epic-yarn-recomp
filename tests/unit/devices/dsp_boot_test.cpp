@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 namespace {
 unsigned checks;
 void Check(bool ok, const char* why) { ++checks; if (!ok) throw std::runtime_error(why); }
@@ -12,6 +13,8 @@ uint64_t ticks;
 bool validCode;
 uint32_t taskReply = 0, sentMail = 0;
 bool taskStopped = false;
+bool interruptActive = false;
+std::vector<uint8_t> audioSamples;
 Kirby::DspTaskImage uploaded;
 uint8_t* Resolve(uint32_t address, uint32_t length) {
     if (address >= 0x10000000 && uint64_t(address) + length <= 0x10000100) return aram.data() + address - 0x10000000;
@@ -64,7 +67,7 @@ int main() {
             if (!taskReply) return false;
             mail = taskReply; taskReply = 0; return true;
         }, [](uint32_t mail) { sentMail = mail; taskReply = 0xDCD10001; },
-        [] { taskStopped = true; });
+        [] { taskStopped = true; }, [] { return interruptActive; });
         auto send = [&](uint32_t mail) {
             Check(task.Write16(0xCC005000, mail >> 16), "mail high staging");
             return task.Write16(0xCC005002, mail);
@@ -93,6 +96,49 @@ int main() {
               "low read consumes init mail and clears mailbox status");
         Check(send(0xCDD10000) && sentMail == 0xCDD10000 && task.Interrupt(),
               "active task receives full CPU mailbox word and can request another IRQ");
+        task.Audio().Configure(Resolve,[] { return ticks; },[](const uint8_t* p,uint32_t n) {
+            audioSamples.insert(audioSamples.end(),p,p+n); return true;
+        });
+        interruptActive = true;
+        Check(task.Write16(0xCC00500A,0x910) && task.Write16(0xCC005030,0) &&
+              task.Write16(0xCC005032,0) && task.Write16(0xCC005036,0x8002),
+              "enable native audio event scheduling");
+        ticks += 121500;
+        task.Poll();
+        Check(audioSamples.empty(),"DMA must not outrun an active guest IRQ callback");
+        interruptActive = false;
+        task.Poll();
+        Check(audioSamples.empty() && !(Read(task,0xCC00500A)&8),
+              "queued DSP completion is serviced before the next overdue audio frame");
+        interruptActive = true;
+        Check(Read(task,0xCC005006)==1 && task.Write16(0xCC00500A,0x990),
+              "service the queued DSP resume reply");
+        interruptActive = false;
+        task.Poll();
+        Check(audioSamples.empty() && (Read(task,0xCC00500A)&8),
+              "initial audio IRQ latches before fetching overdue samples");
+        for (unsigned frame=0;frame<4;++frame) {
+            interruptActive = true;
+            std::fill_n(ram.begin(),64,uint8_t(0x31+frame));
+            Check(task.Write16(0xCC00500A,0x918),"acknowledge audio IRQ");
+            task.Poll();
+            Check(audioSamples.size()==frame*64,"acknowledgment cannot consume the next buffer before refill returns");
+            interruptActive = false;
+            task.Poll();
+            Check(audioSamples.size()==(frame+1)*64 &&
+                  std::all_of(audioSamples.begin()+frame*64,audioSamples.end(),
+                              [frame](uint8_t sample) { return sample==0x31+frame; }),
+                  "overdue native audio frames carry the corresponding guest refill data");
+        }
+        Check(task.Audio().Blocks()==8 && !task.Audio().DroppedBlocks(),
+              "native audio timeline catches up without stale repeated frames");
+        interruptActive = true;
+        Check(task.Write16(0xCC00500A,0x908),"disable the AID interrupt mask");
+        ticks += 30375;
+        task.Poll();
+        Check(task.Audio().Blocks()==10 && audioSamples.size()==320 && !task.Interrupt(),
+              "masked AID retains continuous raw DMA without requiring CPU callbacks");
+        interruptActive = false;
         Check(task.Write16(0xCC00500A, 0x981) && taskStopped && task.TaskBootCount() == 1,
               "reset stops the task backend and preserves diagnostic count");
         std::cout << checks << " DSP boot checks passed\n";

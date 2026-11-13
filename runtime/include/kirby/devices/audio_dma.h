@@ -9,7 +9,7 @@ public:
     void Configure(Resolver memory, uint64_t (*clock)(), bool (*sink)(const uint8_t*, uint32_t));
     bool Read16(uint32_t address, uint16_t& value) const;
     bool Write16(uint32_t address, uint16_t value);
-    bool Poll(); // True when the initial or auto-reload AID interrupt is due.
+    bool Poll(bool stopAtInterrupt = false); // True when an AID event is due.
     void Reset();
     uint64_t Blocks() const { return blocks_; }
     uint64_t DroppedBlocks() const { return dropped_; }

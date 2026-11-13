@@ -9,8 +9,10 @@ void DspBoot::Configure(Resolver memory, bool (*verify)(), uint64_t (*clock)()) 
     memory_ = memory; verifyInitCode_ = verify; clock_ = clock;
 }
 void DspBoot::ConfigureTaskBackend(bool (*boot)(const DspTaskImage&),
-    bool (*readMail)(uint32_t&), void (*sendMail)(uint32_t), void (*stop)()) {
+    bool (*readMail)(uint32_t&), void (*sendMail)(uint32_t), void (*stop)(),
+    bool (*interruptActive)()) {
     bootTask_ = boot; readTaskMail_ = readMail; sendTaskMail_ = sendMail; stopTask_ = stop;
+    cpuInterruptActive_ = interruptActive;
 }
 bool DspBoot::SendMail(uint32_t mail) {
     if (control_ & 4) return false;
@@ -42,9 +44,15 @@ bool DspBoot::SendMail(uint32_t mail) {
     return true;
 }
 void DspBoot::Poll() {
-    if (audio_.Poll()) Raise(8);
+    const bool orderedAudio = cpuInterruptActive_ && (control_ & 0x10);
+    if (!orderedAudio && audio_.Poll()) Raise(8);
     if (taskActive_ && !(control_ & 4) && !pendingMail_ && readTaskMail_(pendingMail_))
         Raise(0x80); // Each queued task mail requests the original DSP IRQ handler.
+    // Native host work can span multiple audio deadlines. Interleave each due
+    // buffer with its original CPU/DSP callbacks instead of fetching every due
+    // block from the same stale buffer. A masked AID source retains raw DMA.
+    if (orderedAudio && !(control_ & 8) && !cpuInterruptActive_() &&
+        (!taskActive_ || !pendingMail_) && audio_.Poll(true)) Raise(8);
     if (!clock_) return;
     const auto now = clock_();
     if ((control_ & 0x200) && now >= dmaDeadline_) {

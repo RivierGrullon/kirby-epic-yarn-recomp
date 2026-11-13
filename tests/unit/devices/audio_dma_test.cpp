@@ -55,6 +55,21 @@ int main() {
         Check(audio.Poll() && audio.Blocks()==257 && audio.DroppedBlocks()==7744,
               "normal DMA timing resumes after a long pause");
         audio.Reset(); Check(audio.DroppedBlocks()==0, "reset clears skipped-block diagnostics");
+        received.clear();
+        Check(audio.Write16(0xCC005032,0) && audio.Write16(0xCC005036,0x8002),
+              "start native event-stepped DMA");
+        ticks += 121500; // Four complete 16-sample buffers are overdue.
+        Check(audio.Poll(true) && received.empty(),
+              "initial AID callback runs before overdue buffer consumption");
+        for (unsigned frame=0; frame<4; ++frame) {
+            std::fill(ram.begin(),ram.end(),uint8_t(0x31+frame));
+            Check(audio.Poll(true) && received.size()==(frame+1)*64 &&
+                  std::all_of(received.begin()+frame*64,received.end(),
+                              [frame](uint8_t sample) { return sample==0x31+frame; }),
+                  "each overdue buffer can be refilled before the next buffer is consumed");
+        }
+        Check(!audio.Poll(true) && audio.Blocks()==8 && !audio.DroppedBlocks(),
+              "event-stepped DMA catches up without repeating a stale buffer or adding samples");
         std::cout << checks << " audio DMA checks passed\n";
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

@@ -14,7 +14,8 @@ public:
     using Resolver = uint8_t* (*)(uint32_t, uint32_t);
     void Configure(Resolver memory, bool (*verifyInitCode)(), uint64_t (*clock)());
     void ConfigureTaskBackend(bool (*boot)(const DspTaskImage&),
-        bool (*readMail)(uint32_t&), void (*sendMail)(uint32_t), void (*stop)());
+        bool (*readMail)(uint32_t&), void (*sendMail)(uint32_t), void (*stop)(),
+        bool (*interruptActive)() = nullptr);
     void Poll();
     bool Read16(uint32_t address, uint16_t& value);
     bool Read32(uint32_t address, uint32_t& value);
@@ -50,5 +51,6 @@ private:
     bool (*readTaskMail_)(uint32_t&) = nullptr;
     void (*sendTaskMail_)(uint32_t) = nullptr;
     void (*stopTask_)() = nullptr;
+    bool (*cpuInterruptActive_)() = nullptr;
 };
 }

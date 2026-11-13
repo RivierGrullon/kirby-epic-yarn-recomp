@@ -2,6 +2,7 @@
 // Uses WiiCompiled's GPL-3.0 AXWii mixer through its hardware-only adapter.
 #include "kirby/devices/ax.h"
 #include "kirby/devices/interrupts.h"
+#include "kirby/threading/scheduler.h"
 #include "generated/KirbyBootConfig.h"
 #include "hle/audio/ax_dsp.h"
 #include "memory.h"
@@ -56,7 +57,8 @@ void ShutdownAx() {
 void ConfigureAx() {
     // Capture before guest execution, from the already hash-verified DOL image.
     std::memcpy(expectedCode.data(), Memory::GetPointer(KirbyBootConfig::AxMicrocode, expectedCode.size()), expectedCode.size());
-    Interrupts().Dsp().ConfigureTaskBackend(Boot, ReadMail, AxDspHle::SendMailToDSP, ShutdownAx);
+    Interrupts().Dsp().ConfigureTaskBackend(Boot, ReadMail, AxDspHle::SendMailToDSP, ShutdownAx,
+        [] { return GetInterruptState().context != 0; });
     static_assert(TimeBaseContract::kTicksPerSecond == 60750000);
     Interrupts().Dsp().Audio().Configure(Resolve, Ticks, PushAudio);
 }
