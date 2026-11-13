@@ -491,6 +491,52 @@ writes outside an explicit writeback range fail at materialization rather than
 silently being overwritten. Broader scene/consumer coverage, visible pacing and
 listening tests are required before enabling this mode by default.
 
+## Audio alignment and VI pacing (2026-11-13)
+
+The user still reports image stutter with experimental mode enabled. A ten-second
+hidden Quilty Square sample, with that mode enabled and VSync off, observed
+46.90 VI submissions/s. Periods between counter increments were median **17.22 ms**,
+p95 **35.43 ms**, p99 **39.43 ms**, and maximum **67.41 ms**. This is uneven delivery
+despite a higher average rate. It is not a 60 FPS result.
+
+The sampler read the renderer's submission counter through `/proc/PID/mem` about
+once per millisecond without stopping the process during the interval. No counter
+increments were missed. The first interval was discarded, and a one-second
+settling period followed the initial debugger attachment used to locate the
+object. Values have polling/scheduling uncertainty and describe VI submissions,
+not physical display scanout. Evidence: `stage40-frame-periods.json` and
+`stage40-frame-object.log` under ignored `build-logs/`.
+
+For a separate audio check, a temporary bounded trace captured Wii AI DMA bytes
+before host gain. The eight-second Quilty Square clip was compared with the
+player's `files/stream/TOWN1.brstm`, decoded by FFmpeg. Both signals were reduced
+to mono at 8 kHz for normalized cross-correlation of 0.75-second windows spaced
+one second apart. Matches advanced by exactly one source second per captured
+audio second; correlations ranged from **0.959 to 0.990**. This establishes the
+correct musical progression in this clip, rather than merely the expected number
+of mixer callbacks. It does not establish continuous wall-clock delivery.
+
+A second capture tested the SDL/PipeWire output. Only the isolated test game's
+stream was routed to a temporary null sink, identified through its PipeWire
+client PID. Its monitor supplied 7.168 seconds of PCM. Matching windows again
+advanced at **1.000 source seconds per output second**, with correlations from
+**0.995 to 0.998**. The stream was restored and the temporary sink removed. This
+includes host resampling but excludes the physical audio device and speakers.
+No microphone or other application's audio was captured.
+
+The earlier file-selection confirmation capture contained only zeros before host
+gain. Its expected behavior still requires a reference check; it must not be
+used to claim that all menu audio works. Other scenes, long-term synchronization
+and physical listening remain unverified.
+
+Evidence: `stage40-town-correlation.json`, `stage40-host-correlation.json`,
+`stage40-host-audio.log`, `stage40-audio-profile-game.log`, and the corresponding
+scene captures in `build-logs/`. PCM and decoded references stay under ignored
+`local/`. The trace changes were removed from the source after measurement;
+they were never published to the launcher. The published build remains the
+Stage 39 build identified above. The remaining display-copy GPU readback and
+frame submission scheduling are the next pacing targets.
+
 ## Reproduce checks
 
 ```bash
