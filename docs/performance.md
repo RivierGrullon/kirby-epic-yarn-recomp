@@ -53,6 +53,22 @@ and every 120 submissions. Compare warmed, matching scenes without a debugger or
 concurrent compilation, and account for logging overhead. Discard intervals with
 debugger stops or scene transitions rather than treating them as gameplay stalls.
 
+Analyze a completed log with the source-only tool:
+
+```bash
+python3 tools/frame_stats.py build-logs/frames.csv --start 5 --end 15
+```
+
+Window bounds are seconds on the CSV's SDL clock, inclusive at the start and
+exclusive at the end. Choose them for the scene being tested; 5–15 is only an
+example. JSON output includes linearly interpolated p50/p95/p99, submission rate,
+stage distributions and the five longest intervals. The long-interval breakdown
+uses the previous row's presentation stages plus the gap up to the current row's
+start. Counter deltas are measured at row completion, a different boundary.
+`--long-interval-ms` changes the report threshold (25 ms by default), not the game.
+Missing rows, partial records, reversed timestamps and decreasing counters fail
+explicitly. The tool does not silently remove stalls or repair damaged logs.
+
 The initial recorder check captured 599 submissions during host seconds 5–15 of
 a hidden startup run: median interval 16.718 ms, p95 17.437 ms and p99 17.701 ms.
 Mean worker wait was 4.083 ms; there were no additional readbacks. This validates
@@ -61,6 +77,28 @@ performance test or an audio test. A later debugger-assisted input/capture attem
 was interrupted and faulted during an inferior call; that portion was rejected.
 Local evidence: `stage47-metrics-frames.csv`, `stage47-startup-metrics.json` and
 `stage47-metrics-start.log` under `build-logs/`.
+
+The next run reached Fountain Gardens through virtual PAD input and verified
+right/left movement and a jump. At section 1, position `(70.281, 24.178)`, two
+stationary 20-second windows with experimental copies and VSync off measured:
+
+| Window | VI submissions/s | Median interval | p95 | p99 | Maximum | Intervals over 25 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Hidden | 59.887 | 16.712 ms | 17.502 ms | 17.718 ms | 32.119 ms | 1 |
+| Visible and focused | 58.638 | 16.696 ms | 17.717 ms | 33.161 ms | 50.529 ms | 24 |
+
+Position stayed constant and neither interval added readbacks. Pipeline queues
+were empty at sample times; this alone does not rule out synchronous compilation.
+In the longest visible interval, 47.608 of 50.529 ms elapsed between submissions;
+the previous worker wait was only 0.150 ms. The five longest visible intervals
+all had at least 28.755 ms between submissions. That interval includes guest work,
+device polling, scheduler waits and host descheduling, so it does not yet identify
+which component stalled. The near-60 average is not evidence of smooth delivery.
+These are stationary native submission measurements with muted audio, not a
+moving-gameplay or synchronization certification. No debugger was attached during
+the measured windows. Source: `stage48-{hidden,visible}-analysis.json`,
+`stage48-metrics-frames.csv`, `stage48-player.json` and `stage48-tower.png` in
+ignored `build-logs/`.
 
 ### Rejected asynchronous presentation experiment
 

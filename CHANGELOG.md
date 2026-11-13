@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a source-only frame-log analyzer with time-window selection, interval
+  percentiles and a breakdown of long submissions; reject incomplete measurements.
 - Add optional `--frame-log CSV` diagnostics for native submission intervals,
   render-worker waits and graphics counters without changing frame pacing.
 - Prepare public source documentation, a native gameplay screenshot, contributor
