@@ -3096,3 +3096,303 @@ VSync on/off, measure frame-time distributions and logic speed, then time copy
 readback and presentation separately. Verify real speaker output after the MEM2
 repair before describing audio as complete. Physical controller/Legion Go validation
 and the known preempted-context startup limitation remain open.
+
+
+## Stage 32: GPU XFB packing and presentation FPS
+
+A temporary phase probe measured approximately 1.6–1.9 ms per 640x480 frame in
+`EncodeXfb`, in addition to synchronous GPU readback. Display copies now request
+Aurora's new readback-only `XfbYuyv` format, which computes Y0/U/Y1/V directly on
+the GPU. The format identifier is never used as a guest GX texture register value.
+The patch retains the CPU encoder's integer coefficients, horizontal chroma
+averaging, rounding and normalization. It halves display readback payloads from
+1,228,800 to 614,400 bytes. Guest RAM visibility, VI selection, EFB preservation,
+texture-copy formats and render-worker synchronization remain intact.
+
+### Source changes
+
+- `patches/aurora/xfb-yuyv-readback.patch`: layout metadata and compute shader;
+  applied to the pinned local Aurora snapshot by the existing build helper.
+- `runtime/src/graphics/gx_xfb.cpp`: direct YUYV readback and a game-window title
+  updated every 250 ms with `aurora_get_fps()`.
+- `runtime/include/kirby/graphics/gx_renderer.h`: next title-update timestamp.
+- `tests/unit/graphics/gx_renderer_test.cpp`: layout assertion, GPU/CPU differential
+  packing checks and window-title check. Varied adjacent RGB colors, widths 16/32
+  and heights 1/3/4/7 exercise chroma averaging, rounding and partial tile rows.
+- `tests/integration/test_native_video.py`: hidden startup tests set volume to zero.
+- `README.md`, `CHANGELOG.md`, `docs/performance.md`, `THIRD_PARTY.md` and this report.
+
+The retained CPU encoder is the differential oracle; existing fixed YUYV primary
+colors provide independent expected bytes. The new format assertion failed before
+implementation (`stage32-yuyv-before.log`); the title assertion also failed before
+its implementation (`stage32-fps-before.log`). An initially misplaced fixture ran
+after the deliberate fatal GX-command check and was moved before it. Its RAM-write
+count assertion now records the count immediately before the invalid command,
+rather than depending on how many preceding texture rows the fixture writes.
+
+### Measurements and observed stops
+
+The same-process hidden Mailbox file selector produced 37.89 / 39.25 / 36.76 VI
+submissions per second with CPU / GPU / CPU packing. CPU conversion took
+1.57 / below 0.001 / 1.59 ms per copy; readback took 5.50 / 5.10 / 5.39 ms.
+These are eight-second intervals with one-second settling. The planned fourth
+observation did not complete: the runtime stopped with signal 11 at host guest-RAM
+address `0x1000F8F8F7FB`, guest `r3=0xF8F8F7F7`. The active translated function
+was `fn_8064F1D8`; the saved PC was `0x80684064` and may be stale. The cause is not
+established. It must not be attributed to packing, scheduling or the translator
+without tracing the bad pointer.
+
+Earlier title comparisons stopped twice on `VI selected a CPU-modified XFB; RAM
+upload is not implemented`. The diagnostic run recorded physical XFB `0x10096860`,
+first differing byte at offset zero, RAM 255 versus snapshot 16. The writer and
+trigger remain unproven; this is a reproduced renderer invariant failure, not
+proof of an identified CPU routine. Do not bypass the comparison or silently show
+the stale texture. The local comparison logs retain all completed intervals and
+failures, including an earlier title CPU / GPU / CPU sequence of 39.61 / 42.00 /
+38.56 submissions per second. Neither sequence proves stable 30/60 FPS.
+
+The temporary profiling counters, CPU/GPU switch and mismatch logging were removed
+from production before final verification. The baseline comparison executable was
+removed after testing. Source snapshots, input/capture helpers, copied saves and
+logs remain ignored under `local/` and `build-logs/`.
+
+Historical VI counts measure submission rate. They were described too broadly as
+FPS in conversation. The new window counter instead calls Aurora's mutex-protected
+rolling successful-surface-presentation rate. It still does not measure compositor
+scanout, simulation speed or audio synchronization; hidden windows may show zero.
+
+### Final verification
+
+Native build ID: `fdb6687351ebea53eade38cd9e17b0e89ff633fb`.
+All 41 Python/native/frontend tests, 20 selected CTest cases and 334 hidden Vulkan
+checks pass. Configure-only verified patch applicability/reversal. Commands:
+
+```bash
+bash tools/container.sh python3 tools/build_native.py --configure-only
+bash tools/container.sh cmake --build build/native \
+  --target WiiCompiled kirby-launcher kirby_tests --parallel 4
+KIRBY_NATIVE_TEST="$PWD/build/native/WiiCompiled" \
+  KIRBY_NATIVE_VIDEO_TEST="$PWD/build/native/WiiCompiled" \
+  KIRBY_LAUNCHER_TEST="$PWD/build/native/kirby-launcher" \
+  LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  python3 -m unittest discover -s tests -v
+bash tools/container.sh ctest --test-dir build/native \
+  -R '^(kirby_|mkw_linux_host_context_tests$)' --output-on-failure
+LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  build/native/kirby_gx_renderer_test --gpu-xfb-hidden
+build/native/kirby-launcher
+```
+
+Logs: `stage32-configure.log`, `stage32-final-build.log`, `stage32-final-tests.log`,
+`stage32-final-ctest.log`, `stage32-final-gpu.log`, `stage32-file-benchmark.log`,
+`stage32-packing-ab.json`, `stage32-diagnostic-game.log` and
+`stage32-file-benchmark-game.log`. Native XFB captures remain local. The normal
+save remains SHA-256 `fc034a13879ec25699424fb95758b4e32ee8ef4861083bbe5814a7553dc1767e`.
+
+The visible launcher was reopened at the user's request. User-launched games were
+not automatically restarted after closing. Further performance evidence requires
+the same visible Fountain Gardens route, presentation frame-time distributions
+and simulation/audio pacing checks. The concrete stability follow-up is to replay
+the XFB mismatch without the profiling switch and trace its first RAM writer,
+then isolate the separate invalid-pointer stop. Physical controller and Legion Go
+validation remain pending.
+
+
+## Stage 33: Dolphin comparison and interrupt-enable delivery
+
+The user's WBFS ran in installed Dolphin 2609a with Vulkan, 1x internal resolution,
+configured speed 1.0, cheats disabled and audio stretching disabled. The captured
+title screen reports 59.92 FPS; the user confirmed substantially smoother animation
+and normal music. This identifies a native-port problem, not evidence that the
+original game normally runs at the observed native pace. Configuration and copied
+progression save were isolated in `local/stage33-dolphin-uw903xx6`; no ordinary
+Dolphin or native save/settings were replaced. The command is recorded in
+`local/stage33-dolphin.json`; the local capture is `stage33-dolphin-visible.png`.
+The user later closed Dolphin; it was not automatically restarted.
+
+A 30-second physical-controller monitor, started after the user's readiness reply,
+detected DualSense port 0 but recorded zero button transitions. A separate visible
+native game with copied progression was opened for manual input testing. The user
+then requested the Dolphin comparison instead; no successful native physical-input
+result is claimed. The monitor and native log are `stage33-physical-ready.log` and
+`stage33-visible-controls.log`. Physical gameplay remains unverified.
+
+The unchanged Stage 32 native binary also survived a 50-second title observation.
+A later 90-second watch covered all three flat XFB aliases plus canonical native
+backing storage for the first word of physical XFB `0x10096860`; no watched value
+changed and the earlier mismatch did not recur. These finite title observations
+neither identify its writer nor prove the previous diagnostic stops fixed. See
+`stage33-title-game.log`, `stage33-watch-long.log` and `stage33-xfb-long-writes.json`.
+
+### Audio evidence and reproduced boundary failure
+
+Temporary hardware AX counters found 69.55 / 71.67 / 72.41 command lists and OUTPUTs
+per second in three approximately six-second intervals. Each OUTPUT writes 96
+stereo samples; sustaining 32 kHz requires about 333.33 OUTPUTs/s. DMA simultaneously
+fetched approximately 4000 eight-sample blocks/s. This establishes producer lag;
+a full host queue can contain repeated/stale guest-buffer data. It does not establish
+which part of the lag is dominant. The temporary upstream counters were removed,
+and the original Stage 32 build ID was restored before implementing the repair.
+
+Inspection found `KirbyRestoreInterrupts` polled IOS/WPAD but did not dispatch
+pending hardware IRQs. A synthetic AX resume reply, processed through the real
+original DSP handler, remained pending outside scheduler idle. The regression
+failed with `OSRestoreInterrupts did not deliver the pending DSP reply outside
+scheduler idle` (`stage33-irq-before.log`).
+
+Dispatching at the already audited `0x806681C0` boundary exposed the previous
+preempted-context guard in real startup (`stage33-irq-tests.log`). The repair now:
+
+- Saves/restores IRQ-frame state with each native continuation alongside its CPU
+  scope and FP environment. A running target thread therefore does not inherit a
+  suspended source thread's active IRQ frame.
+- Follows the original SDK's `OSThread.c` preempted-context branch, retaining the
+  exception-entry register save instead of overwriting it with handler scratch
+  registers through `OSSaveContext`.
+- Accepts that branch only with a matching native IRQ continuation. Arbitrary
+  preempted/replaced contexts still stop explicitly.
+- Delivers pending IRQs at the enabled native boundary and drains reasserted IRQs
+  before returning, matching immediate exception re-entry when EE is set. A
+  two-reply regression failed with single delivery (`stage33-drain-before.log`)
+  and passes with draining. Masked replies remain pending and the SDK CPU/context
+  restoration checks remain enabled.
+- Avoids accessing the guest context pointer before guest RAM is mapped, retaining
+  the existing registry/CPU-effects-only bootstrap verification.
+
+No new game address/hook was added and no generated game code was edited. The SDK
+branch reference is Swiftshine/key's CC0 `revolution/OS/OSThread.c`; original AX
+callback flow and the 96-sample frame size are in `AX/AXOut.c` and `AX/AXAux.h`.
+
+A same-process hidden Mailbox off/on/off comparison, with the same OUTPUT-mail
+counter throughout, produced 80.11 / 135.67 / 73.28 mails/s and 37.15 / 44.28 /
+37.97 VI submissions/s. The first interval includes debugger catch-up; the other
+two had no skipped DMA blocks. A first single-IRQ implementation reached 114.46
+mails/s; it is superseded by draining. These comparisons support improvement but
+**135.67 remains below 333.33**. Normal audio tempo, stable 30/60 visible FPS and
+Fountain Gardens gameplay with the new scheduling behavior remain to be checked.
+Temporary counters and the runtime switch were removed before final verification.
+
+### Final artifacts and checks
+
+Final native build ID: `d1e3c0456b92368e8bf820de1f9dbd35856eb80e`.
+All 41 Python/native/frontend checks, 20 selected CTest cases and 334 hidden Vulkan
+checks pass. Commands:
+
+```bash
+bash tools/container.sh cmake --build build/native \
+  --target WiiCompiled kirby-launcher kirby_tests --parallel 4
+KIRBY_NATIVE_TEST="$PWD/build/native/WiiCompiled" \
+  KIRBY_NATIVE_VIDEO_TEST="$PWD/build/native/WiiCompiled" \
+  KIRBY_LAUNCHER_TEST="$PWD/build/native/kirby-launcher" \
+  LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  python3 -m unittest discover -s tests -v
+bash tools/container.sh ctest --test-dir build/native \
+  -R '^(kirby_|mkw_linux_host_context_tests$)' --output-on-failure
+LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  build/native/kirby_gx_renderer_test --gpu-xfb-hidden
+```
+
+Logs: `stage33-final-build.log`, `stage33-final-tests.log`, `stage33-final-ctest.log`,
+`stage33-final-gpu.log`, `stage33-audio-rate.json`, `stage33-pacing-ab.json` and
+`stage33-pacing-drain-ab.json`. All logs/captures, diagnostic patches and copied
+saves remain local and ignored. The normal FLF save is unchanged at SHA-256
+`fc034a13879ec25699424fb95758b4e32ee8ef4861083bbe5814a7553dc1767e`.
+
+Changed runtime files: `runtime/native-src/services/ios.cpp`,
+`runtime/native-src/threading/scheduler.cpp`, `runtime/src/threading/continuations.cpp`
+and `runtime/include/kirby/threading/scheduler.h`. Tests: `tests/integration/ax_probe.cpp`
+and `tests/integration/test_native_bootstrap.py`. Documentation: `README.md`,
+`CHANGELOG.md`, `runtime/README.md`, `docs/building.md`, `docs/performance.md` and
+this report. Existing licenses and attribution remain intact.
+
+The user subsequently launched the clean updated native executable from the
+launcher and closed it normally (`launcher-game.log`). No review game was started
+over that existing process, and it was not restarted after closing. Next concrete
+work is to measure the remaining producer delay at audited native boundaries and
+synchronous render waits, then verify audible tempo and re-enter Fountain Gardens
+with physical input. The port is not represented as finished or equivalent to
+Dolphin's observed playback.
+
+## Stage 34: ordered native audio catch-up and Fountain Gardens recheck
+
+The native DMA model fetched every overdue block before notifying the original
+AID handler. Host rendering stalls therefore repeated stale sample buffers while
+coalescing the callbacks needed to produce fresh audio. The repair steps to the
+next buffer IRQ, waits for the native IRQ continuation to return, and services
+pending DSP replies before fetching the following overdue buffer. Raw DMA remains
+continuous when AID is masked or no native IRQ-state callback is installed. The
+32 kHz clock, sample count, DMA latches and bounded backlog are unchanged.
+
+Changes are in `runtime/include/kirby/devices/{audio_dma,dsp}.h` and
+`runtime/src/devices/{audio_dma,dsp,ax}.cpp`. Regressions in
+`tests/unit/devices/{audio_dma,dsp_boot}_test.cpp` fail with the previous scheduling
+and pass with the repair. They exercise distinct overdue refill payloads, active
+IRQ deferral, DSP reply ordering, acknowledgment/refill ordering and masked DMA.
+No new guest address, SDK override or generated translation was introduced.
+
+Quilty Square reached 333.61 DSP OUTPUT mails/s and 4003.94 DMA blocks/s in a
+six-second hidden Mailbox interval, without skipped DMA blocks. The required
+producer rate is 333.33 outputs/s. The same-process deferred-copy experiment
+reached 332.92 outputs/s and did not improve video submission rate; that experiment
+and its instrumentation were removed. See [performance evidence](performance.md)
+for the comparison and its limits. These counters do not certify audible tempo,
+visible frame pacing or stable 30/60 FPS.
+
+The clean candidate passed 41 Python integration/tooling tests, 20 CTest targets,
+and 334 synthetic Vulkan checks. The build was then restored to its normal output
+directory. `build/native/WiiCompiled` matches the tested candidate byte for byte:
+
+- Build ID: `b44c146a86893768385791fcef7986654f321139`.
+- SHA-256: `c1ebb8f6423920b62f1706f30ca460cf79075a4663c807b55b1aaa334ab71550`.
+
+Commands, from the repository root:
+
+```bash
+bash tools/container.sh cmake --build build/native \
+  --target WiiCompiled kirby-launcher kirby_tests mkw_linux_host_context_tests --parallel 4
+KIRBY_NATIVE_TEST="$PWD/build/native/WiiCompiled" \
+  KIRBY_NATIVE_VIDEO_TEST="$PWD/build/native/WiiCompiled" \
+  KIRBY_LAUNCHER_TEST="$PWD/build/native/kirby-launcher" \
+  LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  python3 -m unittest discover -s tests -v
+bash tools/container.sh ctest --test-dir build/native \
+  -R '^(kirby_|mkw_linux_host_context_tests$)' --output-on-failure
+LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  build/native/kirby_gx_renderer_test --gpu-xfb-hidden
+LD_LIBRARY_PATH="$PWD/local/host-libs" build/native/WiiCompiled --verify-bootstrap
+LD_LIBRARY_PATH="$PWD/local/host-libs" build/native/kirby-launcher --check-data disc/DATA
+```
+
+The Python/GPU checks ran against the identical executable in
+`build/native-candidate/` before publication. The temporary
+`CMAKE_RUNTIME_OUTPUT_DIRECTORY` override was removed with
+`cmake -S local/native-workspace/runtime -B build/native -U CMAKE_RUNTIME_OUTPUT_DIRECTORY`;
+subsequent builds again update the normal launcher executable path.
+
+A separate clean native restart, muted and hidden, used an isolated copy of the
+progression save in `local/stage34-final-route-30tal7ai`. Normal virtual PAD presses
+loaded File 1, opened Area Selection, entered Grass Land and started Fountain
+Gardens. Read-only observations of the original player recorded:
+
+| Input | X | Y | State |
+| --- | ---: | ---: | ---: |
+| Initial | 15.8500 | 20.9250 | 1 |
+| Right | 18.5300 | 20.9250 | 1 |
+| Left | 16.2900 | 20.9250 | 1 |
+| Jump | 16.2157 | 23.1354 | 2 |
+
+Actual native XFB captures and the observation log are
+`stage34-final-fountain-{start,right,left,jump}.png` and
+`stage34-final-fountain-movement.log` under ignored `build-logs/`.
+Other evidence: `stage34-final-{build,tests,ctest,gpu}.log`,
+`stage34-publish-{configure,build}.log` and
+`stage34-published-{bootstrap,data}.log`. The 296 audio DMA and 103 DSP boot checks
+are included in CTest. The normal save remains SHA-256
+`fc034a13879ec25699424fb95758b4e32ee8ef4861083bbe5814a7553dc1767e`.
+
+The test reported a full SDL audio queue during debugger-driven startup; muted
+testing cannot establish listening quality. Physical DualSense/Legion Go control
+and audible synchronization remain unverified. The remaining performance fault is
+below-target video delivery: the Quilty Square observation was 43.94 VI submissions/s,
+not certified compositor FPS. Next work is to measure copy/presentation frame time
+and verify the corrected audio by listening, followed by physical controller play.

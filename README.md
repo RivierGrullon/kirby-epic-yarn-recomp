@@ -7,7 +7,8 @@ with [WiiCompiled](https://github.com/patchzyy/Wiicompiled) and
 **Development build.** The native game reaches the main menu, completes Patch
 Castle and loads Fountain Gardens. Movement and jumping there have been verified
 with virtual controller input. The MEM2 audio sample mapping is repaired and real
-game PCM is no longer silent. Physical controls, audio quality/synchronization and
+game PCM is no longer silent. Native audio callback ordering now reaches the expected
+333.33 mixer outputs/s in a hidden Quilty Square test. Physical controls, audio quality/synchronization and
 sustained 30/60 FPS still need validation. See [performance findings](docs/performance.md).
 
 ## Requirements
@@ -66,11 +67,11 @@ behavior remains unresolved. Virtual input does not establish physical gameplay.
 | Native game | Menu, Patch Castle clear, Fountain Gardens movement/jump with virtual PAD |
 | Saves | Creation and independent reload; test progression uses isolated copies |
 | Frame rate | Variable; stable 30/60 FPS modes are not validated |
-| Audio | MEM2 sample fetch repaired; real PCM verified; listening and synchronization pending |
+| Audio | MEM2 fetch and overdue callback ordering repaired; expected mixer rate measured; listening and synchronization pending |
 | Controllers | Virtual presets pass; physical DualSense and Legion Go need validation |
 | Graphics | Native Vulkan GX/VI; some formats and scaling modes remain unsupported |
 | Shutdown | Startup/SIGTERM exits normally; extended gameplay cleanup is not fully tested |
-| Scheduling | Some preempted guest contexts remain unsupported; startup can stop with a diagnostic |
+| Scheduling | Native IRQ preemption at the audited SDK boundary; arbitrary context replacement remains unsupported |
 
 The ordinary save is under `local/user/nand/title/00010000/524b3545/data`.
 The game window title shows Aurora's rolling presentation FPS. This counter does

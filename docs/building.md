@@ -46,12 +46,15 @@ and timeouts. The updated path passed the synthetic GPU readback/presentation te
 sustained native runs. Stage 30 traced the reproduced shutdown heap corruption to
 audio teardown after SDL shutdown and corrected the resource destruction order.
 
-AXWii task boot and a 96-sample mixer probe pass. The native 32 kHz audio DMA sink opens,
-but queue overflow has been observed and audible game audio has not been verified.
+AXWii task boot and a 96-sample mixer probe pass. The native 32 kHz audio DMA sink opens;
+MEM2 sample mapping and overdue refill ordering are repaired. A hidden Quilty Square
+test reaches approximately 333.33 mixer outputs/s. Queue overflow has been observed;
+audible tempo, synchronization and sustained playback still need validation.
 Local NAND supports file/directory creation, file access, deletion of files/empty
 directories, and directory usage queries. Creation metadata persists in host xattrs;
 attribute queries and file commits now let the game complete initial save creation. General IOS support, recursive deletion, arbitrary context restoration and
-preemption remain incomplete. A USB DualSense is detected at boot. The latest run
+unmatched preempted contexts remain unsupported. Native IRQ preemption is supported
+at the audited interrupt-enable boundary. A USB DualSense is detected at boot. The latest run
 passes indexed rendering and a real 320x240 RGBA8 EFB copy. Main-menu navigation,
 File 1 startup, Patch Castle completion and Fountain Gardens movement are verified
 with virtual input. Physical input remains pending. Independent save reload is verified.
@@ -248,12 +251,13 @@ See [third-party attribution](../THIRD_PARTY.md).
 `runtime/src/devices/video_si.cpp` models NTSC VI register state, beam timing, interrupt
 comparators and SI polling. The four GameCube ports are explicitly disconnected and
 return NOREP/COMERR instead of fabricated controller data. The host clock advances
-this model at MMIO boundaries and during scheduler idle. IRQ delivery outside idle
-and queued SI callbacks need further integration. Wii Remote input belongs to the
+this model at MMIO boundaries and during scheduler idle. Pending hardware IRQs also
+run at the audited `OSRestoreInterrupts` boundary; queued SI callbacks need further
+integration. Wii Remote input belongs to the
 native WPAD bridge backed by Aurora. Core Remote reports and deferred guest callbacks
 have an automated probe; physical controller mapping and gameplay remain unverified.
-Framebuffer presentation has synthetic GPU coverage;
-the real game has not reached a visible frame.
+Framebuffer presentation has synthetic GPU coverage and real native game frames.
+Menu, Patch Castle and Fountain Gardens milestones are recorded in the bring-up report.
 
 ## Native Vulkan startup
 

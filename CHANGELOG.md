@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Reuse packed RGB8-to-RGBA8 GPU copy textures while preserving RAM readback;
+  invalidate direct sampling after CPU writes or texture descriptor changes.
+
+- Interleave overdue native audio buffers with their original AID/DSP callbacks,
+  preventing repeated consumption of stale sample buffers after host stalls.
+- Deliver queued hardware IRQs when the audited SDK interrupt boundary enables EE.
+- Preserve per-thread IRQ continuations and the original preempted register save.
 - GPU YUYV display-copy packing halves XFB readback bytes and removes the measured
   CPU color-conversion pass while retaining guest RAM visibility.
 - Game-window FPS counter uses Aurora's completed surface presentations.

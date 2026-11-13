@@ -54,6 +54,20 @@ WiiCompiled mixer. `audio_dma.cpp` models the 32 kHz DMA latch and AID interrupt
 96 output samples. `--probe-alarms` checks the original SDK alarm queue, deadlines,
 cancellation and three resumed `OSSleepTicks` calls.
 
+`OSRestoreInterrupts` delivers pending hardware IRQs at its audited native boundary,
+including immediate re-entry for queued DSP replies. IRQ-frame state travels with
+each native thread stack; preempted contexts retain the exception-entry register
+save instead of overwriting it with handler scratch registers. Unmatched preempted
+contexts and arbitrary replacements still stop explicitly. The AX probe checks
+masked deferral, two queued replies and the restored SDK context outside idle.
+
+With the native IRQ-state callback installed and AID enabled, `DspBoot::Poll`
+advances audio DMA only to the next buffer interrupt. It lets the original guest
+refill handler return and queued DSP replies complete before consuming another
+overdue buffer. Masked AID and standalone device probes retain continuous raw DMA.
+The clock, 32 kHz sample rate and bounded catch-up policy are unchanged. This is
+native event scheduling, not a claim of cycle-accurate Wii hardware emulation.
+
 `gx_xfb.cpp` explicitly preserves EFB attachments when resuming after GPU readback
 and VI presentation. Stage 20 verified the real wrist-strap screen in the native
 window; see `../docs/bringup.md`.
