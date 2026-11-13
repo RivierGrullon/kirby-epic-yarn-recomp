@@ -44,7 +44,7 @@ class NativeVideoTests(unittest.TestCase):
             self.assertIn("host exit requested; shutting down native runtime", output)
             self.assertNotIn("[kirby] blocked:", output)
             if "--gpu-resident-copies" in arguments:
-                self.assertIn("experimental GPU-resident texture copies enabled", output)
+                self.assertIn("experimental GPU-resident texture and display copies enabled", output)
 
     def test_sigterm_exits_after_native_video_controller_and_ax_task_startup(self):
         self.check_startup_and_exit()

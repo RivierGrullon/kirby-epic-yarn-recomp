@@ -687,7 +687,8 @@ int main(int argc, char** argv) {
             if (mode == "--video" || mode == "--video-hidden") {
                 renderer->OpenWindow(mode == "--video-hidden", vsync);
                 renderer->SetGpuResidentTextureCopies(gpuResidentCopies);
-                if (gpuResidentCopies) std::cout << "[kirby] experimental GPU-resident texture copies enabled\n";
+                renderer->SetGpuResidentDisplayCopies(gpuResidentCopies);
+                if (gpuResidentCopies) std::cout << "[kirby] experimental GPU-resident texture and display copies enabled\n";
                 Kirby::SetWpadWindowActive(true);
             }
             Kirby::Devices().ObserveVideo([&](const auto& output) { renderer->PollVideo(output); });

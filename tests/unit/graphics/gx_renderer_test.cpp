@@ -468,6 +468,51 @@ void GpuXfb(bool startHidden = false) {
         Check(memory[copy.address+copy.bytes]==0xCD,
               "GPU YUYV readback does not write beyond the requested rows");
     }
+    const std::vector<uint8_t> displayOracle(memory.begin()+0x40000,memory.begin()+0x40000+448);
+    renderer.SetGpuResidentDisplayCopies(true);
+    const auto directStart=renderer.Readbacks(), directPresent=renderer.Presentations();
+    Bp(renderer,0x4B000A00); Bp(renderer,0x52004003);
+    Check(renderer.Readbacks()==directStart && memory[0x14000]==0xCD,
+          "resident display copies leave RAM untouched and avoid immediate readback");
+    renderer.PollVideo({0x14000,32,7,64,0,200,true});
+    Check(renderer.Presentations()==directPresent+1 && renderer.Readbacks()==directStart,
+          "VI submits the selected GPU image without downloading its XFB");
+    renderer.FlushTextureCopiesForRange(0xC0014000,32);
+    Check(renderer.Readbacks()==directStart+1 &&
+          std::equal(displayOracle.begin(),displayOracle.end(),memory.begin()+0x14000),
+          "CPU invalidation materializes the selected XFB in verified YUYV layout");
+    Bp(renderer,0x4F00FFFF); Bp(renderer,0x50000000); // clear red after this copy
+    Bp(renderer,0x52004803);
+    Bp(renderer,0x4B000A20); Bp(renderer,0x52004003);
+    renderer.FlushTextureCopiesForRange(0x80014000,0x800);
+    Check(std::equal(displayOracle.begin(),displayOracle.end(),memory.begin()+0x14000) &&
+          std::equal(red.begin(),red.end(),memory.begin()+0x14400),
+          "two resident display destinations preserve their own pre-clear and post-clear pixels");
+    const auto overwriteStart=renderer.Readbacks();
+    Bp(renderer,0x52004003); Bp(renderer,0x52004003);
+    Check(renderer.Readbacks()==overwriteStart,"replacing the same full resident XFB does not download obsolete frames");
+    renderer.FlushTextureCopiesForRange(0x14400,0);
+    renderer.FlushTextureCopiesForRange(0x18000,32);
+    Check(renderer.Readbacks()==overwriteStart,"zero-length and unrelated cache invalidations leave resident XFBs on the GPU");
+    renderer.SetGpuResidentDisplayCopies(false);
+    Check(renderer.Readbacks()==overwriteStart+1 && std::equal(red.begin(),red.end(),memory.begin()+0x14400),
+          "disabling resident presentation materializes the latest pending XFB");
+    renderer.SetGpuResidentDisplayCopies(true);
+    Bp(renderer,0x52004003);
+    const auto displayOverlapStart=renderer.Readbacks();
+    Bp(renderer,0x4B000A21); Bp(renderer,0x52004003);
+    Check(renderer.Readbacks()==displayOverlapStart+2 && std::equal(red.begin(),red.end(),memory.begin()+0x14420),
+          "partially overlapping display destinations materialize the old image and use the synchronous fallback");
+    Bp(renderer,0x4B000B00); Bp(renderer,0x52004003);
+    const auto beforeCpuWrite=memory[0x16000];
+    memory[0x16000]^=1;
+    Throws([&] { renderer.FlushTextureCopiesForRange(0x16000,32); },
+           "unannounced CPU writes to a resident display copy fail before overwriting RAM");
+    memory[0x16000]=beforeCpuWrite;
+    renderer.FlushTextureCopiesForRange(0xFFFFFFF0,32);
+    Check(std::equal(red.begin(),red.end(),memory.begin()+0x16000),
+          "cache invalidation crossing a PPC alias boundary materializes pending display copies");
+    renderer.SetGpuResidentDisplayCopies(false);
     const auto writesBeforeInvalid = writes;
     Bp(renderer, 0x4B800000);
     Throws([&] { Bp(renderer, 0x52004803); }, "unmapped XFB stops before GPU submission or memory write");

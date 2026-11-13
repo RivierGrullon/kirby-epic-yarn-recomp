@@ -30,7 +30,7 @@ After building, open **`build/native/kirby-launcher`**. The native C++ frontend 
 - Start `WiiCompiled` with a visible game window.
 - Set the master volume for the next launch.
 - Toggle VSync to compare driver presentation behavior.
-- Try **Experimental performance mode** to reduce texture-copy GPU waits.
+- Try **Experimental performance mode** to reduce texture and display-copy GPU waits.
 - Show detected controllers and open saves, logs and the build guide.
 
 The launcher uses the toolchain's existing SDL3 and Dear ImGui. Archive extraction,
@@ -44,6 +44,8 @@ launcher settings. It reduced GPU readbacks in short Quilty Square comparisons;
 Fountain Gardens movement and jumping also passed with virtual input. Whole-game
 compatibility, audible quality and sustained 30/60 FPS remain unverified. Disable
 the option and relaunch to compare with the synchronous copy path.
+This optimization is separate from a frame-rate target. The 30/60 FPS selector
+remains deferred until both modes preserve normal game and audio speed.
 
 ```bash
 bash tools/container.sh cmake --build build/native \

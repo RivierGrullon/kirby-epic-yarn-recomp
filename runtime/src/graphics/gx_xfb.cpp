@@ -29,6 +29,7 @@ struct GxRenderer::XfbState {
         aurora::gfx::TextureHandle texture;
         std::vector<uint8_t> bytes;
         uint64_t generation;
+        bool pending = false;
     };
     aurora::gfx::readback::StreamHandle stream = 0;
     std::map<uint32_t, Entry> entries;
@@ -124,7 +125,29 @@ void GxRenderer::SetGpuResidentTextureCopies(bool enabled) {
     FlushTextureCopies();
     deferredTextureCopies_=gpuResidentTextureCopies_=enabled;
 }
+void GxRenderer::SetGpuResidentDisplayCopies(bool enabled) {
+    if (!enabled) FlushDisplayCopiesForRange(0,0x20000000ull);
+    gpuResidentDisplayCopies_=enabled;
+}
+void GxRenderer::FlushDisplayCopiesForRange(uint32_t address,uint64_t size) {
+    if (!size || !xfb_) return;
+    const uint32_t physical=address & 0x1FFFFFFF;
+    for (auto& [destination,entry] : xfb_->entries) {
+        const auto& copy=entry.copy;
+        if (!entry.pending || (size<=0x20000000ull-physical &&
+            (physical>=uint64_t(destination)+copy.bytes || destination>=uint64_t(physical)+size))) continue;
+        if (!std::ranges::equal(resolve_(destination,copy.bytes),entry.bytes))
+            throw std::runtime_error("CPU modified a resident XFB before its completion fence");
+        ++readbacks_;
+        entry.bytes=xfb_->Read(entry.texture,aurora::gfx::readback::XfbYuyv,copy.width,copy.height,false,false);
+        write_(destination,entry.bytes);
+        entry.pending=false;
+        if (!aurora_begin_frame_gx()) throw std::runtime_error("Aurora could not resume GX after XFB fence");
+        aurora::gfx::preserve_efb_contents();
+    }
+}
 void GxRenderer::WritebackTextureCopiesForRange(uint32_t address,uint64_t size) {
+    FlushDisplayCopiesForRange(address,size);
     if (!gpuResidentTextureCopies_) { FlushTextureCopiesForRange(address,size); return; }
     if (!size || !xfb_) return;
     const uint32_t physical=address & 0x1FFFFFFF;
@@ -161,6 +184,10 @@ void GxRenderer::WritebackTextureCopiesForRange(uint32_t address,uint64_t size) 
     }
 }
 void GxRenderer::FlushTextureCopiesForRange(uint32_t address, uint64_t size) {
+    FlushDisplayCopiesForRange(address,size);
+    FlushPendingTextureCopiesForRange(address,size);
+}
+void GxRenderer::FlushPendingTextureCopiesForRange(uint32_t address, uint64_t size) {
     if (!size || !xfb_ || xfb_->pending.empty()) return;
     const uint32_t physical=address & 0x1FFFFFFF;
     // A cache loop can wrap the PPC address space. Complete everything for
@@ -217,8 +244,22 @@ void GxRenderer::CopyDisplay(uint32_t value) {
     }
     if (!xfb_->entries.contains(copy.address) && xfb_->entries.size() >= 16)
         throw std::runtime_error("GX display-copy destination cache limit reached");
+    // Replacing the exact same layout makes its previous GPU image obsolete.
+    // Other overlapping views need RAM coherence before either view is reused.
+    bool resident=gpuResidentDisplayCopies_;
+    for (const auto& [address,entry] : xfb_->entries) {
+        const auto& old=entry.copy;
+        if (copy.address<uint64_t(address)+old.bytes && address<uint64_t(copy.address)+copy.bytes &&
+            (address!=copy.address || old.width!=copy.width || old.height!=copy.height || old.stride!=copy.stride))
+            resident=false;
+    }
+    if (resident) {
+        if (auto it=xfb_->entries.find(copy.address);it!=xfb_->entries.end()) it->second.pending=false;
+    }
+    FlushDisplayCopiesForRange(copy.address,copy.bytes);
     // Complete an aliased texture destination before replacing its RAM with YUYV.
-    if (gpuResidentTextureCopies_) FlushTextureCopiesForRange(copy.address,copy.bytes);
+    if (gpuResidentTextureCopies_) FlushPendingTextureCopiesForRange(copy.address,copy.bytes);
+    else if (resident) FlushTextureCopies();
     // Each RAM destination owns a snapshot; Aurora's default single texture would
     // otherwise overwrite the previous XFB before VI switches to the next one.
     state.displayCopyTexture.reset();
@@ -227,16 +268,25 @@ void GxRenderer::CopyDisplay(uint32_t value) {
     if (!texture) throw std::runtime_error("Aurora did not create the display-copy texture");
     // Pack the RAM-visible YUYV image on the GPU. This halves readback bytes
     // and avoids a second full-image conversion on the guest execution thread.
-    ++readbacks_;
-    auto bytes=xfb_->Read(texture,rb::XfbYuyv,copy.width,copy.height,false,!gpuResidentTextureCopies_);
-    if (!gpuResidentTextureCopies_) CommitTextureCopies();
-    write_(copy.address, bytes);
+    std::vector<uint8_t> bytes;
+    if (resident) {
+        const auto memory=resolve_(copy.address,copy.bytes);
+        bytes.assign(memory.begin(),memory.end());
+    } else {
+        ++readbacks_;
+        bytes=xfb_->Read(texture,rb::XfbYuyv,copy.width,copy.height,false,!gpuResidentTextureCopies_);
+        if (!gpuResidentTextureCopies_) CommitTextureCopies();
+        write_(copy.address, bytes);
+    }
     const bool firstDestination = !xfb_->entries.contains(copy.address);
-    xfb_->entries.insert_or_assign(copy.address, XfbState::Entry{copy, texture, std::move(bytes), ++displayCopies_});
+    xfb_->entries.insert_or_assign(copy.address, XfbState::Entry{copy, texture, std::move(bytes), ++displayCopies_,resident});
     state.displayCopyProduced = false;
-    if (!aurora_begin_frame_gx()) throw std::runtime_error("Aurora could not resume GX after display-copy readback");
-    gfx::preserve_efb_contents();
-    if (firstDestination) std::cout << "[kirby] XFB GPU readback: destination=0x" << std::hex << copy.address << std::dec
+    if (!resident) {
+        if (!aurora_begin_frame_gx()) throw std::runtime_error("Aurora could not resume GX after display-copy readback");
+        gfx::preserve_efb_contents();
+    }
+    if (firstDestination) std::cout << "[kirby] XFB " << (resident ? "GPU resident" : "GPU readback")
+              << ": destination=0x" << std::hex << copy.address << std::dec
               << " size=" << copy.width << 'x' << copy.height << " bytes=" << copy.bytes
               << "; awaiting VI selection" << std::endl;
 }
@@ -252,6 +302,7 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
     if (copy.x+copy.sourceWidth>extent.x || copy.y+copy.sourceHeight>extent.y)
         throw std::runtime_error("GX texture-copy source lies outside the EFB");
     if (!xfb_) { xfb_=std::make_shared<XfbState>(); xfb_->stream=gfx::readback::create_stream(); }
+    FlushDisplayCopiesForRange(copy.address,copy.bytes);
     // Complete packed overwrites make the previous resident RAM value obsolete.
     // Partial/strided overwrites must materialize bytes outside the new copy.
     if (gpuResidentTextureCopies_ && copy.stride==copy.rowBytes)
@@ -302,6 +353,7 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
 void GxRenderer::ValidateCopyTexture(uint32_t address, uint32_t format, uint32_t width,
                                    uint32_t height, uint32_t mipCount, uint32_t bytes) {
     if (!xfb_) return;
+    FlushDisplayCopiesForRange(address,bytes);
     // A subview, format reinterpretation, or older overlapping texture cannot
     // sample a pending copy through its exact GPU cache entry. Complete RAM
     // first, including when the requested address has no cache entry at all.
@@ -336,6 +388,7 @@ void GxRenderer::PollVideo(const VideoOutput& output) {
         if ((frame || field) && output.width == c.width && !output.xOffset) { selected = &entry; break; }
     }
     if (!selected) throw std::runtime_error("VI selected an XFB without a matching GPU copy/scanout layout");
+    FlushPendingTextureCopiesForRange(selected->copy.address,selected->copy.bytes);
     const auto memory = resolve_(selected->copy.address, selected->copy.bytes);
     if (!std::ranges::equal(memory, selected->bytes))
         throw std::runtime_error("VI selected a CPU-modified XFB; RAM upload is not implemented");

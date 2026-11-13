@@ -4,6 +4,11 @@ The targets are 60 FPS (16.67 ms per displayed frame) and a smooth 30 FPS option
 (33.33 ms). Neither target is certified. A presentation limit alone does not prove
 correct game speed or audio synchronization.
 
+Frame-rate selection and experimental performance optimizations are separate
+settings. The 30/60 FPS selector remains deferred until both modes preserve the
+original logic cadence and audio tempo. A performance drop must be diagnosed at
+its source; lowering a frame cap is not a fix for game slowdown.
+
 ## Measurements
 
 Hardware: Acer Nitro AN515-55, Intel i5-10300H, NVIDIA RTX 3050 Laptop GPU, Bazzite,
@@ -533,9 +538,68 @@ Evidence: `stage40-town-correlation.json`, `stage40-host-correlation.json`,
 `stage40-host-audio.log`, `stage40-audio-profile-game.log`, and the corresponding
 scene captures in `build-logs/`. PCM and decoded references stay under ignored
 `local/`. The trace changes were removed from the source after measurement;
-they were never published to the launcher. The published build remains the
-Stage 39 build identified above. The remaining display-copy GPU readback and
-frame submission scheduling are the next pacing targets.
+they were never published to the launcher. At this stage, the published build
+remained the Stage 39 build identified above. Display-copy GPU readback and
+frame submission scheduling were the next pacing targets.
+
+## Direct GPU display copies (2026-11-13)
+
+Experimental performance mode now also keeps display copies on the GPU until
+VI selects them. Normal presentation no longer downloads a full YUYV image to
+guest RAM first. Each destination retains its own GPU image and generation;
+post-copy EFB clears do not change a previously copied image. CPU invalidation,
+RAM-consuming graphics commands and disabling this path materialize pending
+XFB bytes. Replacing the same complete XFB retires the obsolete image without
+downloading it. Different overlapping layouts use the synchronous fallback.
+
+The same-process Quilty Square comparison kept GPU-resident **textures** enabled
+throughout and toggled only resident **display** copies. It used a hidden window,
+connected virtual PAD, muted output and VSync off. Each interval followed two
+seconds of settling and sampled VI submissions for ten seconds:
+
+| Display copies | VI submissions/s | Median interval | p95 | p99 | Maximum | Readbacks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Synchronous | 54.20 | 17.04 ms | 33.45 ms | 35.26 ms | 37.75 ms | 542 |
+| GPU resident | 59.90 | 16.99 ms | 19.31 ms | 22.44 ms | 34.53 ms | 0 |
+| Synchronous again | 54.40 | 17.03 ms | 33.63 ms | 35.18 ms | 36.70 ms | 544 |
+
+Polling used `/proc/PID/mem` at approximately 1 ms intervals, with no debugger
+stops during sampling and no missed counter increments. The first partial
+interval was discarded. These results support reduced submission stalls in this
+scene; they do not certify visible 60 FPS, original gameplay speed, physical
+audio output or Legion Go performance. Outliers remain. Evidence is in ignored
+`build-logs/stage41-frame-periods.json`, `stage41-benchmark.log` and
+`stage41-toggle-{0,1,2}.log`.
+
+The GPU regression first failed at the new no-readback assertion, then passed
+415 checks after implementation. Coverage includes independent destinations,
+pre/post-clear pixels, RAM invalidation through aliases, complete replacement,
+overlapping-view fallback, unexpected CPU writes and alias-boundary wrapping.
+The candidate also passed 42 Python tests and 21 CTest targets, including native
+startup with the option enabled. Logs: `stage41-display-{red,final}.log`,
+`stage41-final-build.log`, `stage41-python.log` and `stage41-ctest.log`.
+
+With the option enabled from startup, an isolated save reached Quilty Square,
+Grass Land and Fountain Gardens. Virtual PAD input moved Kirby from
+`(15.85,20.925)` to `(18.61,20.925)` right and `(16.13,20.925)` left; jumping reached
+`(16.056,23.000)` and changed player state from 1 to 2. Captures explicitly
+materialized XFB RAM once, outside measurements. Evidence: `stage41-startup*`,
+`stage41-grassland*`, `stage41-door*`, `stage41-fountain*` and `stage41-player.json`.
+This does not validate a physical controller or complete the level.
+
+The launcher now starts the verified candidate, compared byte-for-byte after
+publication. Build ID: `6bce22b6758614369d77702c5565692f6e697097`;
+SHA-256: `288aeabc66ec1e7d0534a602a166040f081f02ca1a7a8fe6e4f8cc82cb8c9b10`.
+The launcher binary itself is unchanged. Existing saved experimental-mode
+selection applies on the next game launch. The ordinary save hash stayed
+`fc034a13879ec25699424fb95758b4e32ee8ef4861083bbe5814a7553dc1767e`.
+Publication commands and results are in `stage41-publish-{configure,build}.log`.
+
+The existing CPU-consumer limitation remains: raw CPU reads, uncached accesses
+and external DMA are not intercepted. CPU-modified XFB upload remains unsupported
+and fails explicitly. Full-game compatibility and visible pacing need further
+validation; the option remains experimental and defaults off. This change does
+not alter the guest timebase, audio rate or introduce a 30/60 FPS selector.
 
 ## Reproduce checks
 

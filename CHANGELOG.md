@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Present GPU-resident display copies directly in experimental performance mode,
+  with on-demand XFB RAM materialization and a synchronous overlapping-view fallback.
+- Keep frame-rate selection separate from performance optimization; validated
+  30/60 FPS modes remain pending.
 - Add an opt-in **Experimental performance mode** to the launcher and native
   `--gpu-resident-copies` argument. Copied textures stay on the GPU until CPU
   invalidation or a RAM-consuming graphics command requires their bytes.
