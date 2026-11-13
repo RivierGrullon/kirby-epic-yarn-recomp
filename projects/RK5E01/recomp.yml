@@ -1,0 +1,41 @@
+schema_version: 1
+workspace_root: ../..
+
+project:
+  id: kirby-rk5e01-rev0
+  display_name: "Kirby's Epic Yarn (USA, Rev 0)"
+  game_id: RK5E01
+  region: E
+
+# MEM1 translation window, checked against the DOL sections and BSS.
+# This does not establish Kirby's runtime MEM2 or arena requirements.
+memory:
+  base: 0x80000000
+  size: 0x01800000
+  sda_base: 0x808E73E0
+  sda2_base: 0x808EE8E0
+
+inputs:
+  dol:
+    path: disc/DATA/sys/main.dol
+    sha256: a73cd2f5b1768268451aa28efa649bcf95461b25a481fc4b6cd053c941cf9079
+
+translation:
+  entry_points:
+    - 0x80004050
+  function_map:
+    path: local/RK5E01-functions.txt
+  allow_unsupported_instructions: false
+
+# Only audited Kirby overrides are indexed; other games' hook addresses are excluded.
+runtime:
+  native_registration_root: runtime/native-src
+  native_index: local/native-index.json
+  native_abi_directories: []
+
+output:
+  root: generated
+  functions: functions
+  runtime_config: RuntimeConfig.h
+  data_initializer: data_sections_init.cpp
+  base_manifest: base/base_manifest.json

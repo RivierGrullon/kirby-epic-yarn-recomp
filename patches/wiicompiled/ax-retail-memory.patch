@@ -1,0 +1,66 @@
+--- a/runtime/src/hle/audio/ax_internal.h
++++ b/runtime/src/hle/audio/ax_internal.h
+@@ -56,6 +56,7 @@
+ // alias is never reprotected.
+ extern std::atomic<uint8_t*> g_mixMem1;
+ extern std::atomic<uint8_t*> g_mixMem2;
++extern std::atomic<uint32_t> g_mixMem2Bytes;
+ 
+ // True only on the mix worker thread. Guest-thread callers keep the exact
+ // fallback behaviour they had before (Memory::Read*/Write*, which materializes
+@@ -77,7 +78,7 @@
+     }
+ 
+     constexpr uint32_t kMem1Size = static_cast<uint32_t>(Memory::kMem1Size);
+-    constexpr uint32_t kMem2Size = static_cast<uint32_t>(Memory::kMem2Size);
++    const uint32_t kMem2Size = g_mixMem2Bytes.load(std::memory_order_relaxed);
+ 
+     uint32_t offset = 0;
+     bool inMem1 = false;
+--- a/runtime/src/hle/audio/ax_memory.cpp
++++ b/runtime/src/hle/audio/ax_memory.cpp
+@@ -26,6 +26,7 @@
+ // invariant they preserve is documented there.
+ std::atomic<uint8_t*> g_mixMem1{nullptr};
+ std::atomic<uint8_t*> g_mixMem2{nullptr};
++std::atomic<uint32_t> g_mixMem2Bytes{0};
+ 
+ thread_local bool t_onMixWorker = false;
+ 
+@@ -45,14 +46,23 @@
+ void RefreshMixMemoryMap() {
+     uint8_t* mem1 = nullptr;
+     uint8_t* mem2 = nullptr;
++    uint32_t mem2Bytes = 0;
+     if (Memory::Contains(Memory::kMem1CachedBase, Memory::kMem1Size)) {
+         mem1 = Memory::GetPointer(Memory::kMem1CachedBase, Memory::kMem1Size);
+     }
+-    if (Memory::Contains(Memory::kMem2CachedBase, Memory::kMem2Size)) {
+-        mem2 = Memory::GetPointer(Memory::kMem2CachedBase, Memory::kMem2Size);
++    // Retail titles may map 64 MiB even when the runtime's NDEV limit is 128 MiB.
++    // Resolve the configured extent and retain it for every worker-side bounds check.
++    for (const auto& region : Memory::DescribeRegions()) {
++        if (region.baseAddress == Memory::kMem2CachedBase && region.sizeBytes &&
++            region.sizeBytes <= Memory::kMem2Size && Memory::Contains(region.baseAddress, region.sizeBytes)) {
++            mem2 = Memory::GetPointer(region.baseAddress, region.sizeBytes);
++            mem2Bytes = static_cast<uint32_t>(region.sizeBytes);
++            break;
++        }
+     }
+     g_mixMem1.store(mem1, std::memory_order_relaxed);
+     g_mixMem2.store(mem2, std::memory_order_relaxed);
++    g_mixMem2Bytes.store(mem2Bytes, std::memory_order_relaxed);
+ }
+ 
+ uint32_t ReadGuestU32OrZero(uint32_t addr) {
+@@ -133,7 +143,9 @@
+ 
+ AramAliases AramAliasesFor(uint32_t addr) {
+     if (addr & 0x10000000u) {
+-        const uint32_t exramOffset = addr & static_cast<uint32_t>(Memory::kMem2Size - 1u);
++        const uint32_t size = g_mixMem2Bytes.load(std::memory_order_relaxed);
++        if (!size) return {UINT32_MAX, UINT32_MAX};
++        const uint32_t exramOffset = addr & (size - 1u);
+         return {0x10000000u | exramOffset, 0x90000000u | exramOffset};
+     }
+     const uint32_t ramOffset = addr & 0x01ffffffu;

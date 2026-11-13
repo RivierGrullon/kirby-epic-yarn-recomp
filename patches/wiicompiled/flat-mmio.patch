@@ -1,0 +1,17 @@
+--- a/runtime/include/guest_abi/memory_access.h
++++ b/runtime/include/guest_abi/memory_access.h
+@@ -539,6 +539,14 @@
+ 
+ template <typename T>
+ MKW_MEMORY_FORCE_INLINE T FlatLoad(uint32_t address) {
++    // Kirby's Linux bootstrap does not materialize MMIO pages in a fault
++    // handler. Dynamic register reads must reach the stateful device model.
++    if (IsMmioAddress(address)) [[unlikely]] {
++        if constexpr (sizeof(T) == 1) return static_cast<T>(Read8Slow(address));
++        if constexpr (sizeof(T) == 2) return static_cast<T>(Read16Slow(address));
++        if constexpr (sizeof(T) == 4) return static_cast<T>(Read32Slow(address));
++        if constexpr (sizeof(T) == 8) return static_cast<T>(Read64Slow(address));
++    }
+     T value{};
+     std::memcpy(&value, MKW_FLAT_GUEST_BASE + address, sizeof(T));
+     return MaybeByteSwap(value);

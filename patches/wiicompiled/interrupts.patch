@@ -1,0 +1,40 @@
+--- a/runtime/src/memory.cpp
++++ b/runtime/src/memory.cpp
+@@ -1,4 +1,5 @@
+ #include "memory.h"
++#include "kirby_interrupts.h"
+ #include "hle/hollywood_gpio.h"
+ 
+ #include <algorithm>
+@@ -635,6 +636,7 @@
+ }
+ 
+ uint16_t MemoryInline::Read16Slow(uint32_t addr) {
++    if (uint16_t value = 0; KirbyMmioRead16(addr, value)) return value;
+     if (IsMmioAddress(addr)) {
+         ThrowMmioReadBlocked(addr, sizeof(uint16_t));
+     }
+@@ -643,6 +645,7 @@
+ }
+ 
+ uint32_t MemoryInline::Read32Slow(uint32_t addr) {
++    if (uint32_t value = 0; KirbyMmioRead32(addr, value)) return value;
+     if (IsMmioAddress(addr)) {
+         if (uint32_t value = 0; HollywoodGpio_Read32(addr, value)) {
+             return value;
+@@ -696,6 +699,7 @@
+ }
+ 
+ void MemoryInline::Write16Slow(uint32_t addr, uint16_t val) {
++    if (KirbyMmioWrite16(addr, val)) return;
+     if (IsGpuFifoAddress(addr)) {
+         GX_HLE_FIFO_Write16(val);
+         return;
+@@ -707,6 +711,7 @@
+ }
+ 
+ void MemoryInline::Write32Slow(uint32_t addr, uint32_t val) {
++    if (KirbyMmioWrite32(addr, val)) return;
+     if (IsGpuFifoAddress(addr)) {
+         GX_HLE_FIFO_Write32(val);
+         return;

@@ -1,0 +1,68 @@
+--- a/aurora/lib/gfx/readback/copy_layout.hpp
++++ b/aurora/lib/gfx/readback/copy_layout.hpp
+@@ -11,6 +11,7 @@
+   Bpp4 = 0,  // 8x8 texel tiles, two texels per byte (first texel in the high nibble)
+   Bpp8 = 1,  // 8x4 texel tiles, one byte per texel
+   Bpp16 = 2, // 4x4 texel tiles, two big-endian bytes per texel
++  LinearYuyv = 4, // two horizontal pixels per four-byte word
+   Bpp32 = 3, // 4x4 texel tiles split into an AR block followed by a GB block
+ };
+ 
+@@ -21,6 +22,7 @@
+   PairAR = 3,       // byte0 = a, byte1 = r (IA8/RA8/RG8/GB8/Z16/Z16L slot layout)
+   RGB565 = 4,       //
+   RGB5A3 = 5,       //
++  Yuyv = 7,        // Y0, U, Y1, V in linear scanline order
+   RGBA8 = 6,        // AR, then GB
+ };
+ 
+@@ -33,8 +35,13 @@
+   bool rawColor;
+ };
+ 
++// Readback-only identifier; never written to guest GX texture registers.
++inline constexpr uint32_t XfbYuyv = 0x100;
++
+ constexpr std::optional<Format> format_info(uint32_t fmt) noexcept {
+   switch (fmt) {
++  case XfbYuyv:
++    return Format{Family::LinearYuyv, Encoding::Yuyv, 2, 1, 4, true};
+   case GX_TF_I4:
+   case GX_CTF_R4:
+   case GX_CTF_Z4:
+--- a/aurora/lib/gfx/readback/copy_pack.cpp
++++ b/aurora/lib/gfx/readback/copy_pack.cpp
+@@ -121,10 +121,33 @@
+     }
+ }
+ 
++// Match the CPU XFB encoder's two quantization steps, including rounding.
++fn xfb_channel(numerator: i32, denominator: i32) -> u32 {
++    let value = (numerator + denominator / 2) / denominator;
++    return u32(clamp((value * 255 + 128) / 256, 0, 255));
++}
++
++fn pack_yuyv(word: u32) -> u32 {
++    let pair = word % params.tilesX;
++    let y = word / params.tilesX;
++    let a = vec3i(load(pair * 2u, y).rgb);
++    let b = vec3i(load(pair * 2u + 1u, y).rgb);
++    let sum = a + b;
++    let y0 = xfb_channel(dot(a, vec3i(66, 129, 25)) + 16 * 255, 255);
++    let y1 = xfb_channel(dot(b, vec3i(66, 129, 25)) + 16 * 255, 255);
++    let u = xfb_channel(dot(sum, vec3i(-38, -74, 112)) + 128 * 510, 510);
++    let v = xfb_channel(dot(sum, vec3i(112, -94, -18)) + 128 * 510, 510);
++    return y0 | (u << 8u) | (y1 << 16u) | (v << 24u);
++}
++
+ @compute @workgroup_size(64, 1, 1)
+ fn cs_main(@builtin(global_invocation_id) id: vec3u, @builtin(num_workgroups) groups: vec3u) {
+     let word = id.y * groups.x * 64u + id.x;
+     if (word >= params.wordCount) {
++        return;
++    }
++    if (params.encoding == 7u) {
++        outWords[params.outWord + word] = pack_yuyv(word);
+         return;
+     }
+     let base = word * 4u;

@@ -1,0 +1,32 @@
+--- a/aurora/lib/gfx/recording.hpp
++++ b/aurora/lib/gfx/recording.hpp
+@@ -67,6 +67,8 @@
+ bool push_encoder_task_from_fifo(EncoderTaskId type, const void* payload, size_t payloadSize);
+ bool queue_draw_sync(uint16_t token, void (*callback)(uint16_t));
+ 
++// Resume hardware EFB contents across host submission/presentation boundaries.
++void preserve_efb_contents();
+ void finish();
+ void begin_color_pass(const ColorPassDescriptor& desc);
+ void end_color_pass();
+--- a/aurora/lib/gfx/recording.cpp
++++ b/aurora/lib/gfx/recording.cpp
+@@ -572,6 +572,18 @@
+   enqueue_op(frame, opIndex);
+ }
+ } // namespace
++
++void preserve_efb_contents() {
++  CHECK(g_recorder.active() && g_recorder.currentRenderPass != UINT32_MAX,
++        "EFB preservation requires an active recording pass");
++  auto& pass = current_render_passes()[g_recorder.currentRenderPass];
++  for (uint32_t i = 0; i < pass.colorAttachmentCount; ++i) {
++    pass.colorAttachments[i].loadOp = wgpu::LoadOp::Load;
++    pass.colorAttachments[i].clear = false;
++  }
++  pass.depthLoadOp = wgpu::LoadOp::Load;
++  pass.clearDepth = false;
++}
+ 
+ namespace detail {
+ 

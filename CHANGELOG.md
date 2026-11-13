@@ -1,0 +1,26 @@
+# Changelog
+
+## Unreleased
+
+- GPU YUYV display-copy packing halves XFB readback bytes and removes the measured
+  CPU color-conversion pass while retaining guest RAM visibility.
+- Game-window FPS counter uses Aurora's completed surface presentations.
+- Hidden startup tests explicitly set volume to zero.
+- Native Linux launcher with revision verification, game launch, master volume,
+  VSync selection, detected controllers and access to saves/logs.
+- Reuse indexed GPU uploads for unchanged RAM, including redundant CP bindings.
+- Launcher smoke/verification tests and native volume argument validation.
+- Fixed silent MEM2 voices: the AX mixer now maps the configured 64 MiB retail
+  extent instead of requiring the runtime's 128 MiB NDEV allocation.
+- README reorganized around playing and known limitations, with focused guides.
+- Live FPS and PCM findings recorded; stable 30/60 FPS and listening/synchronization checks remain unfinished.
+
+## Earlier native bring-up
+
+- Fountain Gardens loading, movement and jumping verified through virtual PAD.
+- Patch Castle completion, save commit and independent progression reload.
+- Standard/PS5/Xbox SDL fixtures and positional Xbox face-button defaults.
+- Host exit handling and corrected audio/SDL destruction order.
+- Boot memory, clocks, SRAM, SI, IOS, disc and NAND support needed by observed gameplay.
+
+Commands and evidence: [bring-up results](docs/bringup.md).

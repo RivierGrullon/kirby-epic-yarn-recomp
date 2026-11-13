@@ -1,0 +1,26 @@
+--- a/runtime/src/ppc_helpers.cpp
++++ b/runtime/src/ppc_helpers.cpp
+@@ -5,6 +5,7 @@
+ #include "memory.h"
+ #include "runtime_log.h"
+ #include "timebase_contract.h"
++#include "kirby_gx_fifo.h"
+ 
+ #include <array>
+ #include <bitset>
+@@ -504,6 +505,7 @@
+         case 268: return PPC_Mftb();
+         case 269: return PPC_Mftbu();
+         case 287: return kBroadwayPvr; // PVR
++        case 921: return Kirby::GraphicsFifo().WritePipeAddress();
+         case 920: return cpu ? cpu->hid2 : 0u;
+         case 1008: return cpu ? cpu->hid0 : 0u;
+         case 1009: return cpu ? cpu->hid1 : 0u;
+@@ -543,6 +545,7 @@
+         case 22: break; // DEC - fallthrough to shadow
+         case 26: if (cpu) cpu->srr0 = value; return;
+         case 27: if (cpu) cpu->srr1 = value; return;
++        case 921: Kirby::GraphicsFifo().SetWritePipeAddress(value); return;
+         case 920: if (cpu) cpu->hid2 = value; return;
+         case 1008: if (cpu) cpu->hid0 = value; return;
+         case 1009: if (cpu) cpu->hid1 = value; return;

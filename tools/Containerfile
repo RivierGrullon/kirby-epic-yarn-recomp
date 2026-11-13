@@ -1,0 +1,11 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0-noble@sha256:e061190275058283f01e04b72556ffe8cbae5fab6dce00f772185687f258a58c
+ENV DEBIAN_FRONTEND=noninteractive DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git python3 clang cmake ninja-build \
+    pkg-config build-essential curl \
+    libx11-dev libxcursor-dev libxi-dev libxrandr-dev libxss-dev libxkbcommon-dev \
+    libwayland-dev wayland-protocols libegl-dev libdrm-dev libgbm-dev \
+    libasound2-dev libpulse-dev libudev-dev libdbus-1-dev libxtst-dev libxfixes-dev \
+    libpipewire-0.3-dev libvulkan-dev libsqlite3-dev libpng-dev libfreetype-dev zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace

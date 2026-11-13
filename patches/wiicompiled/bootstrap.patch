@@ -1,0 +1,78 @@
+--- a/runtime/include/abi_bridge.h
++++ b/runtime/include/abi_bridge.h
+@@ -19,6 +19,8 @@
+ #include <type_traits>
+ 
+ #include "guest_abi/dispatch.h"
++
++bool KirbyAcceptRuntimeRegistration(uint32_t, const char*) noexcept;
+ 
+ void InitializePersistentCpuContext();
+ 
+@@ -46,6 +48,7 @@
+                   void (*rawCpuInvoker)(CpuContext*) = nullptr,
+                   bool mustRemainDynamicallyDispatchable = true)
+     {
++        if (!KirbyAcceptRuntimeRegistration(address, name)) return;
+         TranslatedFunctionInfo info;
+         info.address = address;
+         info.name = name ? name : "";
+@@ -135,6 +138,7 @@
+                   void (*rawCpuInvoker)(CpuContext*) = nullptr,
+                   bool mustRemainDynamicallyDispatchable = true)
+     {
++        if (!KirbyAcceptRuntimeRegistration(address, name)) return;
+         TranslatedFunctionInfo info;
+         info.address = address;
+         info.name = name ? name : "";
+--- a/runtime/src/abi_bridge.cpp
++++ b/runtime/src/abi_bridge.cpp
+@@ -257,7 +257,7 @@
+ }
+ 
+ uint32_t FilterScnRendererPathMaskOption(uint32_t pathMask) noexcept {
+-    return RuntimeGameGraphicsOptions::FilterScnRendererPathMask(pathMask);
++    return pathMask; // No Mario Kart graphics argument rewrites in Kirby.
+ }
+ 
+ void ReportMissingIndirectJumpTarget(uint32_t target, CpuContext* cpu) {
+@@ -329,6 +329,7 @@
+ }
+ 
+ void TranslatedFunctionRegistry::Register(TranslatedFunctionInfo info) {
++    if (info.kind == FunctionKind::Native && !KirbyAcceptRuntimeRegistration(info.address, info.name)) return;
+     std::lock_guard<std::mutex> lock(RegistryMutex());
+     if (RegistryFrozen().load(std::memory_order_acquire)) {
+         RT_LOG(RT_TAG_RUNTIME) << "ERROR: Attempted to register function after registry was finalized: 0x"
+--- a/runtime/src/main.cpp
++++ b/runtime/src/main.cpp
+@@ -1163,12 +1163,8 @@
+     }
+ #endif
+ 
+-    // Guest-space faults are the flat memory interception mechanism (MMIO, deferred EFB reads,
+-    // the executable-write guard, unmapped pages). Resolving one here means resuming the
+-    // faulting instruction, which just returning from the handler does.
+-    if (faultAddress != nullptr && GuestFlat::HandleAccessViolation(faultAddress, isWrite)) {
+-        return;
+-    }
++    // Kirby bring-up reports the first unmapped/MMIO access without
++    // committing a zero-filled page or applying unaudited hardware HLE.
+ 
+     if (g_suppressSehReporting && g_sehJumpTarget) {
+         g_sehLastExceptionCode = static_cast<uint32_t>(sig);
+@@ -1588,3 +1584,14 @@
+     return RuntimeMain(argc, argv);
+ }
+ extern "C" bool g_dynamicAspectRatioEnabled = false;
++
++// Used by the independent Kirby process entry; no renderer is initialized.
++void KirbyInstallDiagnostics() {
++    g_headless = true;
++    g_lastEntryLabel = "Kirby RK5E01 native bootstrap";
++#ifndef _WIN32
++    InstallPosixMemoryFaultHandler();
++#endif
++    std::signal(SIGABRT, AbortSignalHandler);
++    std::set_terminate(TerminateHandler);
++}

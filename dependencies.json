@@ -1,0 +1,23 @@
+{
+  "wiicompiled": {
+    "url": "https://github.com/patchzyy/Wiicompiled.git",
+    "commit": "ffbde831317c2a3fc7841f53e7244db83f024ff2",
+    "license": "GPL-3.0",
+    "submodules": {"aurora-main": "33067e34a17ca680eb961d9e0f3d48ddb22a7d7f"}
+  },
+  "key": {
+    "url": "https://github.com/Swiftshine/key.git",
+    "commit": "7f2a9ab9ad66d8e2f6eac52acc2c01dff0bd03a2",
+    "license": "CC0-1.0"
+  },
+  "wario": {
+    "url": "https://github.com/santiagovalencia109/Wario-Land-Shake-It-Native-PC.git",
+    "commit": "5974bf059d58f946c704c7589b27cb44ef0c10f1",
+    "license": "GPL-3.0"
+  },
+  "paper": {
+    "url": "https://github.com/josiahg2502-glitch/NewSuperPaperBros.git",
+    "commit": "1f961e7db18586655f647f1027eb86ca706088cc",
+    "license": "See upstream component licenses; reference only"
+  }
+}

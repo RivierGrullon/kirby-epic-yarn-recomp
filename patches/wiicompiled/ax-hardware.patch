@@ -1,0 +1,134 @@
+--- a/runtime/src/hle/audio/ax_dsp.h
++++ b/runtime/src/hle/audio/ax_dsp.h
+@@ -6,6 +6,8 @@
+ 
+ namespace AxDspHle {
+ 
++// Hardware mailbox integration: no title-specific globals or direct callbacks.
++void InitHardware(uint32_t verifiedUcodeCrc);
+ void Init();
+ void InitForAXOut(CpuContext* ctx);
+ void Stop();
+--- a/runtime/src/hle/audio/ax_mix.cpp
++++ b/runtime/src/hle/audio/ax_mix.cpp
+@@ -64,15 +64,15 @@
+ 
+     ~AXWii() { ShutdownMixWorker(); }
+ 
+-    void Initialize() {
++    void Initialize(bool hardware = false, uint32_t crc = 0) {
+         // Every entry point that resets or reconfigures mix state joins the
+         // worker first: the mix owns those members outright while it runs.
+         JoinMix();
+         RefreshMixMemoryMap();
+         std::lock_guard<std::mutex> lock(m_mutex);
+         m_mixWorkerEnabled = RuntimeConfigFile::AudioMixWorkerEnabled(true);
+-        MarkDspInitialized();
+-        ResetDspTaskGlobals();
++        m_hardware = hardware;
++        if (!hardware) { MarkDspInitialized(); ResetDspTaskGlobals(); }
+         m_mailState = MailState::WaitingForCmdListSize;
+         m_cmdListSize = 0;
+         m_toDspBusy = false;
+@@ -82,9 +82,18 @@
+         // Both layouts are re-derived from the ucode CRC by ConfigureFromTask;
+         // until one arrives, the PB layout is detected per parameter block and
+         // the command layout is probed per command list.
+-        m_pbLayout = PBLayout::Unknown;
+-        m_commandLayout = AXCommandLayout::Auto;
+-        m_ucodeCrc = 0;
++        m_pbLayout = hardware ? PBLayoutForUCode(crc) : PBLayout::Unknown;
++        m_commandLayout = hardware ? CommandLayoutForUCode(crc) : AXCommandLayout::Auto;
++        m_ucodeCrc = crc;
++        if (hardware && m_pbLayout == PBLayout::Unknown)
++            throw std::runtime_error("Unsupported hardware AX microcode");
++        if (hardware) {
++            m_mixWorkerEnabled = false;
++            m_lastMainVolume = 0x8000;
++            m_lastAuxVolumes.fill(0x8000);
++            for (auto& bus : m_bus) bus.fill(0);
++            for (auto& bus : m_wmBus) bus.fill(0);
++        }
+         m_auxOutCount = 0;
+         m_auxInCount = 0;
+         m_deferredAux = false;
+@@ -254,6 +263,8 @@
+         return layout != AXCommandLayout::Old && layout != AXCommandLayout::NewNoOutputVolume;
+     }
+ 
++    bool m_hardware = false;
++
+     void PushMail(uint32_t mail) {
+         m_cpuMails.push_back(mail);
+     }
+@@ -262,10 +273,14 @@
+         switch (m_mailState) {
+         case MailState::WaitingForCmdListSize:
+             if ((mail & kMailCmdListMask) == kMailCmdList) {
++                if (m_hardware && (!(mail & 0xffffu) || (mail & 0xffffu) > m_cmdList.size()))
++                    throw std::runtime_error("AX command-list size exceeds its buffer");
+                 m_cmdListSize = mail & 0xffffu;
+                 m_mailState = MailState::WaitingForCmdListAddress;
+             } else if ((mail & 0xffff0000u) == kTaskMailToDsp) {
+                 HandleTaskMail(mail);
++            } else if (m_hardware) {
++                throw std::runtime_error("Unsupported AX mailbox command");
+             }
+             break;
+         case MailState::WaitingForCmdListAddress:
+@@ -277,11 +292,13 @@
+             m_cmdListSize = 0;
+             //  yield mail and the deferred resume callback are still raised synchronously at mail time,
+             PushMail(kDspYield);
+-            ++m_deferredResumeCallbacks;
++            if (!m_hardware) ++m_deferredResumeCallbacks;
+             m_mailState = MailState::WaitingForNextTask;
+             break;
+         case MailState::WaitingForNextTask:
+             if ((mail & kMailCmdListMask) == kMailCmdList) {
++                if (m_hardware && (!(mail & 0xffffu) || (mail & 0xffffu) > m_cmdList.size()))
++                    throw std::runtime_error("AX command-list size exceeds its buffer");
+                 m_cmdListSize = mail & 0xffffu;
+                 m_mailState = MailState::WaitingForCmdListAddress;
+             } else {
+@@ -298,14 +315,18 @@
+             m_mailState = MailState::WaitingForCmdListSize;
+             break;
+         case kMailNewUCode:
++            if (m_hardware) throw std::runtime_error("AX microcode replacement is not implemented");
++            [[fallthrough]];
+         case kMailContinue:
+             m_mailState = MailState::WaitingForCmdListSize;
+             break;
+         case kMailReset:
++            if (m_hardware) throw std::runtime_error("AX task reset requires the ROM loader");
+             PushMail(kDspDone);
+             m_mailState = MailState::WaitingForCmdListSize;
+             break;
+         default:
++            if (m_hardware) throw std::runtime_error("Unsupported AX task mailbox command");
+             m_mailState = MailState::WaitingForCmdListSize;
+             break;
+         }
+@@ -342,7 +363,8 @@
+         }
+ 
+         CommandListScan scan{};
+-        ScanCommandList(layout, &scan);
++        const bool valid = ScanCommandList(layout, &scan);
++        if (m_hardware && !valid) throw std::runtime_error("Malformed AX command list");
+         for (uint32_t i = 0; i < scan.outputCommands; ++i) {
+             PushMail(kDspSync);
+         }
+@@ -1458,6 +1480,11 @@
+ 
+ } // namespace
+ 
++void InitHardware(uint32_t verifiedUcodeCrc) {
++    InitAram();
++    Instance().Initialize(true, verifiedUcodeCrc);
++}
++
+ void Init() {
+     InitAram();
+     Instance().Initialize();
