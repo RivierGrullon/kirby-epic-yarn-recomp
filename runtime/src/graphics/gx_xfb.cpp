@@ -119,6 +119,16 @@ void GxRenderer::SetDeferredTextureCopies(bool enabled) {
     if (!enabled) FlushTextureCopies();
     deferredTextureCopies_ = enabled;
 }
+void GxRenderer::FlushTextureCopiesForRange(uint32_t address, uint64_t size) {
+    if (!size || !xfb_ || xfb_->pending.empty()) return;
+    const uint32_t physical=address & 0x1FFFFFFF;
+    // A cache loop can wrap the PPC address space. Complete everything for
+    // spans crossing an alias boundary rather than missing a wrapped overlap.
+    if (size>0x20000000ull-physical || std::ranges::any_of(xfb_->pending,[&](const auto& entry) {
+        return physical<uint64_t(entry.copy.address)+entry.copy.bytes &&
+               entry.copy.address<uint64_t(physical)+size;
+    })) FlushTextureCopies();
+}
 void GxRenderer::CommitTextureCopies() {
     for (const auto& entry : xfb_->pending) {
         const auto& copy = entry.copy;

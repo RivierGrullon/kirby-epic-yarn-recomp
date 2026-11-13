@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add five audited native SDK cache boundaries, preserving register effects and
+  completing overlapping pending GPU copies across guest memory aliases.
+- Add experimental batched texture readback with completion/alias tests. It stays
+  disabled by default: native token fences prevented a measured batching benefit.
 - Reuse packed RGB8-to-RGBA8 GPU copy textures while preserving RAM readback;
   invalidate direct sampling after CPU writes or texture descriptor changes.
 

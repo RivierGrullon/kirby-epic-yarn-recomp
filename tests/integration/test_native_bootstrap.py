@@ -17,6 +17,7 @@ class NativeBootstrapTests(unittest.TestCase):
         self.assertIn("foreign translated override rejected", result.stdout)
         self.assertIn("Kirby translated entry resolved", result.stdout)
         self.assertIn("interrupt restore ABI verified", result.stdout)
+        self.assertIn("native cache boundaries verified", result.stdout)
 
     def test_headless_graphics_stops_before_using_an_uninitialized_render_target(self):
         result = self.invoke("--headless")

@@ -351,6 +351,17 @@ void GpuXfb(bool startHidden = false) {
     renderer.SetDeferredTextureCopies(false);
     Bp(renderer,0x88000000 | (6<<20) | (7<<10) | 7); Bp(renderer,0x94000070);
     renderer.Feed(quad); // restore green for following copy checks
+    renderer.SetDeferredTextureCopies(true);
+    Bp(renderer,0x4A000000 | (7<<10) | 7); Bp(renderer,0x4D000004);
+    Bp(renderer,0x4B000930); Bp(renderer,0x52000063);
+    const auto cacheStart=renderer.Readbacks();
+    renderer.FlushTextureCopiesForRange(0x800125E0,32);
+    renderer.FlushTextureCopiesForRange(0x80012600,0);
+    Check(renderer.Readbacks()==cacheStart,"unrelated or empty CPU cache operations do not force GPU readback");
+    renderer.FlushTextureCopiesForRange(0xC0012600,32);
+    Check(renderer.Readbacks()==cacheStart+1 && memory[0x12600]==255 && memory[0x12620]==255,
+          "CPU cache maintenance on an uncached alias completes the overlapping GPU copy");
+    renderer.SetDeferredTextureCopies(false);
     Bp(renderer,0x49000000); Bp(renderer,0x4A000000 | (7<<10) | 7);
     Bp(renderer,0x4B000050); Bp(renderer,0x4D000002); Bp(renderer,0x52000263);
     Check(memory[0xA00]==255 && memory[0xA01]==0 && memory[0xA20]==255 && memory[0xA21]==0,

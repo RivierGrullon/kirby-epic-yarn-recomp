@@ -14,6 +14,7 @@
 #include "kirby/services/ios_bridge.h"
 #include "kirby/graphics/gx_fifo.h"
 #include "kirby/graphics/gx_renderer.h"
+#include "kirby/graphics/cache.h"
 #include "kirby/app/events.h"
 #include "audio_backend.h"
 #include <memory>
@@ -36,6 +37,13 @@ void KirbyInstallDiagnostics();
 namespace {
 std::atomic<size_t> rejectedRuntimeRegistrations{0};
 std::array<uint8_t, 128> expectedDspInitCode{};
+constexpr std::array cacheHooks{
+    std::pair{KirbyBootConfig::DCInvalidateRange,"KirbyDCInvalidateRange"},
+    std::pair{KirbyBootConfig::DCFlushRange,"KirbyDCFlushRange"},
+    std::pair{KirbyBootConfig::DCStoreRange,"KirbyDCStoreRange"},
+    std::pair{KirbyBootConfig::DCFlushRangeNoSync,"KirbyDCFlushRangeNoSync"},
+    std::pair{KirbyBootConfig::DCStoreRangeNoSync,"KirbyDCStoreRangeNoSync"},
+};
 
 void ForeignNative(CpuContext*) {
     throw std::runtime_error("Foreign native hook executed");
@@ -113,6 +121,8 @@ void DumpIpcRequest() {
 // may take priority over a translated Kirby function. Audited Kirby HLE can be
 // added here once its implementation and ABI have been checked.
 bool KirbyAcceptRuntimeRegistration(uint32_t address, const char* name) noexcept {
+    for (const auto& [expected,label] : cacheHooks)
+        if (address==expected && name && std::strcmp(name,label)==0) return true;
     if (address == KirbyBootConfig::DspBootTask && name && std::strcmp(name, "KirbyDspBootTask") == 0) return true;
     if (Kirby::AcceptWpadRegistration(address, name)) return true;
     if (address == KirbyBootConfig::SelectThread && name && std::strcmp(name, "KirbySelectThread") == 0) return true;
@@ -159,7 +169,9 @@ int main(int argc, char** argv) {
     CpuContextScope cpuScope(&cpu);
     std::unique_ptr<Kirby::GxRenderer> renderer;
     // Release owned audio streams before Aurora tears down SDL globally.
-    struct StackCleanup { ~StackCleanup() { Kirby::ShutdownAx(); Kirby::ShutdownThreadStacks(); } } stackCleanup;
+    struct StackCleanup { ~StackCleanup() {
+        Kirby::ObserveDataCache({}); Kirby::ShutdownAx(); Kirby::ShutdownThreadStacks();
+    } } stackCleanup;
     try {
         const auto* originalEntry = TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::Entry);
         const auto originalInvoker = originalEntry ? originalEntry->rawCpuInvoker : nullptr;
@@ -177,6 +189,11 @@ int main(int argc, char** argv) {
                 FunctionKind::BaseTranslated, false, 0, UINT32_MAX);
         }
         TranslatedFunctionRegistry::Finalize();
+        for (const auto& [address,name] : cacheHooks) {
+            const auto* hook=TranslatedFunctionRegistry::FindByAddressPtr(address);
+            Require(hook && hook->kind==FunctionKind::Native && hook->name==name,
+                    "Audited Kirby cache boundary is missing from the native registry");
+        }
         Kirby::VerifyWpadRegistrations();
         const auto* ios = TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::IosTransport);
         Require(ios && ios->kind == FunctionKind::Native && ios->name == "KirbyIosSubmit",
@@ -202,6 +219,25 @@ int main(int argc, char** argv) {
             Require(cpu.gpr[4] == 0xFFFFFFFFu, "Foreign graphics options modified Kirby's arguments");
             std::cout << "[kirby] foreign native override rejected\n";
             std::cout << "[kirby] foreign translated override rejected\n";
+            for (const auto& [address,name] : cacheHooks) {
+                for (const uint32_t length : {0u,61u}) {
+                    unsigned observed=0;
+                    Kirby::ObserveDataCache([&](uint32_t start,uint64_t size) {
+                        Require(start==0x90000000 && size==64,"Native cache observer range mismatch");
+                        ++observed;
+                    });
+                    cpu.gpr[3]=0x90000003; cpu.gpr[4]=length; cpu.gpr[5]=123;
+                    cpu.ctr=456; cpu.cr=0x01234567; cpu.xer=0x80000000;
+                    InvokeIndirectCpu(address,&cpu);
+                    Require(cpu.gpr[3]==(length ? 0x90000043u : 0x90000003u) &&
+                            cpu.gpr[4]==(length ? 2u : 0u) && cpu.gpr[5]==(length ? 3u : 123u) &&
+                            cpu.ctr==(length ? 0u : 456u) && observed==(length!=0) &&
+                            cpu.cr==(length ? 0x51234567u : 0x31234567u),
+                            "Native cache dispatcher/register contract mismatch");
+                }
+            }
+            Kirby::ObserveDataCache({});
+            std::cout << "[kirby] native cache boundaries verified\n";
             for (const uint32_t initial : {0x12340002u, 0x12348002u}) {
                 for (const uint32_t requested : {0u, 1u, 0xFFFFFFFFu}) {
                     cpu.msr = initial;
@@ -650,6 +686,9 @@ int main(int argc, char** argv) {
                 Kirby::SetWpadWindowActive(true);
             }
             Kirby::Devices().ObserveVideo([&](const auto& output) { renderer->PollVideo(output); });
+            Kirby::ObserveDataCache([&](uint32_t address,uint64_t size) {
+                renderer->FlushTextureCopiesForRange(address,size);
+            });
             Kirby::GraphicsFifo().Configure(ResolveDspMemory, [&](auto bytes) { renderer->Feed(bytes); });
         }
         cpu.pc = mode == "--probe-init" ? KirbyBootConfig::InitRegisters : KirbyBootConfig::Entry;

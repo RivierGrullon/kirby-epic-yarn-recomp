@@ -7,6 +7,8 @@ set_property(SOURCE "${MKW_AURORA_DIR}/lib/webgpu/gpu.cpp"
 set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp" APPEND PROPERTY
     COMPILE_DEFINITIONS main=KirbyLegacyMain)
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/app/main.cpp")
+target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/cache.cpp"
+    "${KIRBY_PROJECT_ROOT}/runtime/native-src/graphics/cache.cpp")
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/devices/ax.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/native-src/devices/dsp.cpp"
     "${KIRBY_PROJECT_ROOT}/tests/integration/ax_probe.cpp"
@@ -192,6 +194,15 @@ target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/threading/
     "${KIRBY_PROJECT_ROOT}/tests/integration/thread_probe.cpp"
     "${KIRBY_PROJECT_ROOT}/tests/integration/controller_probe.cpp")
 target_include_directories(WiiCompiled PRIVATE "${MKW_AURORA_DIR}/lib")
+
+add_executable(kirby_cache_test "${KIRBY_PROJECT_ROOT}/tests/unit/graphics/cache_test.cpp"
+    "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/cache.cpp")
+foreach(address 80663A80 80663AB0 80663AE0 80663B10 80663B40)
+    target_sources(kirby_cache_test PRIVATE "${KIRBY_PROJECT_ROOT}/generated/functions/func_${address}.cpp")
+endforeach()
+target_include_directories(kirby_cache_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_compile_features(kirby_cache_test PRIVATE cxx_std_20)
+add_test(NAME kirby_cache COMMAND kirby_cache_test)
 
 # Only owned targets and the patched upstream runtime need these headers.
 # Generated translation targets keep their existing include paths.

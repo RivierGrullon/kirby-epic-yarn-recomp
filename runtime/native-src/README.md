@@ -56,3 +56,15 @@ The hardware-only mixer adapter does not initialize another game's globals.
 The scheduler also delivers due SDK alarm-queue entries through the original
 `DecrementerExceptionCallback`, preserving its queue and resume behavior. This runs at
 scheduler idle; it is not general DEC emulation or arbitrary-PC preemption.
+
+`graphics/cache.cpp` registers the five audited data-cache range operations:
+`DCInvalidateRange` at `0x80663A80`, `DCFlushRange` at `0x80663AB0`,
+`DCStoreRange` at `0x80663AE0`, and the no-sync flush/store variants at
+`0x80663B10`/`0x80663B40`. `tools/audits/cache.py` verifies the DOL bodies and
+community symbols. Native code preserves their register effects and system-call
+boundary while completing overlapping deferred GPU copies. The `kirby_cache`
+test compares register effects against the locally generated original functions;
+`--verify-bootstrap` also exercises the native registry and range observer.
+Full translation is required after adding these overrides so previously inlined
+cache loops cannot bypass the observer. Deferred GPU copies remain disabled by
+default; these hooks alone do not establish whole-game copy coherence.

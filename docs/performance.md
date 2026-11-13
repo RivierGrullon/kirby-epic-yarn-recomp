@@ -381,12 +381,59 @@ inside a pending RGBA8 destination. The subview regression failed before its
 completion check was added. Evidence is in ignored
 `build-logs/stage37-alias-{red,green}-{build,gpu}.log`.
 
-An isolated native timing attempt ended before completing the enabled interval.
-There is no complete native off/on comparison and no demonstrated gameplay
-speedup for this change. The published executable remains the Stage 36 build
-identified above. Before enabling batching in the game, audit CPU-visible
-completion boundaries, repeat native scene comparisons, and verify gameplay,
-frame pacing and audible output.
+The first isolated native timing attempt ended before completing the enabled
+interval. A subsequent off/on/off run reached Quilty Square, but its capture
+showed a disconnected-controller dialog; it is not a gameplay comparison.
+Repeating with a continuously connected virtual controller measured
+38.71 / 39.25 / 35.20 VI submissions/s over six-second intervals. Readbacks
+remained about 2.00 per presentation in all intervals. The hidden, muted run
+does not establish an improvement, visible pacing or audible quality. Evidence:
+`stage38-connected-rate.json`, `stage38-connected-debugger.log` and
+`stage38-connected-enabled.png` under ignored `build-logs/`.
+
+A breakpoint at the actual pending-copy completion identified a BP `0x48`
+token interrupt before the display copy (`stage38-fence.log`). The current
+completion contract therefore prevents batching in this scene. Removing that
+fence without implementing and auditing CPU visibility would be incorrect.
+The subsequent cache-boundary build below retains synchronous copies by default.
+
+## Audited CPU cache boundaries (2026-11-13)
+
+Kirby's five SDK invalidate/flush/store range functions now have native
+boundaries, pinned by address, symbol, size and SHA-256 in
+`tools/audits/cache.py`. The two anonymous store functions were identified from
+their cache instruction and the corresponding sequence in Swiftshine's
+`src/revolution/OS/OSCache.c`. The boundary retains CR0/SO, GPR3–5, CTR and
+system-call behavior and notifies the renderer using the whole 32-byte cache
+line range. Zero-length requests do not notify it. Address arithmetic retains
+PPC wrapping behavior; an observer handles a wrapped span conservatively.
+
+An overlapping pending GPU copy completes before the cache operation returns.
+Unrelated ranges remain queued. MEM1/MEM2 physical, cached and uncached addresses
+use the same physical-range comparison. This connects the deferred-copy API to
+real guest calls; it does not yet permit dropping the token/finish fences or
+enable deferred copies by default. Unbracketed CPU accesses and other GPU RAM
+consumers still require an audit before broader GPU-resident behavior.
+
+The cache unit test compares 3,360 cases against the five locally translated
+SDK functions, including all byte alignments, zero/nonzero sizes, both SO values,
+and cached/uncached address variants. GPU tests cover nonoverlapping and empty
+ranges plus an overlapping uncached alias. Both regressions were observed to
+fail before implementation. No disc-derived function bodies are checked in;
+the oracle functions remain under ignored `generated/`.
+
+The updated game executable started by the launcher has build ID
+`5dc2db22b192105bf43154bfb2ad5f5710995330` and SHA-256
+`9aebec32349715ebb424bd5420f9c184aed844ced1a05168efd15f156bfebaef`.
+Full translation updated 42 functions; the runtime passed 41 Python integration
+tests, 21 CTest targets (including the cache ABI comparisons), and 383 synthetic
+Vulkan checks. An isolated native run reached Quilty Square with virtual PAD
+connected (`stage38-launcher-scene.png`). The published executable was compared
+byte-for-byte with that candidate. The ordinary save hash remained unchanged.
+Fountain Gardens and audible quality were not rechecked in this build.
+Logs: `stage38-translate.log`, `stage38-native-build-final.log`,
+`stage38-tests.log`, `stage38-ctest.log`, `stage38-range-green.log`, and
+`stage38-launcher-route.log` under ignored `build-logs/`.
 
 ## Reproduce checks
 

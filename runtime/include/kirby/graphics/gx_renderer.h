@@ -25,6 +25,7 @@ public:
     // Call FlushTextureCopies before the CPU reads or writes a deferred destination.
     void SetDeferredTextureCopies(bool enabled);
     void FlushTextureCopies();
+    void FlushTextureCopiesForRange(uint32_t address, uint64_t size);
     uint64_t Readbacks() const { return readbacks_; }
 private:
     struct XfbState;

@@ -12,6 +12,7 @@ import sys
 from audits import scheduler as scheduler_audit
 from audits import wpad as wpad_audit
 from audits import audio as audio_audit
+from audits import cache as cache_audit
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_SHA1 = "f4280a2b0709bfde4132be22e9f7fa8ecfa2a130"
@@ -296,6 +297,7 @@ def prepare(path):
     scheduler = scheduler_audit.audit(dol, by_name, source_symbols, bases[13])
     wpad = wpad_audit.audit(dol, by_name, source_symbols)
     audio = audio_audit.audit(dol, by_name, source_symbols)
+    cache = cache_audit.audit(dol, by_name)
     write_map(entries)
     generated = ROOT / "generated"
     generated.mkdir(exist_ok=True)
@@ -336,6 +338,7 @@ def prepare(path):
         + ''.join(f"inline constexpr uint32_t {name} = 0x{address:08X}u;\n" for name, address in scheduler.items())
         + ''.join(f"inline constexpr uint32_t {name} = 0x{address:08X}u;\n" for name, address in wpad.items())
         + ''.join(f"inline constexpr uint32_t {name} = 0x{address:08X}u;\n" for name, address in audio.items())
+        + ''.join(f"inline constexpr uint32_t {name} = 0x{address:08X}u;\n" for name, address in cache.items())
         + ''.join(f"inline constexpr uint32_t {name} = 0x{address:08X}u;\n" for name, address in dvd_addresses.items())
         + ''.join(f"inline constexpr uint32_t {name} = 0x{address:08X}u;\n" for name, address in stm_globals.items()) +
         f"inline constexpr uint32_t InterruptInit = 0x{by_name['__OSInterruptInit'][0]:08X}u;\n"
