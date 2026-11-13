@@ -63,3 +63,28 @@ instructions does not remove those synchronization costs. The existing boot work
 made gameplay observable, but synthetic correctness checks did not establish frame
 pacing or audible sound. Performance and audio now need measured end-to-end checks;
 adding more neutral controller captures would not address either report.
+
+## NSMBWiicompiled review (2026-11-13)
+
+Reviewed [ral1009/NSMBWiicompiled at
+0c01832a26aa2559ffd6b6ca489decf22f05c306](https://github.com/ral1009/NSMBWiicompiled/tree/0c01832a26aa2559ffd6b6ca489decf22f05c306).
+The checkout is a local reference, not a new dependency. No NSMB executable or
+game data was built or benchmarked here. Its README targets Windows and lists
+Linux support as future work. Its 120/180 FPS modes interpolate between game
+updates at 60 Hz; those figures are not evidence of 120/180 logic updates or of
+Kirby performance. Its shader preload covers World 1, with first-use compilation
+still possible elsewhere.
+
+| Source | Finding | Kirby integration boundary |
+| --- | --- | --- |
+| `projects/nsmbw/native/nsmbw_gx_overrides.cpp` | Rebinds shared native GX implementations to NSMB SDK functions and retains guest dirty-state handling around display lists. | A useful direction for reducing translated SDK work. Kirby currently consumes hardware FIFO packets; each replacement needs an RK5E01 address and state-coherence audit. |
+| `projects/nsmbw/native/nsmbw_gx_texcopy_overrides.cpp` and `runtime/src/hle/gx/gx_copy.cpp` | Adapts display and texture copy setters together because they share BP registers. Keeps most copies on the GPU and canonicalizes cached/physical RAM aliases. | Kirby already has experimental resident copies. Preserve its RAM visibility checks; importing only one NSMB copy hook would break the shared state contract. |
+| `runtime/src/hle/gx/gx_texture_binding_contract.h` | A texture object's guest address alone is insufficient identity. Sampler, layout, palette and upload changes determine whether the native binding can be reused. | Retain every relevant descriptor field and source-byte validation in Kirby's texture cache. Investigate working-set eviction before replacing that correctness contract. |
+| `runtime/src/hle/vi.cpp` | Measures frame production separately from render-worker waits and counts retraces per produced frame. Late frames avoid an additional wait for the next boundary. | Compare these costs in Kirby before changing pacing. Kirby's guest VI interrupts and XFB selection remain authoritative; the NSMB presentation/interpolation loop cannot be copied wholesale. |
+| `projects/nsmbw/native/nsmbw_ax_overrides.cpp` and `nsmbw_sound_volumes.cpp` | Native AX setup plus archive-validated player categories for volume control. | Archive and structure validation are reusable methods. NSMB sound-manager addresses, offsets and player-category numbers are not Kirby values. |
+| `docs/BUILDING.md` and `runtime/src/product/` | Local disc import, portable user data, configurable inputs and packaged pipeline/texture preload resources. | Useful launcher and packaging references. Keep game-derived files local; generated shaders depend on the renderer and pipeline state and are separate from compiling translated C++. |
+
+The root license is GPL-3.0; Aurora has its own MIT license and third-party
+notices. This review imports no source. Any later source reuse must preserve
+the applicable license and attribution. NSMB PAL addresses, REL modules,
+small-data bases and memory layouts must never be treated as RK5E01 defaults.
