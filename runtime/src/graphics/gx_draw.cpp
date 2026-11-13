@@ -22,12 +22,16 @@ struct GxRenderer::TextureState {
         std::vector<uint8_t> bytes, palette;
         uint32_t id = 0, paletteId = 0, version = 0;
         uint64_t used = 0;
+        uint64_t validatedEpoch = 0;
     };
     // At most 128 MiB of texture snapshots plus 512 KiB of palette snapshots.
     // Reuse object IDs when evicting so Aurora's object cache stays bounded too.
     std::array<Entry,16> entries;
     uint64_t sequence = 0;
 };
+void GxRenderer::InvalidateTextureValidation() {
+    if (++textureValidationEpoch_ == 0) throw std::runtime_error("Texture validation epoch overflow");
+}
 void GxRenderer::CacheTextureBinding(unsigned slot,std::span<const uint8_t> memory) {
     using namespace aurora::gx;
     auto& texture=g_gxState.loadedTextures[slot];
@@ -60,13 +64,18 @@ void GxRenderer::CacheTextureBinding(unsigned slot,std::span<const uint8_t> memo
         GXInitTlutObj(&object,palette->data,palette->format,palette->numEntries);
         entry.paletteId=reinterpret_cast<const GXTlutObj_*>(&object)->tlutObjId;
     }
-    if (entry.key!=key || !std::ranges::equal(memory,entry.bytes) || !std::ranges::equal(paletteBytes,entry.palette)) {
+    const bool validated = textureBatchValidation_ && entry.key == key &&
+                           entry.validatedEpoch == textureValidationEpoch_;
+    if (!validated) textureValidationBytes_ += memory.size() + paletteBytes.size();
+    if (!validated && (entry.key!=key || !std::ranges::equal(memory,entry.bytes) ||
+                       !std::ranges::equal(paletteBytes,entry.palette))) {
         entry.key=key;
         entry.bytes.assign(memory.begin(),memory.end());
         entry.palette.assign(paletteBytes.begin(),paletteBytes.end());
         if (++entry.version==0) throw std::runtime_error("Texture snapshot version overflow");
         g_gxState.dirty |= DirtyTextures;
     }
+    entry.validatedEpoch=textureValidationEpoch_;
     entry.used=++cache.sequence;
     texture.texObjId=entry.id;
     texture.texDataVersion=entry.version;
@@ -88,6 +97,7 @@ void GxRenderer::LoadPalette(uint32_t value) {
     const auto memory = resolve_(source, size);
     if (memory.size() != size) throw std::runtime_error("GX palette source lies outside guest RAM");
     if (paletteMemory_.empty()) { paletteMemory_.resize(0x80000); paletteValid_.resize(0x80000); }
+    InvalidateTextureValidation();
     std::copy(memory.begin(), memory.end(), paletteMemory_.begin()+destination);
     std::fill_n(paletteValid_.begin()+destination, size, 1);
     fifo::handle_bp(value);
@@ -185,8 +195,8 @@ void GxRenderer::Draw(std::span<const uint8_t> bytes) {
         if (memory.size() != size) throw std::runtime_error("GX sampled texture lies outside guest RAM");
         ValidateCopyTexture(address,texture.format(),texture.width(),texture.height(),texture.mip_count(),size);
         texture.data = memory.data();
-        // Supply stable, versioned Aurora identities only after checking every
-        // source byte. Raw CPU edits remain visible without a BP rebind or flush.
+        // Validate once per synchronous batch, and again after renderer RAM or
+        // palette writes. Raw CPU edits are checked when the next batch arrives.
         CacheTextureBinding(i,memory);
     }
     const auto result = fifo::process(bytes.data(), bytes.size());

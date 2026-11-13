@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Validate texture bytes once per synchronous GX batch, rechecking after renderer
+  RAM writes and palette reloads. This reduces repeated validation within display
+  lists while retaining raw CPU change detection between batches.
 - Reuse Aurora texture identities after exact source-byte validation, reducing
   repeated texture hashing while preserving raw CPU edits and palette changes.
 - Present GPU-resident display copies directly in experimental performance mode,

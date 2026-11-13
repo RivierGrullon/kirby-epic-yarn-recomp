@@ -701,6 +701,84 @@ capture timings and export checks are in ignored `build-logs/stage44-record-*`
 and `stage44-export-*`; recordings remain outside Git. The tower's performance
 limitations documented above still apply.
 
+## Synchronous batch validation (2026-11-13)
+
+The NSMBWiicompiled source review reinforced the need to preserve texture binding
+and copy coherence when removing repeated work (see [references](references.md)).
+The implementation here is specific to Kirby's synchronous FIFO decoder; no NSMB
+source, SDK addresses or memory layouts were imported.
+
+A new 30-sample investigation near the Fountain Gardens tower found the main
+thread comparing texture bytes in 18 samples (15 in `CacheTextureBinding`, three
+in `ValidateCopyTexture`). The render worker was waiting in 29 samples. A separate,
+intrusive 2,000-binding trace found 1,731 repeated pointer/size bindings within the
+same `Feed` call: 373,046,112 of 381,420,928 requested bytes were repeated. This
+trace identifies redundant work, not a timing measurement or a complete cache key.
+
+Guest code does not execute between draws decoded by one synchronous `Feed` call.
+The renderer now reuses byte-validation results within that batch, while still
+matching the full texture/palette descriptor. A new batch, renderer RAM write or
+palette reload invalidates the results. Copied GPU textures follow the same rule.
+The existing exact comparisons remain at each new boundary; raw CPU changes
+between batches do not require a BP rebind or a cache-maintenance instruction.
+This relies on the current single guest execution thread; moving guest execution
+or memory-writing services onto concurrent threads would require revisiting it.
+
+The first display-list regression failed at check 208 before the optimization.
+The final candidate passes 430 Vulkan checks, including repeated display-list
+draws, the per-draw diagnostic baseline, a palette reload inside one batch and a
+GPU readback overwriting texture indices before the next draw in that batch.
+All 21 CTest targets and 42 Python checks passed, including native startup and
+launcher integration. Logs are under ignored `build-logs/stage46-*`.
+
+Same-process off/on/off measurements used the Acer/RTX 3050 host, resident copies,
+muted audio, no VSync, ten seconds per sample and two seconds of settling. The
+switch controls only batch validation; source snapshots remain enabled throughout.
+
+| Window / scene | Batch validation | VI submissions/s | Median interval | p95 | p99 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Hidden, tower | Off | 24.10 | 39.98 ms | 63.28 ms | 76.36 ms |
+| Hidden, tower | On | 58.70 | 16.97 ms | 19.31 ms | 33.74 ms |
+| Hidden, tower | Off again | 24.30 | 39.98 ms | 61.22 ms | 73.51 ms |
+| Visible, later section-1 position | Off | 30.50 | 32.42 ms | 58.35 ms | 69.81 ms |
+| Visible, later section-1 position | On | 54.10 | 17.13 ms | 33.59 ms | 38.35 ms |
+| Visible, later section-1 position | Off again | 30.30 | 33.42 ms | 52.75 ms | 66.64 ms |
+
+The accepted visible series held Kirby at x=190.103/y=32.425 before and after
+every interval. Stage/resource/section remained `(1,101,1)`. Created pipelines
+stayed at 302 for the hidden series and 320 for the accepted visible series;
+queues stayed empty and no readbacks occurred during these intervals. An earlier
+visible series is excluded: the scene changed, readbacks occurred and new pipelines
+were created after showing the window. Do not compare its changing scene to the tower.
+
+Static texture validation demand fell from about 467 MB to 8.4 MB per submission
+in the hidden series, and from about 356 MB to 12.6 MB in the visible series.
+Matching off/on/off tower framebuffer captures were inspected for visible
+regressions. Later visible captures contain movement and are not an identical-scene
+image comparison.
+These are submission intervals, not compositor frame delivery or audio-rate tests.
+The visible p95 still exceeds 33 ms; stable whole-game 60 FPS is not established.
+The earlier resident-copy CPU visibility limitations remain unchanged.
+
+Local evidence and commands:
+
+```bash
+python3 local/stage46-object-benchmark.py
+python3 local/stage46-visible-warm-benchmark.py
+# Each script requires its isolated native session metadata and verified scene.
+# Results: build-logs/stage46-object-periods.json
+#          build-logs/stage46-visible-warm-periods.json
+```
+
+Raw traces, scene captures and session scripts remain ignored. The optimization
+uses the launcher's existing Experimental performance mode and does not add an
+FPS selector or interpolation.
+
+The tested candidate was installed at `build/native/WiiCompiled` and compared
+byte-for-byte with the executable used above. SHA-256:
+`8c7e0bef9b39f81bb735a10eea2887e0df65ee944a202a5aff67a8f143a74ef2`.
+The launcher uses that executable on its next launch.
+
 ## Reproduce checks
 
 ```bash

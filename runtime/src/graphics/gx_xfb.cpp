@@ -33,7 +33,7 @@ struct GxRenderer::XfbState {
     };
     aurora::gfx::readback::StreamHandle stream = 0;
     std::map<uint32_t, Entry> entries;
-    struct TextureEntry { TextureCopy copy; std::vector<uint8_t> bytes; };
+    struct TextureEntry { TextureCopy copy; std::vector<uint8_t> bytes; uint64_t validatedEpoch = 0; };
     std::map<uint32_t, TextureEntry> textures;
     struct PendingTexture {
         TextureCopy copy;
@@ -366,10 +366,14 @@ void GxRenderer::ValidateCopyTexture(uint32_t address, uint32_t format, uint32_t
     })) FlushTextureCopies();
     const auto it = xfb_->textures.find(address);
     if (it == xfb_->textures.end()) return;
-    const auto& entry = it->second;
+    auto& entry = it->second;
     const auto memory = resolve_(address,entry.copy.bytes);
     if (format == entry.copy.format && width == entry.copy.width && height == entry.copy.height &&
-        mipCount == 1 && std::ranges::equal(memory,entry.bytes)) return;
+        mipCount == 1 && ((textureSnapshotReuse_ && textureBatchValidation_ &&
+                          entry.validatedEpoch == textureValidationEpoch_) || std::ranges::equal(memory,entry.bytes))) {
+        entry.validatedEpoch=textureValidationEpoch_;
+        return;
+    }
     // A guest write or a different interpretation of the RAM invalidates the
     // direct GPU view before Aurora resolves this draw's texture bindings.
     FlushTextureCopies();

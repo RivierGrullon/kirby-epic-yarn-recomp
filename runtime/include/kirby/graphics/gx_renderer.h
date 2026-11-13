@@ -15,7 +15,8 @@ public:
     GxRenderer(const GxRenderer&) = delete;
     GxRenderer& operator=(const GxRenderer&) = delete;
     void OpenWindow(bool startHidden = false, bool vsync = true);
-    void Feed(std::span<const uint8_t> bytes) { stream_.Feed(bytes); }
+    // Guest execution is suspended while this synchronous batch is decoded.
+    void Feed(std::span<const uint8_t> bytes) { InvalidateTextureValidation(); stream_.Feed(bytes); }
     const GxStream& Stream() const { return stream_; }
     uint64_t RegisterWrites() const { return registerWrites_; }
     uint64_t DisplayCopies() const { return displayCopies_; }
@@ -29,14 +30,18 @@ public:
     // VI presents the GPU image; audited CPU consumers materialize XFB RAM on demand.
     void SetGpuResidentDisplayCopies(bool enabled);
     void SetTextureSnapshotReuse(bool enabled) { textureSnapshotReuse_=enabled; }
+    // Diagnostic control for comparing identical scenes with per-draw validation.
+    void SetTextureBatchValidation(bool enabled) { textureBatchValidation_=enabled; InvalidateTextureValidation(); }
     void WritebackTextureCopiesForRange(uint32_t address, uint64_t size);
     void FlushTextureCopies();
     void FlushTextureCopiesForRange(uint32_t address, uint64_t size);
     uint64_t Readbacks() const { return readbacks_; }
+    uint64_t TextureValidationBytes() const { return textureValidationBytes_; }
 private:
     struct XfbState;
     struct TextureState;
     void CacheTextureBinding(unsigned slot, std::span<const uint8_t> memory);
+    void InvalidateTextureValidation();
     void CopyDisplay(uint32_t value);
     void CommitTextureCopies();
     void FlushDisplayCopiesForRange(uint32_t address, uint64_t size);
@@ -66,5 +71,8 @@ private:
     std::array<std::vector<uint8_t>, 21> indexedSnapshots_;
     std::shared_ptr<TextureState> textureState_;
     bool textureSnapshotReuse_ = false;
+    uint64_t textureValidationEpoch_ = 0;
+    uint64_t textureValidationBytes_ = 0;
+    bool textureBatchValidation_ = true;
 };
 }

@@ -28,7 +28,14 @@ GxRenderer::GxRenderer(GxStream::Resolve resolve, WriteMemory write) : resolve_(
         [this](uint32_t address,uint32_t size) {
             FlushTextureCopiesForRange(address,size);
             return resolve_(address,size);
-        }) {}
+        }) {
+    // GPU readbacks can change a later draw's source inside the same batch.
+    // All renderer RAM writes pass through this callback before reaching the guest.
+    if (write_) write_ = [this, write = std::move(write_)](uint32_t address, std::span<const uint8_t> bytes) {
+        InvalidateTextureValidation();
+        write(address, bytes);
+    };
+}
 GxRenderer::~GxRenderer() { if (initialized_) { CloseXfb(); aurora_shutdown(); } }
 void GxRenderer::OpenWindow(bool startHidden, bool vsync) {
     if (initialized_) throw std::runtime_error("Aurora window is already initialized");

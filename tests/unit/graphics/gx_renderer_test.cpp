@@ -151,6 +151,45 @@ void GpuXfb(bool startHidden = false) {
     renderer.Feed(quad);
     Check(aurora::gx::texture_stats().hashedBytes==hashesBeforeRebind,
           "returning to an unchanged texture reuses its content cache identity without hashing again");
+    // A display list runs synchronously: the guest cannot edit RAM between its draws.
+    std::vector<uint8_t> list = quad;
+    list.insert(list.end(),quad.begin(),quad.end());
+    list.resize((list.size()+31)&~size_t(31),0);
+    std::copy(list.begin(),list.end(),memory.begin()+0x20000);
+    const std::array<uint8_t,9> callList{0x40,0,2,0,0,0,0,0,uint8_t(list.size())};
+    const auto validationBeforeList=renderer.TextureValidationBytes();
+    renderer.Feed(callList);
+    Check(renderer.TextureValidationBytes()-validationBeforeList==64,
+          "repeated display-list draws validate texture and palette bytes only once");
+    renderer.SetTextureBatchValidation(false);
+    const auto validationWithoutBatch=renderer.TextureValidationBytes();
+    renderer.Feed(callList);
+    Check(renderer.TextureValidationBytes()-validationWithoutBatch==128,
+          "diagnostic baseline validates each display-list draw independently");
+    renderer.SetTextureBatchValidation(true);
+    auto batchBp = [](std::vector<uint8_t>& batch, uint32_t value) {
+        batch.insert(batch.end(),{0x61,uint8_t(value>>24),uint8_t(value>>16),uint8_t(value>>8),uint8_t(value)});
+    };
+    // Reload the same TMEM palette from a different RAM source within one batch.
+    std::fill_n(memory.begin()+0x540,32,0); memory[0x542]=0xF8;
+    auto paletteBatch=quad;
+    batchBp(paletteBatch,0x6400002A); batchBp(paletteBatch,0x65000400);
+    paletteBatch.insert(paletteBatch.end(),quad.begin(),quad.end());
+    batchBp(paletteBatch,0x4B000080); batchBp(paletteBatch,0x52004803);
+    renderer.Feed(paletteBatch);
+    Check(std::equal(red.begin(),red.end(),memory.begin()+0x1000+2*64+16*2),
+          "palette reload inside a batch invalidates an already validated binding");
+    Bp(renderer,0x64000028); Bp(renderer,0x65000400);
+    // The first copy overwrites CI4 indices with blue YUYV bytes (no index 1).
+    // The second draw must therefore become black without returning to the CPU.
+    auto writeBatch=quad;
+    batchBp(writeBatch,0x4B000020); batchBp(writeBatch,0x52004803);
+    writeBatch.insert(writeBatch.end(),quad.begin(),quad.end());
+    batchBp(writeBatch,0x4B000080); batchBp(writeBatch,0x52004803);
+    renderer.Feed(writeBatch);
+    Check(std::equal(black.begin(),black.end(),memory.begin()+0x1000+2*64+16*2),
+          "renderer RAM writes inside a batch invalidate texture byte validation");
+    std::fill_n(memory.begin()+0x400,32,0x11); renderer.Feed(quad);
     std::fill_n(memory.begin()+0x400,32,0);
     renderer.Feed(quad);
     Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
@@ -272,7 +311,7 @@ void GpuXfb(bool startHidden = false) {
     }
     Check(memory[0x880]==0xCD && memory[0x8BF]==0xCD && memory[0x940]==0xCD,
           "texture-copy row padding and trailing RAM stay untouched");
-    Check(memory[0x8C0]!=0xCD && renderer.TextureCopies()==1 && renderer.DisplayCopies()==14,
+    Check(memory[0x8C0]!=0xCD && renderer.TextureCopies()==1 && renderer.DisplayCopies()==17,
           "second tile row uses guest stride and texture copies do not present");
     Check(!aurora::gx::g_gxState.copyTextures.contains(memory.data()+0x800),
           "texture copies leave RAM authoritative for future sampling and CPU writes");
