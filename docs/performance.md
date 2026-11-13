@@ -681,6 +681,26 @@ SHA-256: `80f6cfd9e5ca9a0eb00c6e82784bae5f5f14cd975c3c6d158b72748b8bf02736`.
 The existing experimental-performance checkbox enables texture snapshots on
 the next launch. Publication logs: `stage43-publish-{configure,build}.log`.
 
+## Window recording validation (2026-11-13)
+
+Two X11 recordings were rejected: captured timestamps clustered in bursts and
+introduced pauses beyond those attributable to the game. The replacement uses
+PipeWire capture of the native Wayland game window, with an isolated game-only
+audio sink and ordinary automated keyboard input. No debugger runs during the
+take. The inspected 35-second source segment contains 2,145 captured frames;
+capture intervals have a 14 ms median, 21 ms p95 and 35 ms maximum, with no gaps
+over 50 ms. These are capture timings, not a whole-game rendering benchmark.
+
+The local MP4 trims source seconds 1–36 and removes the title bar. It contains
+704×528 H.264 video and the same take's AAC audio (mono, 44.1 kHz), with a 35-second
+duration and fast-start metadata. Export samples at 60 frames/s by holding or
+selecting captured frames; it performs no motion interpolation, time stretching,
+pitch adjustment or replacement-audio editing. The file decodes without errors;
+audio measures -24.4 dB mean and -4.7 dB peak. Movement and jump observations,
+capture timings and export checks are in ignored `build-logs/stage44-record-*`
+and `stage44-export-*`; recordings remain outside Git. The tower's performance
+limitations documented above still apply.
+
 ## Reproduce checks
 
 ```bash
