@@ -16,6 +16,7 @@
 #include "kirby/graphics/gx_renderer.h"
 #include "kirby/graphics/cache.h"
 #include "kirby/app/events.h"
+#include "kirby/app/frame_log.h"
 #include "audio_backend.h"
 #include <memory>
 #include "timebase_contract.h"
@@ -141,6 +142,7 @@ int main(int argc, char** argv) {
     float masterVolume = 100;
     bool vsync = true;
     bool gpuResidentCopies = false;
+    std::filesystem::path frameLogPath;
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument = argv[i];
         if (argument == "--volume" && i + 1 < argc) {
@@ -152,6 +154,7 @@ int main(int argc, char** argv) {
             }
         } else if (argument == "--no-vsync") vsync = false;
         else if (argument == "--gpu-resident-copies") gpuResidentCopies = true;
+        else if (argument == "--frame-log" && i + 1 < argc && argv[i+1][0]) frameLogPath=argv[++i];
         else if (argument == "--game-data" && i + 1 < argc) dataRoot = argv[++i];
         else if (argument == "--headless" || argument == "--video" || argument == "--video-hidden" || argument == "--probe-ax-task" || argument == "--probe-thread-fault" || argument == "--probe-threads" || argument == "--probe-wpad" || argument == "--probe-sdl-controller" || argument == "--monitor-controller" || argument == "--probe-video-retrace" || argument == "--verify-bootstrap" || argument == "--probe-init" ||
                  argument == "--probe-alarms" || argument == "--probe-interrupt-init" || argument == "--probe-exi-init" || argument == "--probe-si-init" ||
@@ -159,9 +162,13 @@ int main(int argc, char** argv) {
                  argument == "--probe-audio-clock" || argument == "--probe-dsp-init" ||
                  argument == "--probe-ipc-client" || argument == "--probe-stm-init" || argument == "--probe-system-config" || argument == "--probe-disc" || argument == "--probe-es-metadata" || argument == "--probe-ave") mode = argument;
         else {
-            std::cerr << "Usage: WiiCompiled [--headless|--video|--video-hidden|--probe-alarms|--probe-ax-task|--probe-thread-fault|--probe-threads|--probe-wpad|--probe-sdl-controller|--monitor-controller|--probe-video-retrace|--verify-bootstrap|--probe-init|--probe-interrupt-init|--probe-exi-init|--probe-si-init|--probe-sram-init|--probe-boot-memory|--probe-audio-clock|--probe-dsp-init|--probe-ipc-client|--probe-stm-init|--probe-system-config|--probe-disc|--probe-es-metadata|--probe-ave] [--game-data DATA] [--volume 0..100] [--no-vsync] [--gpu-resident-copies]\n";
+            std::cerr << "Usage: WiiCompiled [--headless|--video|--video-hidden|--probe-alarms|--probe-ax-task|--probe-thread-fault|--probe-threads|--probe-wpad|--probe-sdl-controller|--monitor-controller|--probe-video-retrace|--verify-bootstrap|--probe-init|--probe-interrupt-init|--probe-exi-init|--probe-si-init|--probe-sram-init|--probe-boot-memory|--probe-audio-clock|--probe-dsp-init|--probe-ipc-client|--probe-stm-init|--probe-system-config|--probe-disc|--probe-es-metadata|--probe-ave] [--game-data DATA] [--volume 0..100] [--no-vsync] [--gpu-resident-copies] [--frame-log CSV]\n";
             return 2;
         }
+    }
+    if (!frameLogPath.empty() && mode != "--video" && mode != "--video-hidden") {
+        std::cerr << "--frame-log requires --video or --video-hidden\n";
+        return 2;
     }
 
     KirbyInstallDiagnostics();
@@ -175,6 +182,8 @@ int main(int argc, char** argv) {
         Kirby::ObserveDataCache({}); Kirby::ShutdownAx(); Kirby::ShutdownThreadStacks();
     } } stackCleanup;
     try {
+        std::shared_ptr<Kirby::FrameLog> frameLog;
+        if (!frameLogPath.empty()) frameLog=std::make_shared<Kirby::FrameLog>(frameLogPath);
         const auto* originalEntry = TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::Entry);
         const auto originalInvoker = originalEntry ? originalEntry->rawCpuInvoker : nullptr;
         // Neither native nor handwritten "translated" foreign hooks may win.
@@ -689,6 +698,7 @@ int main(int argc, char** argv) {
                 renderer->SetGpuResidentTextureCopies(gpuResidentCopies);
                 renderer->SetGpuResidentDisplayCopies(gpuResidentCopies);
                 renderer->SetTextureSnapshotReuse(gpuResidentCopies);
+                if (frameLog) renderer->ObservePresentation([frameLog](const auto& sample) { frameLog->Write(sample); });
                 if (gpuResidentCopies) std::cout << "[kirby] experimental GPU-resident texture and display copies enabled\n";
                 Kirby::SetWpadWindowActive(true);
             }

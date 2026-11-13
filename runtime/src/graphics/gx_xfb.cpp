@@ -383,6 +383,9 @@ void GxRenderer::ValidateCopyTexture(uint32_t address, uint32_t format, uint32_t
 
 void GxRenderer::PollVideo(const VideoOutput& output) {
     if (!initialized_ || !xfb_ || !output.enabled || !output.height || !output.address) return;
+    const auto stamp = [this] { return presentationObserver_ ? SDL_GetTicksNS() : uint64_t(0); };
+    FrameMetrics sample{};
+    sample.startNs=stamp();
     const XfbState::Entry* selected = nullptr;
     for (const auto& [address, entry] : xfb_->entries) {
         const auto& c = entry.copy;
@@ -400,8 +403,11 @@ void GxRenderer::PollVideo(const VideoOutput& output) {
     aurora::gx::g_gxState.displayCopyTexture = selected->texture;
     aurora::gx::g_gxState.displayCopyProduced = true;
     aurora::video::set_black(false);
+    sample.sealStartNs=stamp();
     aurora_end_frame();
+    sample.sealEndNs=stamp();
     aurora_wait_for_frame_worker();
+    sample.waitEndNs=stamp();
     const auto now = SDL_GetTicks();
     if (now >= nextTitleUpdate_) {
         char title[128];
@@ -416,6 +422,16 @@ void GxRenderer::PollVideo(const VideoOutput& output) {
     PollHostEvents();
     if (!aurora_begin_frame()) throw std::runtime_error("Aurora could not begin the next video frame");
     aurora::gfx::preserve_efb_contents();
+    if (presentationObserver_) {
+        sample.finishNs=stamp();
+        AuroraPresentTiming timing{};
+        aurora_get_present_timing(&timing);
+        sample.sequence=presentations_; sample.viField=output.field;
+        sample.surfacePresents=timing.totalPresentCount;
+        sample.readbacks=readbacks_; sample.validationBytes=textureValidationBytes_; sample.draws=draws_;
+        sample.queuedPipelines=aurora_get_queued_pipeline_count();
+        presentationObserver_(sample);
+    }
 }
 
 void GxRenderer::CloseXfb() {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 #include "kirby/graphics/gx_stream.h"
+#include "kirby/graphics/frame_metrics.h"
 #include <string>
 #include <memory>
 #include <array>
@@ -23,6 +24,7 @@ public:
     uint64_t TextureCopies() const { return textureCopies_; }
     uint64_t Presentations() const { return presentations_; }
     void PollVideo(const VideoOutput& output);
+    void ObservePresentation(std::function<void(const FrameMetrics&)> observer) { presentationObserver_=std::move(observer); }
     // Call FlushTextureCopies before the CPU reads or writes a deferred destination.
     void SetDeferredTextureCopies(bool enabled);
     // Experimental: cached CPU readers must invalidate before accessing copies.
@@ -74,5 +76,6 @@ private:
     uint64_t textureValidationEpoch_ = 0;
     uint64_t textureValidationBytes_ = 0;
     bool textureBatchValidation_ = true;
+    std::function<void(const FrameMetrics&)> presentationObserver_;
 };
 }

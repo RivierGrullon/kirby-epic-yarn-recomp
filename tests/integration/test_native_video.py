@@ -1,5 +1,6 @@
 """Opt-in native Vulkan checks; require game data and a host graphics session."""
 import os
+import csv
 from pathlib import Path
 import subprocess
 import tempfile
@@ -10,11 +11,14 @@ import unittest
 @unittest.skipUnless(os.environ.get("KIRBY_NATIVE_VIDEO_TEST"),
                      "Set KIRBY_NATIVE_VIDEO_TEST to test the native Vulkan executable")
 class NativeVideoTests(unittest.TestCase):
-    def check_startup_and_exit(self, *arguments):
+    def check_startup_and_exit(self, *arguments, frame_log=False):
         executable = Path(os.environ["KIRBY_NATIVE_VIDEO_TEST"]).resolve()
         data = Path("disc/DATA").resolve()
         with tempfile.TemporaryDirectory(prefix="kirby-native-video-") as directory:
             log_path = Path(directory) / "native.log"
+            metrics_path = Path(directory) / "frames.csv"
+            if frame_log:
+                arguments=(*arguments,"--frame-log",str(metrics_path))
             with log_path.open("wb") as log:
                 process = subprocess.Popen(
                     [str(executable), "--video-hidden", "--volume", "0", "--game-data", str(data), *arguments],
@@ -24,7 +28,12 @@ class NativeVideoTests(unittest.TestCase):
                     milestones = ("WPAD initialized", "verified AXWii task loaded", "first GX draw submitted")
                     while time.monotonic() < deadline:
                         output = log_path.read_text(errors="replace")
-                        if all(milestone in output for milestone in milestones):
+                        # The first CSV row is flushed explicitly. stdout may remain
+                        # buffered after the first presentation, so it is not a clock.
+                        recorded_frame = not frame_log or (
+                            metrics_path.exists() and
+                            len(metrics_path.read_text().splitlines()) > 1)
+                        if all(milestone in output for milestone in milestones) and recorded_frame:
                             break
                         self.assertIsNone(process.poll(), output)
                         time.sleep(0.05)
@@ -45,6 +54,19 @@ class NativeVideoTests(unittest.TestCase):
             self.assertNotIn("[kirby] blocked:", output)
             if "--gpu-resident-copies" in arguments:
                 self.assertIn("experimental GPU-resident texture and display copies enabled", output)
+            if frame_log:
+                with metrics_path.open() as metrics:
+                    rows=[{key:int(value) for key,value in row.items()} for row in csv.DictReader(metrics)]
+                self.assertGreater(len(rows),0)
+                self.assertEqual([row["sequence"] for row in rows],list(range(1,len(rows)+1)))
+                previous=0
+                for row in rows:
+                    stamps=[row[key] for key in ("start_ns","seal_start_ns","seal_end_ns","wait_end_ns","finish_ns")]
+                    self.assertEqual(stamps,sorted(stamps))
+                    self.assertGreaterEqual(stamps[0],previous)
+                    self.assertGreater(stamps[-1],stamps[0])
+                    self.assertGreater(row["draws"],0)
+                    previous=stamps[-1]
 
     def test_sigterm_exits_after_native_video_controller_and_ax_task_startup(self):
         self.check_startup_and_exit()
@@ -54,3 +76,6 @@ class NativeVideoTests(unittest.TestCase):
 
     def test_experimental_performance_mode_starts_and_exits_normally(self):
         self.check_startup_and_exit("--gpu-resident-copies", "--no-vsync")
+
+    def test_frame_log_records_actual_native_presentations(self):
+        self.check_startup_and_exit("--gpu-resident-copies","--no-vsync",frame_log=True)

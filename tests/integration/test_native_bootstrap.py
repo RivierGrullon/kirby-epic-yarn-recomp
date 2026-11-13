@@ -1,5 +1,6 @@
 """Opt-in native integration checks; the executable contains the user's local DOL."""
 import os
+from pathlib import Path
 import subprocess
 import tempfile
 import unittest
@@ -85,6 +86,27 @@ class NativeBootstrapTests(unittest.TestCase):
         result = self.invoke("--invalid-option")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertNotIn("Signal 11", result.stdout + result.stderr)
+
+    def test_frame_log_rejects_non_video_modes_without_creating_a_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/"frames.csv"
+            result=subprocess.run([os.environ["KIRBY_NATIVE_TEST"],"--frame-log",str(path)],
+                                  capture_output=True,text=True,timeout=15)
+            self.assertEqual(result.returncode,2,result.stdout+result.stderr)
+            self.assertIn("--frame-log requires --video or --video-hidden",result.stderr)
+            self.assertFalse(path.exists())
+
+    def test_frame_log_preserves_existing_files_and_symlink_targets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target=Path(directory)/"existing.csv";target.write_bytes(b"preserve this file\n")
+            link=Path(directory)/"linked.csv";link.symlink_to(target)
+            for path in (target,link):
+                with self.subTest(path=path.name):
+                    result=subprocess.run([os.environ["KIRBY_NATIVE_TEST"],"--video-hidden","--frame-log",str(path)],
+                                          cwd=directory,capture_output=True,text=True,timeout=15)
+                    self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+                    self.assertIn("Cannot create frame log",result.stderr)
+                    self.assertEqual(target.read_bytes(),b"preserve this file\n")
 
     def test_invalid_volume_is_rejected_before_startup(self):
         for volume in ("nan", "inf", "-1", "101", "invalid", ""):

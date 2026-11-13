@@ -9,6 +9,77 @@ settings. The 30/60 FPS selector remains deferred until both modes preserve the
 original logic cadence and audio tempo. A performance drop must be diagnosed at
 its source; lowering a frame cap is not a fix for game slowdown.
 
+## Per-frame diagnostics
+
+Use the native executable's optional CSV recorder to separate presentation work
+from the time between submissions:
+
+```bash
+mkdir -p build-logs
+LD_LIBRARY_PATH="$PWD/local/host-libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  build/native/WiiCompiled --video --no-vsync --gpu-resident-copies \
+  --game-data disc/DATA --frame-log build-logs/frames.csv
+```
+
+Choose a new filename for each run. The recorder refuses to overwrite an existing
+file or follow a destination symlink. It requires a video mode and does not change
+pacing, VSync, game clocks or audio. It is a command-line diagnostic, not a launcher
+setting. Exit normally to flush the final rows; a crash can leave a partial row.
+
+Each row describes one newly selected XFB generation submitted by `PollVideo`.
+Timestamps are host-monotonic nanoseconds from SDL initialization:
+
+| Columns / difference | Meaning |
+| --- | --- |
+| `sequence`, `vi_field` | Native submission number and emulated VI field count |
+| `seal_start_ns - start_ns` | XFB selection, pending-copy handling and RAM validation |
+| `seal_end_ns - seal_start_ns` | Aurora frame sealing and queue submission |
+| `wait_end_ns - seal_end_ns` | Waiting for the render worker after submission |
+| `finish_ns - wait_end_ns` | Host events, window-title updates and next-frame preparation |
+| Current `start_ns` minus previous `finish_ns` | Everything between submissions, including guest execution, device polling, scheduler waits and CSV overhead |
+| Consecutive `start_ns` values | Intervals between native VI submissions |
+| `surface_presents` | Cumulative successful Aurora surface presents; not compositor scanout |
+| `readbacks`, `validation_bytes`, `draws` | Cumulative renderer counters; subtract adjacent rows for per-submission demand |
+| `queued_pipelines` | Pending pipeline count at the end of the observed submission |
+
+The worker wait includes host/driver activity; it is not a GPU timestamp query.
+Validation bytes describe requested comparisons, not measured memory bandwidth.
+A zero pipeline queue at sampling time does not exclude work completed earlier in
+the interval. Neither submission nor surface-present counts establish game logic
+speed, audible synchronization or physical display cadence.
+
+Logging is disabled by default. The CSV buffers writes, flushing the first row
+and every 120 submissions. Compare warmed, matching scenes without a debugger or
+concurrent compilation, and account for logging overhead. Discard intervals with
+debugger stops or scene transitions rather than treating them as gameplay stalls.
+
+The initial recorder check captured 599 submissions during host seconds 5–15 of
+a hidden startup run: median interval 16.718 ms, p95 17.437 ms and p99 17.701 ms.
+Mean worker wait was 4.083 ms; there were no additional readbacks. This validates
+the recording path only: it was not a verified Fountain Gardens scene, a visible
+performance test or an audio test. A later debugger-assisted input/capture attempt
+was interrupted and faulted during an inferior call; that portion was rejected.
+Local evidence: `stage47-metrics-frames.csv`, `stage47-startup-metrics.json` and
+`stage47-metrics-start.log` under `build-logs/`.
+
+### Rejected asynchronous presentation experiment
+
+After batch texture validation, 19 of 80 intrusive main-thread stack samples
+landed in the render-worker wait from `PollVideo`. Removing that one wait was
+tested with all readback fences retained. In a fixed visible Fountain Gardens
+section-1 position, synchronous / asynchronous / synchronous runs measured
+59.133 / 57.132 / 59.130 submissions/s. Their p99 intervals were
+33.420 / 35.701 / 32.232 ms. Each phase lasted 15 seconds; position, pipeline count
+and readback count stayed constant. This regressed the visible fixture, so the
+candidate was rejected and the synchronous wait remains in the runtime.
+
+The asynchronous candidate passed 430 synthetic Vulkan checks; that did not
+establish a performance benefit. The hidden comparison varied between baselines
+and was inconclusive. Local evidence: `stage47-stack-samples.json`,
+`stage47-visible-probe-periods.json`, `stage47-async-probe-periods.json` and
+`stage47-async-gpu.log` under `build-logs/`. No asynchronous control was added to
+the launcher.
+
 ## Measurements
 
 Hardware: Acer Nitro AN515-55, Intel i5-10300H, NVIDIA RTX 3050 Laptop GPU, Bazzite,

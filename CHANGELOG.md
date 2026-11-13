@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add optional `--frame-log CSV` diagnostics for native submission intervals,
+  render-worker waits and graphics counters without changing frame pacing.
 - Prepare public source documentation, a native gameplay screenshot, contributor
   guidance, a bug-report form and synthetic tooling CI. No binary release is included.
 - Validate texture bytes once per synchronous GX batch, rechecking after renderer

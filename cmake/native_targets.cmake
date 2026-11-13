@@ -7,6 +7,7 @@ set_property(SOURCE "${MKW_AURORA_DIR}/lib/webgpu/gpu.cpp"
 set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp" APPEND PROPERTY
     COMPILE_DEFINITIONS main=KirbyLegacyMain)
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/app/main.cpp")
+target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/app/frame_log.cpp")
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/cache.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/native-src/graphics/cache.cpp")
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/devices/ax.cpp"
