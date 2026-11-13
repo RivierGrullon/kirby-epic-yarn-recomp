@@ -7,6 +7,7 @@
 | [WarioRecomp](https://github.com/santiagovalencia109/Wario-Land-Shake-It-Native-PC) | Linux build sequence, container approach and CMake flag reference | `vendor/wario/LICENSE` (GPL-3.0) |
 | [NewSuperPaperBros](https://github.com/josiahg2502-glitch/NewSuperPaperBros) | Community symbol retargeting and additional REL input reference | Component licenses in `vendor/paper/wiicompiled/`; reference only |
 | [aurora-wiicompiled](https://github.com/patchzyy/aurora-wiicompiled) | WiiCompiled's pinned graphics/input dependency | `vendor/wiicompiled/aurora-main/LICENSE` (MIT, copyright Luke Street) |
+| [NSMBWiicompiled](https://github.com/ral1009/NSMBWiicompiled/tree/0c01832a26aa2559ffd6b6ca489decf22f05c306) | Native GX binding/copy coherence, presentation instrumentation and public documentation reference; no source imported | Upstream `LICENSE` (GPL-3.0); Aurora retains its MIT license |
 | [Dolphin](https://github.com/dolphin-emu/dolphin/tree/db2afcbdf8f5175a6b8414d9f5e21c978775f651/Source/Core/Core/HW) | Interrupt registers, EXI immediate transfers, absent-device responses, IPL/EUART framing, SRAM layout, VI/SI registers and DI configuration reference | GPL-2.0-or-later; source headers credit the Dolphin Emulator Project |
 
 Exact source commits are recorded in `dependencies.json`. Sources are fetched locally
@@ -20,6 +21,9 @@ dependency fetch does not change their licensing.
 
 No Nintendo game data or C++ generated from the game is part of this repository.
 Kirby and Kirby's Epic Yarn are Nintendo trademarks. This is an independent project.
+Curated documentation screenshots depict locally running gameplay; their original
+game artwork is not covered by this repository's source-code license. Raw captures
+and recordings remain local. See `docs/images/README.md` for screenshot provenance.
 
 The interrupt model and tests are newly written here under GPL-3.0-only. Dolphin was
 used as a behavior reference at revision `db2afcbdf8f5175a6b8414d9f5e21c978775f651`;

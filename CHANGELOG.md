@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Prepare public source documentation, a native gameplay screenshot, contributor
+  guidance, a bug-report form and synthetic tooling CI. No binary release is included.
 - Validate texture bytes once per synchronous GX batch, rechecking after renderer
   RAM writes and palette reloads. This reduces repeated validation within display
   lists while retaining raw CPU change detection between batches.

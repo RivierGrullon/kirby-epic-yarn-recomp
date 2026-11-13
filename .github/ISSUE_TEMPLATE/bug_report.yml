@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a reproducible native runtime, launcher or build issue.
+body:
+  - type: markdown
+    attributes:
+      value: "Use RK5E01 Rev 0. Do not attach game files, generated source, saves or shader caches."
+  - type: input
+    id: revision
+    attributes:
+      label: Commit and game revision
+      placeholder: "Commit hash; RK5E01 Rev 0; DOL hash verified"
+    validations:
+      required: true
+  - type: textarea
+    id: system
+    attributes:
+      label: System and settings
+      description: "Linux version, CPU, GPU, driver, controller, VSync and Experimental performance mode."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: "Include the scene, expected result and actual result."
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs and evidence
+      description: "Relevant excerpts or a screenshot/video. Review logs for personal paths before sharing."

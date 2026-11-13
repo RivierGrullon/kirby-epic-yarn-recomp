@@ -1,105 +1,139 @@
-# kirby
+# Kirby's Epic Yarn Recompiled
 
-A native Linux x86-64 port of **Kirby's Epic Yarn**, built by static recompilation
-with [WiiCompiled](https://github.com/patchzyy/Wiicompiled) and
-[Aurora](https://github.com/patchzyy/aurora-wiicompiled).
+**A native Linux x86-64 port of Kirby's Epic Yarn, built with
+[WiiCompiled](https://github.com/patchzyy/Wiicompiled) and
+[Aurora](https://github.com/patchzyy/aurora-wiicompiled).**
 
-**Development build.** The native game reaches the main menu, completes Patch
-Castle and loads Fountain Gardens. Movement and jumping there have been verified
-with virtual controller input. The MEM2 audio sample mapping is repaired and real
-game PCM is no longer silent. Native audio callback ordering now reaches the expected
-333.33 mixer outputs/s in a hidden Quilty Square test. Physical controls, audio quality/synchronization and
-sustained 30/60 FPS still need validation. See [performance findings](docs/performance.md).
+The Wii executable is translated from PowerPC to C++ and compiled for the host.
+The native runtime uses Vulkan for graphics. Dolphin extracts your disc and serves
+as a behavior reference; it does not run the native game.
+
+![Fountain Gardens running in the native Linux build](docs/images/fountain-gardens.png)
+
+*Fountain Gardens in the development build. A screenshot demonstrates rendering,
+not stable frame pacing or full-game compatibility.*
+
+> [!IMPORTANT]
+> **Development source preview, not a finished release.** The main menu, Patch
+> Castle completion, save reload and Fountain Gardens movement/jumping have been
+> observed. The full game, physical controllers and sustained performance still
+> need validation. There is no ready-to-play binary package.
+>
+> You need your own **USA disc, RK5E01 revision 0**. Game files, generated game
+> code, saves and shader caches are not included. Other revisions are rejected.
+
+[Build from source](docs/building.md) · [Known limitations](#known-limitations) ·
+[Performance](docs/performance.md) · [Contributing](CONTRIBUTING.md) ·
+[Changelog](CHANGELOG.md)
 
 ## Requirements
 
-- Your own extracted **RK5E01 Rev 0, USA** game, including the complete `files/` tree.
-- Expected `sys/main.dol` SHA-1: `f4280a2b0709bfde4132be22e9f7fa8ecfa2a130`.
-- Linux x86-64, a working Vulkan driver and a desktop session.
-- The development build uses Python 3, rootless Podman, Clang, CMake and Ninja.
+- Linux x86-64 with a desktop session and a working Vulkan driver.
+- Your own complete RK5E01 Rev 0 dump, including the extracted `files/` tree.
+- Git, Python 3 and rootless Podman for the build environment.
+- Dolphin's `dolphin-tool` for extraction; 7-Zip for a `.7z` containing a WBFS.
+- Several GB of storage and enough memory to compile the generated C++.
 
-The target device is a Lenovo Legion Go with Bazzite. Current graphics tests ran
-on an Acer Nitro AN515-55 with an NVIDIA RTX 3050 Laptop GPU. Legion Go performance
-and controls have not been validated.
+Expected `sys/main.dol` SHA-1:
+`f4280a2b0709bfde4132be22e9f7fa8ecfa2a130`.
 
-## Start the local build
+The target handheld is a **Lenovo Legion Go with Bazzite**. Current graphics and
+performance measurements were taken on an **Acer Nitro AN515-55 with an RTX 3050
+Laptop GPU**. Legion Go performance has not yet been measured.
 
-After building, open **`build/native/kirby-launcher`**. The native C++ frontend can:
+## Build and play
 
-- Select an extracted DATA folder and verify its revision before starting.
-- Start `WiiCompiled` with a visible game window.
-- Set the master volume for the next launch.
-- Toggle VSync to compare driver presentation behavior.
-- Try **Experimental performance mode** to reduce GPU copy waits and repeated texture processing.
-- Show detected controllers and open saves, logs and the build guide.
+Follow the [build guide](docs/building.md) to fetch the pinned dependencies,
+extract and verify your copy, translate the DOL and compile the runtime.
 
-The launcher uses the toolchain's existing SDL3 and Dear ImGui. Archive extraction,
-toolchain installation, translation, compilation and release packaging are not yet
-integrated into it. Use the [build guide](docs/building.md) for those steps. Keep
-the launcher beside the executable in `build/native/`; this is a source-tree
-launcher, not a portable release.
-
-Experimental performance mode is applied on the next launch and saved with the
-launcher settings. It reduced GPU readbacks in short Quilty Square comparisons;
-Fountain Gardens movement and jumping also passed with virtual input. Whole-game
-compatibility, audible quality and sustained 30/60 FPS remain unverified. Disable
-the option and relaunch to compare with the synchronous copy path.
-This optimization is separate from a frame-rate target. The 30/60 FPS selector
-remains deferred until both modes preserve normal game and audio speed.
+From a completed local build, run:
 
 ```bash
-bash tools/container.sh cmake --build build/native \
-  --target WiiCompiled kirby-launcher --parallel 4
 build/native/kirby-launcher
 ```
 
-For a first build, follow [extraction, verification and building](docs/building.md).
+The launcher can currently:
+
+- Select and verify an extracted DATA folder.
+- Start the native game in a visible window.
+- Set master volume and VSync for the next launch.
+- Enable **Experimental performance mode** to reduce GPU copy waits and repeated
+  texture validation.
+- Display detected controllers and open saves, logs and the build guide.
+
+Settings are saved and applied on the next launch. Archive import, toolchain
+setup, translation and compilation are currently command-line steps. Resolution
+scaling, full input remapping and a validated 30/60 FPS selector are not available
+in the launcher yet.
 
 ## Controls
 
+Current default gamepad mappings:
+
 | Gamepad position | Wii action |
 | --- | --- |
-| D-pad | Movement, with sideways Wii Remote compensation |
-| South / DualSense cross | Wii 2: confirm, jump |
-| East / DualSense circle | Wii 1: yarn action |
-| Start / Options | Plus |
-| Back / Share | Minus |
+| D-pad | Movement |
+| South button / PlayStation Cross | Wii 2: confirm and jump |
+| East button / PlayStation Circle | Wii 1: yarn action |
+| Start / Options | Plus: menu |
+| Back / Share | Minus: map or controls |
 
-Virtual SDL tests cover standard, PS5, Xbox 360 and Xbox One presets, button release
-and unplug while held. The reported physical DualSense nonresponse/reversed D-pad
-behavior remains unresolved. Virtual input does not establish physical gameplay.
+Automated virtual SDL tests cover standard, PS5, Xbox 360 and Xbox One presets,
+release and unplug behavior. Physical DualSense input and directional reports
+still need resolution. These mappings are not a claim that every controller has
+been tested. General keyboard/gamepad rebinding remains future work.
 
-## Current limitations
+## Known limitations
 
-| Area | Verified state |
+| Area | Current status |
 | --- | --- |
-| Native game | Menu, Patch Castle clear, Fountain Gardens movement/jump with virtual PAD |
-| Saves | Creation and independent reload; test progression uses isolated copies |
-| Frame rate | Variable; stable 30/60 FPS modes are not validated |
-| Audio | MEM2 fetch and overdue callback ordering repaired; expected mixer rate measured; listening and synchronization pending |
-| Controllers | Virtual presets pass; physical DualSense and Legion Go need validation |
-| Graphics | Native Vulkan GX/VI; some formats and scaling modes remain unsupported |
-| Shutdown | Startup/SIGTERM exits normally; extended gameplay cleanup is not fully tested |
-| Scheduling | Native IRQ preemption at the audited SDK boundary; arbitrary context replacement remains unsupported |
+| Game progression | Menu, Patch Castle and Fountain Gardens observed; whole-game completion unverified |
+| Performance | Scene dependent; experimental optimizations are available, but stable 30/60 FPS is not guaranteed |
+| Audio | Real game audio plays; long-session quality, tempo and synchronization still need validation |
+| Input | Virtual mappings tested; physical controllers and Legion Go controls need validation |
+| Graphics | Native GX/VI rendering through Aurora; some formats and display modes remain unsupported |
+| Saves | Creation and independent reload verified; broad compatibility testing pending |
+| Distribution | Source-tree build and launcher; no portable installer or public binary release |
 
-The ordinary save is under `local/user/nand/title/00010000/524b3545/data`.
-The game window title shows Aurora's rolling presentation FPS. This counter does
-not certify simulation speed, audio synchronization or stable frame pacing.
-Launcher settings are in `local/user/launcher.cfg`; game output goes to
-`build-logs/launcher-game.log`. Development runs from another working directory
-have separate saves. The launcher does not overwrite or import those copies.
+The window's FPS counter measures Aurora presentations. It does not establish
+correct simulation speed or audio synchronization. See the
+[measurements and test conditions](docs/performance.md) before comparing results.
+
+## Saves and local files
+
+When launched from the repository root:
+
+| Data | Location |
+| --- | --- |
+| Game save | `local/user/nand/title/00010000/524b3545/data/` |
+| Launcher settings | `local/user/launcher.cfg` |
+| Shader cache | `local/user/aurora/` |
+| Launcher game log | `build-logs/launcher-game.log` |
+
+Back up saves before testing development changes. Launching the executable from a
+different working directory uses a different local user directory.
 
 ## Documentation
 
-- [Build and diagnostics](docs/building.md)
-- [Performance and audio](docs/performance.md)
-- [Runtime layout](runtime/README.md)
+- [Building and updating](docs/building.md)
+- [Performance and audio findings](docs/performance.md)
+- [Runtime organization](runtime/README.md)
 - [Reference ports and reuse decisions](docs/references.md)
-- [Detailed bring-up evidence](docs/bringup.md)
-- [Changelog](CHANGELOG.md)
-- [Licenses and attribution](THIRD_PARTY.md)
+- [Bring-up evidence](docs/bringup.md) and [historical diagnostics](docs/diagnostics.md)
+- [Contributing and reporting bugs](CONTRIBUTING.md)
 
-Game files, assets, translated C++, binaries, saves, shader caches and captures stay
-local and outside Git. Authored code is GPL-3.0-only; third-party components retain
-their licenses and notices. This unofficial project is not affiliated with Nintendo
-or Good-Feel.
+## Credits and license
+
+- **Swiftshine/key** — community decompilation, revision information and symbols.
+- **WiiCompiled** — PowerPC translation and shared native runtime.
+- **Aurora** — graphics and host integration.
+- **WarioRecomp**, **New Super Paper Bros.**, **NSMBWiicompiled** and the other
+  [reviewed ports](docs/references.md) — build and runtime references.
+- **Dolphin contributors** — extraction tools and hardware behavior references.
+
+Authored code is **GPL-3.0-only**; dependencies retain their own licenses. See
+[LICENSE](LICENSE) and [third-party attribution](THIRD_PARTY.md).
+Documentation screenshots show the original game running locally; the code
+license does not grant rights to Nintendo's artwork or trademarks.
+
+This is an unofficial project, not affiliated with Nintendo or Good-Feel.
