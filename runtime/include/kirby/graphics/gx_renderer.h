@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include <array>
+#include <bitset>
 #include "kirby/devices/video_si.h"
 
 namespace Kirby {
@@ -39,6 +40,8 @@ public:
     void FlushTextureCopiesForRange(uint32_t address, uint64_t size);
     uint64_t Readbacks() const { return readbacks_; }
     uint64_t TextureValidationBytes() const { return textureValidationBytes_; }
+    uint64_t ShaderAnalyses() const { return shaderAnalyses_; }
+    void SetShaderAnalysisReuse(bool enabled) { shaderAnalysisReuse_=enabled; sampledFormat_=0xFF; }
 private:
     struct XfbState;
     struct TextureState;
@@ -77,5 +80,10 @@ private:
     uint64_t textureValidationBytes_ = 0;
     bool textureBatchValidation_ = true;
     std::function<void(const FrameMetrics&)> presentationObserver_;
+    uint64_t shaderAnalyses_ = 0;
+    uint64_t sampledTexturesEpoch_ = 0;
+    std::bitset<8> sampledTextures_;
+    uint8_t sampledFormat_ = 0xFF, sampledPrimitive_ = 0xFF;
+    bool shaderAnalysisReuse_ = true;
 };
 }

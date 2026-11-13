@@ -158,11 +158,20 @@ void GxRenderer::Draw(std::span<const uint8_t> bytes) {
         array.data = memory.data(); array.size = size; array.le = false;
         offset += indexBytes;
     }
-    PipelineConfig config{};
-    populate_pipeline_config(config, primitive, format);
-    const auto info = build_shader_info(config.shaderConfig);
+    static_assert(MaxTextures == 8);
+    // Reuse only within our synchronous batch. Native GX work between batches
+    // can consume Aurora's dirty flags, so those flags alone are insufficient.
+    if (!shaderAnalysisReuse_ || sampledTexturesEpoch_ != textureValidationEpoch_ ||
+        (state.dirty & DirtyPipeline) || sampledFormat_ != format || sampledPrimitive_ != primitive) {
+        PipelineConfig config{};
+        ++shaderAnalyses_;
+        populate_pipeline_config(config, primitive, format);
+        sampledTextures_=build_shader_info(config.shaderConfig).sampledTextures;
+        sampledTexturesEpoch_=textureValidationEpoch_;
+        sampledFormat_=format; sampledPrimitive_=primitive;
+    }
     for (unsigned i = 0; i < MaxTextures; ++i) {
-        if (!info.sampledTextures.test(i)) continue;
+        if (!sampledTextures_.test(i)) continue;
         auto& texture = state.loadedTextures[i];
         switch (texture.format()) {
         case GX_TF_I4: case GX_TF_I8: case GX_TF_IA4: case GX_TF_IA8:
@@ -204,6 +213,6 @@ void GxRenderer::Draw(std::span<const uint8_t> bytes) {
     if (++draws_ == 1)
         std::cout << "[kirby] first GX draw submitted: vertices="
                   << ((unsigned(bytes[1]) << 8) | bytes[2])
-                  << " sampled textures=" << info.sampledTextures.count() << '\n';
+                  << " sampled textures=" << sampledTextures_.count() << '\n';
 }
 }

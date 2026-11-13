@@ -158,18 +158,43 @@ void GpuXfb(bool startHidden = false) {
     std::copy(list.begin(),list.end(),memory.begin()+0x20000);
     const std::array<uint8_t,9> callList{0x40,0,2,0,0,0,0,0,uint8_t(list.size())};
     const auto validationBeforeList=renderer.TextureValidationBytes();
+    const auto analysesBeforeList=renderer.ShaderAnalyses();
     renderer.Feed(callList);
     Check(renderer.TextureValidationBytes()-validationBeforeList==64,
           "repeated display-list draws validate texture and palette bytes only once");
+    Check(renderer.ShaderAnalyses()-analysesBeforeList==1,
+          "unchanged display-list draws derive their shader texture usage only once");
     renderer.SetTextureBatchValidation(false);
     const auto validationWithoutBatch=renderer.TextureValidationBytes();
     renderer.Feed(callList);
     Check(renderer.TextureValidationBytes()-validationWithoutBatch==128,
           "diagnostic baseline validates each display-list draw independently");
     renderer.SetTextureBatchValidation(true);
+    renderer.SetShaderAnalysisReuse(false);
+    const auto analysesWithoutReuse=renderer.ShaderAnalyses();
+    renderer.Feed(callList);
+    Check(renderer.ShaderAnalyses()-analysesWithoutReuse==2,
+          "diagnostic baseline derives shader texture usage for every draw");
+    renderer.SetShaderAnalysisReuse(true);
     auto batchBp = [](std::vector<uint8_t>& batch, uint32_t value) {
         batch.insert(batch.end(),{0x61,uint8_t(value>>24),uint8_t(value>>16),uint8_t(value>>8),uint8_t(value)});
     };
+    // Change texture usage inside a single batch: the untextured draw must not
+    // hide the new black texture's RAM address from the following textured draw.
+    std::vector<uint8_t> shaderBatch;
+    batchBp(shaderBatch,0x00000000); // no texture coordinates
+    shaderBatch.insert(shaderBatch.end(),quad.begin(),quad.end());
+    batchBp(shaderBatch,0x00000001); // restore texture coordinate 0
+    batchBp(shaderBatch,0x94000022); // unseen black texture at 0x440
+    shaderBatch.insert(shaderBatch.end(),quad.begin(),quad.end());
+    batchBp(shaderBatch,0x4B000080); batchBp(shaderBatch,0x52004803);
+    const auto analysesBeforeChange=renderer.ShaderAnalyses();
+    renderer.Feed(shaderBatch);
+    Check(renderer.ShaderAnalyses()-analysesBeforeChange==2,
+          "pipeline changes inside a batch refresh shader texture usage");
+    Check(std::equal(black.begin(),black.end(),memory.begin()+0x1000+2*64+16*2),
+          "newly enabled texture sampling resolves the new RAM source inside the batch");
+    Bp(renderer,0x94000020); renderer.Feed(quad);
     // Reload the same TMEM palette from a different RAM source within one batch.
     std::fill_n(memory.begin()+0x540,32,0); memory[0x542]=0xF8;
     auto paletteBatch=quad;
@@ -301,6 +326,7 @@ void GpuXfb(bool startHidden = false) {
     Check(std::equal(white.begin(),white.end(),memory.begin()+0x1000+2*64+16*2),
           "consecutive draws with changed indexed RAM keep separate GPU array snapshots");
     // EFB -> tiled RGBA8 RAM with padding between tile rows.
+    const auto displaysBeforeTexture=renderer.DisplayCopies();
     Bp(renderer,0x49000000); Bp(renderer,0x4A000000 | (7<<10) | 7);
     Bp(renderer,0x4B000040); Bp(renderer,0x4D000006);
     Bp(renderer,0x52000063); // RGBA8 target, no EFB clear, clamp both edges
@@ -311,7 +337,7 @@ void GpuXfb(bool startHidden = false) {
     }
     Check(memory[0x880]==0xCD && memory[0x8BF]==0xCD && memory[0x940]==0xCD,
           "texture-copy row padding and trailing RAM stay untouched");
-    Check(memory[0x8C0]!=0xCD && renderer.TextureCopies()==1 && renderer.DisplayCopies()==17,
+    Check(memory[0x8C0]!=0xCD && renderer.TextureCopies()==1 && renderer.DisplayCopies()==displaysBeforeTexture,
           "second tile row uses guest stride and texture copies do not present");
     Check(!aurora::gx::g_gxState.copyTextures.contains(memory.data()+0x800),
           "texture copies leave RAM authoritative for future sampling and CPU writes");

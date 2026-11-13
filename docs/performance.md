@@ -118,6 +118,90 @@ and was inconclusive. Local evidence: `stage47-stack-samples.json`,
 `stage47-async-gpu.log` under `build-logs/`. No asynchronous control was added to
 the launcher.
 
+## Shader texture-usage analysis
+
+Further visible, stationary Fountain Gardens diagnostics used read-only
+`/proc/PID/task/PID/schedstat` and the native presentation counter. During a
+30-second observation, the longest sampled interval consumed 33.797 ms of main
+thread CPU time in 39.779 ms of wall time; run-queue delay was 0.206 ms. The
+pipeline counters stayed at zero queued / 302 created. These 2 ms polls have
+sampling error and overhead; they identify CPU work as a contributor rather than
+certifying display timing. Local evidence: `stage48-cpu-observe.json`.
+
+A separate 20-second `perf` capture at 199 Hz collected 2,755 user-space samples
+from the main thread, with no lost samples. Memory moves accounted for 12.34% of
+samples, comparisons 5.30%, and `populate_pipeline_config` 4.72%. Of the latter's
+130 samples, 121 came from Kirby's per-draw preparation and nine from Aurora's
+cached draw preparation. These percentages describe sampled CPU work, not wall
+time or the frequency of a specific stall.
+
+The renderer now reuses the sampled-texture mask within a synchronous GX batch.
+It derives the mask again when Aurora marks the pipeline dirty, the vertex format
+or primitive changes, the batch ends, or a renderer write advances the validation
+epoch. The batch boundary matters: native GX work outside the decoder can consume
+Aurora's dirty flags, so those flags alone cannot validate this cache. Texture
+contents, palette checks, rendering and presentation synchronization are unchanged.
+This reuses CPU analysis; it does not precompile shaders or skip game frames.
+
+A same-process visible comparison at Fountain Gardens section 1, position
+`(70.119, 24.130)`, used 20-second analysis windows and an independent approximately
+29-second CPU/counter window for each phase:
+
+| Analysis reuse | CPU ms / submission | Analyses / submission | VI submissions/s | p95 interval | p99 interval | Maximum |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Off | 11.168 | 1,893.3 | 58.938 | 17.766 ms | 33.209 ms | 34.297 ms |
+| On | 10.414 | 383.5 | 59.090 | 17.651 ms | 32.544 ms | 67.037 ms |
+| Off again | 11.004 | 1,892.9 | 59.040 | 17.767 ms | 33.074 ms | 34.358 ms |
+
+The CPU cost returned toward baseline when reuse was disabled. Average submission
+rate changed little, and the enabled phase included a 67 ms outlier, so this first
+comparison does not establish smooth delivery. Position remained fixed, there
+were no readbacks, and pipeline counts stayed at zero queued / 302 created.
+
+Because of the outlier, a further on/off comparison used 40-second frame windows
+and approximately 49-second CPU/counter windows in the same process and position:
+
+| Analysis reuse | CPU ms / submission | VI submissions/s | p99 interval | Maximum | Intervals over 25 ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| On | 9.872 | 59.714 | 17.998 ms | 49.454 ms | 8 |
+| Off | 11.165 | 58.964 | 33.084 ms | 82.683 ms | 33 |
+
+Pipeline counts again stayed at zero queued / 302 created, with no additional
+readbacks or position changes. Both comparisons reduced CPU time with reuse;
+the longer one also improved interval delivery. The change is retained, but
+isolated long intervals remain in both modes. This is not stable-60 certification,
+a moving-gameplay test, an audio test or Legion Go performance evidence. Full
+records, including the first enabled run's outlier, are preserved in
+`stage49-shader-comparison.json` and `stage49-shader-repeat.json`.
+
+The retained implementation passes 435 Vulkan checks, including exact pixels after texture usage
+changes inside a batch, 51 Python tests including native integration, and 21 CTest
+targets. A new repeated-draw check first failed against the per-draw implementation.
+The comparison switch and analysis counter are diagnostic C++ interfaces; there
+is no additional launcher setting.
+
+The executable installed for the launcher was compared byte-for-byte with the
+tested candidate. Its SHA-256 is
+`86618897ceecc5c8139de1e8c68018423ec2cc942f427211a47f111c8835cf67`.
+
+Local evidence includes `stage48-main.perf.data`, `stage48-main-perf-flat.txt`,
+`stage48-main-perf-stacks.txt`, `stage49-shader-comparison.json`,
+`stage49-shader-frames.csv` and `stage49-tower.png` under ignored `build-logs/`.
+The Fedora `perf` package was extracted under `local/tools/perf`, with its package
+signature verified; no system package or permission policy was changed. Equivalent
+profiling commands with an installed `perf` are:
+
+```bash
+perf record -e cpu-clock:u -F 199 --call-graph dwarf,8192 -t GAME_PID \
+  -o build-logs/main.perf.data -- sleep 20
+perf report --stdio --no-inline --no-children --call-graph none \
+  -i build-logs/main.perf.data
+```
+
+Replace `GAME_PID` with the owned native game's main-thread ID. Disabling inline
+symbol expansion avoids a costly `addr2line` pass over the generated executable;
+the recorded call chains remain available for caller analysis.
+
 ## Measurements
 
 Hardware: Acer Nitro AN515-55, Intel i5-10300H, NVIDIA RTX 3050 Laptop GPU, Bazzite,

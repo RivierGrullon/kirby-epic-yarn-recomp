@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reuse shader texture-usage analysis within synchronous GX batches, rechecking
+  pipeline state, vertex format and primitive changes before sampling textures.
 - Add a source-only frame-log analyzer with time-window selection, interval
   percentiles and a breakdown of long submissions; reject incomplete measurements.
 - Add optional `--frame-log CSV` diagnostics for native submission intervals,
