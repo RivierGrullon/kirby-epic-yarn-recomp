@@ -287,6 +287,75 @@ bash tools/container.sh ctest --test-dir build/native \
   -R '^(kirby_|mkw_linux_host_context_tests$)' --output-on-failure
 ```
 
+## Moving gameplay and host audio
+
+The published `d8f602b` native build was exercised for 180.008 seconds in Fountain
+Gardens section 1 with a visible window, experimental copies and VSync off. A Linux
+uinput gamepad drove repeated direction changes, jumps and yarn-button presses
+through SDL. Read-only guest observations at about 10 Hz recorded movement over
+x=39.240–77.996 and y=22.380–28.239, including 310 samples in the previously
+verified jumping state. No debugger or compilation ran during this interval.
+This repeats one part of the level; it is not a level-completion or physical
+controller test. The run used an isolated save copy.
+
+The CSV analysis excludes buffered boundary rows, leaving a 173.041-second
+measurement with 10,266 samples:
+
+| Native submission metric | Result |
+| --- | ---: |
+| Mean submission rate | 59.321/s |
+| Median interval | 16.691 ms |
+| p95 / p99 | 17.593 / 23.935 ms |
+| Maximum interval | 69.262 ms |
+| Intervals over 25 ms | 102 |
+| GPU readbacks | 843 |
+
+The longest interval contained 61.911 ms between submissions and 7.081 ms waiting
+for the preceding render worker. It added no readback. Readbacks occurred elsewhere
+in the moving run, unlike the stationary snapshot comparisons. The pipeline queue
+was empty at CSV sampling points; that alone does not exclude compilation between
+samples. These results still contain visible-pacing risks despite the near-60 mean.
+
+Only the owned game's PulseAudio stream was moved to a dedicated null sink, after
+matching its client `application.process.id` and verifying exclusive sink use.
+The sink monitor captured 179.960 seconds of stereo 32 kHz S16 PCM through the host
+audio path. No microphone or other application's audio was recorded. The capture
+has RMS 0.07368 and peak 0.72787 on a full-scale-one basis, with no entirely zero
+stereo span lasting 20 ms or more. This does not exclude short clicks or prove
+physical speaker output.
+
+The music matched the dump's `files/stream/STRM101.brstm`. Both signals were decoded
+to mono 8 kHz; normalized cross-correlation compared 1.5-second windows every five
+seconds. The original stream's loop runs from sample 630,784 to 4,187,397 at 32 kHz,
+verified against its header and Swiftshine's `snd_StrmFile` layout. Reference times
+were unwrapped using that loop length. A linear fit to the 26 of 36 windows with
+absolute correlation at least 0.8 measured **1.00001086 source seconds per output
+second**, with maximum residual 1.840 ms. All 36 selected matches, including the
+lower-correlation windows, were within the same residual bound. The alternate
+`STRM101B` reference did not match. This supports correct music tempo in this
+moving clip, not a whole-game audio or listening certification.
+
+A separate 30-second main-thread `perf` capture during motion collected 2,605
+user-space samples. Memory moves accounted for 8.25%; 113 samples had the immediate
+copy caller in `CacheTextureBinding`. The longest profiled interval was 83.636 ms;
+its samples included several translated and renderer functions, rather than one
+clear culprit. Sampling overhead and the different window mean this is not a
+before/after performance comparison. Further diagnosis must distinguish CPU work,
+host scheduling and blocking waits during individual stalls before choosing a fix.
+
+The initial and final native captures were inspected. After returning focus to the
+game, Start opened the pause menu through SDL/PAD; normal Quit navigation returned
+to Grass Land. The temporary controller, recorder and owned audio sink were removed
+after the run. User saves were not replaced and the published executable was not
+changed by these diagnostics.
+
+Local evidence: `stage51-motion-{input,analysis}.json`, `stage51-motion-frames.csv`,
+`stage51-audio-analysis.json`, `stage51-main.perf.data`, `stage51-main-stacks.txt`,
+`stage51-profile-intervals.json`, `stage51-motion-final.png` and
+`stage51-return-map.png` under ignored `build-logs/`. PCM, decoded references and
+the input scripts stay local. Longer play, other levels, physical controls, target
+hardware and validated 30/60 modes remain unfinished.
+
 ## Measurements
 
 Hardware: Acer Nitro AN515-55, Intel i5-10300H, NVIDIA RTX 3050 Laptop GPU, Bazzite,

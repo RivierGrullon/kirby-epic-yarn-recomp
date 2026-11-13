@@ -89,7 +89,7 @@ been tested. General keyboard/gamepad rebinding remains future work.
 | --- | --- |
 | Game progression | Menu, Patch Castle and Fountain Gardens observed; whole-game completion unverified |
 | Performance | Scene dependent; experimental optimizations are available, but stable 30/60 FPS is not guaranteed |
-| Audio | Real game audio plays; long-session quality, tempo and synchronization still need validation |
+| Audio | Music tempo verified in a three-minute Fountain Gardens clip; long-session quality and broader synchronization remain unverified |
 | Input | Virtual mappings tested; physical controllers and Legion Go controls need validation |
 | Graphics | Native GX/VI rendering through Aurora; some formats and display modes remain unsupported |
 | Saves | Creation and independent reload verified; broad compatibility testing pending |
