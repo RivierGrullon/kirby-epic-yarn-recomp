@@ -22,11 +22,16 @@ public:
     uint64_t TextureCopies() const { return textureCopies_; }
     uint64_t Presentations() const { return presentations_; }
     void PollVideo(const VideoOutput& output);
+    // Call FlushTextureCopies before the CPU reads or writes a deferred destination.
+    void SetDeferredTextureCopies(bool enabled);
+    void FlushTextureCopies();
+    uint64_t Readbacks() const { return readbacks_; }
 private:
     struct XfbState;
     void CopyDisplay(uint32_t value);
+    void CommitTextureCopies();
     void CopyTexture(uint32_t value, uint32_t control);
-    void ValidateCopyTexture(uint32_t address, uint32_t format, uint32_t width, uint32_t height, uint32_t mipCount);
+    void ValidateCopyTexture(uint32_t address, uint32_t format, uint32_t width, uint32_t height, uint32_t mipCount, uint32_t bytes);
     void Draw(std::span<const uint8_t> bytes);
     void LoadPalette(uint32_t value);
     void CloseXfb();
@@ -37,6 +42,8 @@ private:
     WriteMemory write_;
     GxStream stream_;
     bool initialized_ = false;
+    bool deferredTextureCopies_ = false;
+    uint64_t readbacks_ = 0;
     std::string userPath_, cachePath_;
     uint64_t registerWrites_ = 0, draws_ = 0;
     uint64_t displayCopies_ = 0, presentations_ = 0, textureCopies_ = 0;

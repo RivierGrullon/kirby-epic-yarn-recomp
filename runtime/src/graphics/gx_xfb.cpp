@@ -34,24 +34,46 @@ struct GxRenderer::XfbState {
     std::map<uint32_t, Entry> entries;
     struct TextureEntry { TextureCopy copy; std::vector<uint8_t> bytes; };
     std::map<uint32_t, TextureEntry> textures;
+    struct PendingTexture {
+        TextureCopy copy;
+        aurora::gfx::TextureHandle texture;
+        std::vector<uint8_t> before, bytes;
+    };
+    std::vector<PendingTexture> pending;
     uint64_t presented = 0;
     std::vector<uint8_t> Read(const aurora::gfx::TextureHandle& texture, uint32_t format,
-                              uint32_t width, uint32_t height, uint32_t address, bool quantize) {
+                              uint32_t width, uint32_t height, bool quantize) {
         using namespace aurora;
         namespace rb = gfx::readback;
-        const auto fmt = *rb::format_info(format);
-        const auto size = rb::byte_size(format, width, height);
         const auto sequence = rb::next_sequence(stream);
         if (!sequence) throw std::runtime_error("Aurora display-copy readback stream is invalid");
-        auto job = rb::create_job(stream, sequence, rb::JobKind::Copy, {{address, 0, size}}, size);
-        const rb::CopyPackParams params{
-            .family = uint32_t(fmt.family), .encoding = uint32_t(fmt.encoding),
-            .tileWidth = fmt.tileWidth, .tileHeight = fmt.tileHeight, .tileBytes = fmt.tileBytes,
-            .tilesX = rb::tiles_x(fmt, width), .width = width, .height = height,
-            .srcWidth = texture->size.width, .srcHeight = texture->size.height, .wordCount = size / 4,
-            .quantizeRgba6 = quantize ? 1u : 0u,
-        };
-        job->copies.push_back({texture, gfx::push_uniform(params), size / 4});
+        struct Source { gfx::TextureHandle texture; uint32_t format, width, height; bool quantize; };
+        std::vector<Source> sources;
+        for (const auto& entry : pending)
+            sources.push_back({entry.texture,entry.copy.format,entry.copy.width,entry.copy.height,false});
+        sources.push_back({texture,format,width,height,quantize});
+        std::vector<rb::Output> outputs;
+        uint32_t total = 0;
+        for (const auto& source : sources) {
+            const auto size = rb::byte_size(source.format,source.width,source.height);
+            if (size > 32*1024*1024-total) throw std::runtime_error("GX readback batch exceeds 32 MiB");
+            // Keys identify commands, not destinations: RAM ranges can alias.
+            outputs.push_back({outputs.size()+1,total,size}); total += size;
+        }
+        auto job = rb::create_job(stream,sequence,rb::JobKind::Copy,outputs,total);
+        for (size_t i=0;i<sources.size();++i) {
+            const auto& source = sources[i];
+            const auto fmt = *rb::format_info(source.format);
+            const rb::CopyPackParams params{
+                .family = uint32_t(fmt.family), .encoding = uint32_t(fmt.encoding),
+                .tileWidth = fmt.tileWidth, .tileHeight = fmt.tileHeight, .tileBytes = fmt.tileBytes,
+                .tilesX = rb::tiles_x(fmt,source.width), .width = source.width, .height = source.height,
+                .srcWidth = source.texture->size.width, .srcHeight = source.texture->size.height,
+                .wordCount = outputs[i].payloadSize/4, .outWord = outputs[i].payloadOffset/4,
+                .quantizeRgba6 = source.quantize ? 1u : 0u,
+            };
+            job->copies.push_back({source.texture,gfx::push_uniform(params),params.wordCount});
+        }
         if (!gfx::push_readback_op(job, false)) throw std::runtime_error("Aurora could not record the XFB readback");
         gx::fifo::drain();
         gx::fifo::end_frame();
@@ -79,13 +101,48 @@ struct GxRenderer::XfbState {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         } while (true);
         aurora_wait_for_frame_worker();
-        const auto* output = packet->find(address);
+        for (size_t i=0;i<pending.size();++i) {
+            const auto* output = packet->find(i+1);
+            if (!output) throw std::runtime_error("GPU texture-copy batch result is missing");
+            const auto payload = packet->payload_of(*output);
+            pending[i].bytes.assign(payload.begin(),payload.end());
+        }
+        const auto* output = packet->find(sources.size());
         if (!output) throw std::runtime_error("GPU display-copy result has no requested destination");
         const auto payload=packet->payload_of(*output);
         return {payload.begin(),payload.end()};
     }
 
 };
+
+void GxRenderer::SetDeferredTextureCopies(bool enabled) {
+    if (!enabled) FlushTextureCopies();
+    deferredTextureCopies_ = enabled;
+}
+void GxRenderer::CommitTextureCopies() {
+    for (const auto& entry : xfb_->pending) {
+        const auto& copy = entry.copy;
+        if (!std::ranges::equal(resolve_(copy.address,copy.bytes),entry.before))
+            throw std::runtime_error("CPU wrote a deferred GX copy before its completion fence");
+        if (entry.bytes.size()!=size_t(copy.rowBytes)*copy.rows)
+            throw std::runtime_error("GX texture batch result differs from tile layout");
+        for (uint32_t row=0;row<copy.rows;++row)
+            write_(copy.address+row*copy.stride,std::span(entry.bytes).subspan(row*copy.rowBytes,copy.rowBytes));
+        xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{copy,entry.bytes});
+    }
+    xfb_->pending.clear();
+}
+void GxRenderer::FlushTextureCopies() {
+    if (!xfb_ || xfb_->pending.empty()) return;
+    auto last = std::move(xfb_->pending.back());
+    xfb_->pending.pop_back();
+    ++readbacks_;
+    last.bytes = xfb_->Read(last.texture,last.copy.format,last.copy.width,last.copy.height,false);
+    xfb_->pending.push_back(std::move(last));
+    CommitTextureCopies();
+    if (!aurora_begin_frame_gx()) throw std::runtime_error("Aurora could not resume GX after copy fence");
+    aurora::gfx::preserve_efb_contents();
+}
 
 void GxRenderer::CopyDisplay(uint32_t value) {
     using namespace aurora;
@@ -117,7 +174,9 @@ void GxRenderer::CopyDisplay(uint32_t value) {
     if (!texture) throw std::runtime_error("Aurora did not create the display-copy texture");
     // Pack the RAM-visible YUYV image on the GPU. This halves readback bytes
     // and avoids a second full-image conversion on the guest execution thread.
-    auto bytes=xfb_->Read(texture,rb::XfbYuyv,copy.width,copy.height,copy.address,false);
+    ++readbacks_;
+    auto bytes=xfb_->Read(texture,rb::XfbYuyv,copy.width,copy.height,false);
+    CommitTextureCopies();
     write_(copy.address, bytes);
     const bool firstDestination = !xfb_->entries.contains(copy.address);
     xfb_->entries.insert_or_assign(copy.address, XfbState::Entry{copy, texture, std::move(bytes), ++displayCopies_});
@@ -140,29 +199,41 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
     if (copy.x+copy.sourceWidth>extent.x || copy.y+copy.sourceHeight>extent.y)
         throw std::runtime_error("GX texture-copy source lies outside the EFB");
     if (!xfb_) { xfb_=std::make_shared<XfbState>(); xfb_->stream=gfx::readback::create_stream(); }
+    // Reusing an allocation must complete its earlier copy before the GPU
+    // handle can be overwritten. Distinct pending destinations may be batched.
+    if (xfb_->pending.size() >= 16 || std::ranges::any_of(xfb_->pending,[&](const auto& entry) {
+        return uint64_t(copy.address)<uint64_t(entry.copy.address)+entry.copy.bytes &&
+               uint64_t(entry.copy.address)<uint64_t(copy.address)+copy.bytes;
+    })) FlushTextureCopies();
     state.texCopySrc={int(copy.x),int(copy.y),int(copy.sourceWidth),int(copy.sourceHeight)};
     state.texCopyDstWidth=copy.width; state.texCopyDstHeight=copy.height;
     state.texCopyFmt=static_cast<GXTexFmt>(copy.format); state.texCopyDest=memory.data();
     gx::fifo::handle_bp(value);
     const auto texture=state.copyTextures.at(memory.data()).handle;
-    auto data=xfb_->Read(texture,copy.format,copy.width,copy.height,copy.address,
-        gfx::readback::format_info(copy.format)->rawColor && state.pixelFmt==GX_PF_RGBA6_Z24);
-    if (data.size()!=size_t(copy.rowBytes)*copy.rows) throw std::runtime_error("GX texture readback size differs from tile layout");
-    for (uint32_t row=0;row<copy.rows;++row)
-        write_(copy.address+row*copy.stride,std::span(data).subspan(row*copy.rowBytes,copy.rowBytes));
-    // A packed, unscaled RGB8->RGBA8 copy has the same sampled representation on
-    // the GPU and in RAM. Retain Aurora's allocation and avoid uploading it again.
-    // Other layouts keep the existing RAM path until their sampling is audited.
+    // Direct GPU sampling is verified only for packed RGB8->RGBA8 copies.
     const bool retain = copy.format == GX_TF_RGBA8 && state.pixelFmt == GX_PF_RGB8_Z24 &&
         copy.stride == copy.rowBytes && texture->size.width == copy.width && texture->size.height == copy.height &&
         (xfb_->textures.contains(copy.address) || xfb_->textures.size() < 16);
-    if (retain) xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{copy,std::move(data)});
-    else {
-        xfb_->textures.erase(copy.address);
-        gx::evict_copy_texture(memory.data());
+    if (deferredTextureCopies_ && retain) {
+        std::vector<uint8_t> before(memory.begin(),memory.end());
+        xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{copy,before});
+        xfb_->pending.push_back({copy,texture,std::move(before),{}});
+    } else {
+        ++readbacks_;
+        auto data=xfb_->Read(texture,copy.format,copy.width,copy.height,
+            gfx::readback::format_info(copy.format)->rawColor && state.pixelFmt==GX_PF_RGBA6_Z24);
+        CommitTextureCopies();
+        if (data.size()!=size_t(copy.rowBytes)*copy.rows) throw std::runtime_error("GX texture readback size differs from tile layout");
+        for (uint32_t row=0;row<copy.rows;++row)
+            write_(copy.address+row*copy.stride,std::span(data).subspan(row*copy.rowBytes,copy.rowBytes));
+        if (retain) xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{copy,std::move(data)});
+        else {
+            xfb_->textures.erase(copy.address);
+            gx::evict_copy_texture(memory.data());
+        }
+        if (!aurora_begin_frame_gx()) throw std::runtime_error("Aurora could not resume GX after texture readback");
+        gfx::preserve_efb_contents();
     }
-    if (!aurora_begin_frame_gx()) throw std::runtime_error("Aurora could not resume GX after texture readback");
-    gfx::preserve_efb_contents();
     if (++textureCopies_==1) {
         std::cout << "[kirby] first GPU texture copy: address=0x" << std::hex << copy.address
                   << " format=0x" << copy.format << std::dec << " size=" << copy.width << 'x' << copy.height
@@ -171,8 +242,18 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
 }
 
 void GxRenderer::ValidateCopyTexture(uint32_t address, uint32_t format, uint32_t width,
-                                   uint32_t height, uint32_t mipCount) {
+                                   uint32_t height, uint32_t mipCount, uint32_t bytes) {
     if (!xfb_) return;
+    // A subview, format reinterpretation, or older overlapping texture cannot
+    // sample a pending copy through its exact GPU cache entry. Complete RAM
+    // first, including when the requested address has no cache entry at all.
+    if (std::ranges::any_of(xfb_->pending,[&](const auto& entry) {
+        const auto& copy = entry.copy;
+        const bool overlap = uint64_t(address)<uint64_t(copy.address)+copy.bytes &&
+                             uint64_t(copy.address)<uint64_t(address)+bytes;
+        return overlap && (address!=copy.address || format!=copy.format ||
+            width!=copy.width || height!=copy.height || mipCount!=1);
+    })) FlushTextureCopies();
     const auto it = xfb_->textures.find(address);
     if (it == xfb_->textures.end()) return;
     const auto& entry = it->second;
@@ -181,8 +262,9 @@ void GxRenderer::ValidateCopyTexture(uint32_t address, uint32_t format, uint32_t
         mipCount == 1 && std::ranges::equal(memory,entry.bytes)) return;
     // A guest write or a different interpretation of the RAM invalidates the
     // direct GPU view before Aurora resolves this draw's texture bindings.
+    FlushTextureCopies();
     aurora::gx::evict_copy_texture(memory.data());
-    xfb_->textures.erase(it);
+    xfb_->textures.erase(address);
 }
 
 void GxRenderer::PollVideo(const VideoOutput& output) {

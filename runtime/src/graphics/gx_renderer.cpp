@@ -131,6 +131,9 @@ void GxRenderer::Packet(std::span<const uint8_t> bytes) {
         if (reg == 0x65) { LoadPalette(value); ++registerWrites_; return; }
         fifo::handle_bp(value);
         const auto effective = g_gxState.bpRegCache[reg];
+        // Publish copied RAM before a guest-visible GPU completion event.
+        if (reg == 0x47 || reg == 0x48 || (reg == 0x45 && (effective & 0xFF) == 2))
+            FlushTextureCopies();
         if (reg == 0x47 || reg == 0x48) Pixels().SetToken(effective & 0xFFFF, reg == 0x48);
         if (reg == 0x45 && (effective & 0xFF) == 2) Pixels().Finish();
         ++registerWrites_; return;

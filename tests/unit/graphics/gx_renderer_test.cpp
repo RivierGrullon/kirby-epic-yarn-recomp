@@ -296,6 +296,61 @@ void GpuXfb(bool startHidden = false) {
     Check(!aurora::gx::g_gxState.copyTextures.contains(memory.data()+0xC00),
           "RGB565 EFB copies do not bypass the RAM conversion path");
     Bp(renderer,0x43000000);
+    renderer.SetDeferredTextureCopies(true);
+    const auto batchStart = renderer.Readbacks();
+    Bp(renderer,0x4A000000 | (7<<10) | 7); Bp(renderer,0x4D000004);
+    Bp(renderer,0x4B000070); Bp(renderer,0x52000063);
+    Check(memory[0xE00] == 0xCD && renderer.Readbacks() == batchStart,
+          "deferred texture copy does not wait for a separate GPU readback");
+    Bp(renderer,0x88000000 | (6<<20) | (7<<10) | 7); Bp(renderer,0x94000070);
+    renderer.Feed(quad);
+    Bp(renderer,0x4A000000 | (3<<10) | 31); Bp(renderer,0x4D000002);
+    Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
+    Check(renderer.Readbacks() == batchStart+1,
+          "texture and display copies share one GPU readback submission");
+    Check(memory[0xE00]==255 && memory[0xE01]==0 && memory[0xE20]==255 && memory[0xE21]==0,
+          "batched texture bytes become visible in tiled RAM at the display boundary");
+    Check(std::equal(green.begin(),green.end(),memory.begin()+0x1000+2*64+16*2),
+          "a deferred texture can be sampled before its RAM readback completes");
+    // Distinct copies preserve their colors even though the EFB changes in between.
+    Bp(renderer,0x94000040); renderer.Feed(quad); // CPU-edited red source
+    Bp(renderer,0x4A000000 | (7<<10) | 7); Bp(renderer,0x4D000004);
+    const auto fenceStart = renderer.Readbacks();
+    Bp(renderer,0x4B000900); Bp(renderer,0x52000063);
+    Bp(renderer,0x94000070); renderer.Feed(quad); // retained green source
+    Bp(renderer,0x4B000908); Bp(renderer,0x52000063);
+    Bp(renderer,0x45000002);
+    Check(renderer.Readbacks()==fenceStart+1,
+          "GPU finish completes multiple texture copies in a single readback");
+    Check(memory[0x12000]==255 && memory[0x12001]==255 && memory[0x12020]==0 &&
+          memory[0x12100]==255 && memory[0x12101]==0 && memory[0x12120]==255,
+          "batched copies retain the EFB colors at their own command positions");
+    Bp(renderer,0x4B000910); Bp(renderer,0x52000063); // green, pending
+    Bp(renderer,0x94000040); renderer.Feed(quad); // draw red before overwriting destination
+    const auto overlapStart = renderer.Readbacks();
+    Bp(renderer,0x52000063);
+    Check(renderer.Readbacks()==overlapStart+1 && memory[0x12201]==0 && memory[0x12220]==255,
+          "reusing a pending destination completes its earlier green copy first");
+    renderer.SetDeferredTextureCopies(false);
+    Check(memory[0x12201]==255 && memory[0x12220]==0,
+          "disabling deferred copies completes the later red copy into the same RAM");
+    const auto emptyFence = renderer.Readbacks(); renderer.FlushTextureCopies();
+    Check(renderer.Readbacks()==emptyFence, "an empty completion fence does not submit GPU work");
+    Bp(renderer,0x94000070); renderer.Feed(quad);
+    renderer.SetDeferredTextureCopies(true);
+    Bp(renderer,0x4B000920); Bp(renderer,0x52000063);
+    const auto aliasStart = renderer.Readbacks();
+    Bp(renderer,0x88000000); Bp(renderer,0x94000921); // I4 subview of the green GB plane
+    renderer.Feed(quad);
+    Check(renderer.Readbacks()==aliasStart+1,
+          "sampling inside a deferred destination completes the overlapping RAM copy");
+    Bp(renderer,0x4A000000 | (3<<10) | 31); Bp(renderer,0x4D000002);
+    Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
+    Check(std::equal(white.begin(),white.end(),memory.begin()+0x1000+2*64+16*2),
+          "an aliased texture samples the completed GB bytes instead of old RAM");
+    renderer.SetDeferredTextureCopies(false);
+    Bp(renderer,0x88000000 | (6<<20) | (7<<10) | 7); Bp(renderer,0x94000070);
+    renderer.Feed(quad); // restore green for following copy checks
     Bp(renderer,0x49000000); Bp(renderer,0x4A000000 | (7<<10) | 7);
     Bp(renderer,0x4B000050); Bp(renderer,0x4D000002); Bp(renderer,0x52000263);
     Check(memory[0xA00]==255 && memory[0xA01]==0 && memory[0xA20]==255 && memory[0xA21]==0,

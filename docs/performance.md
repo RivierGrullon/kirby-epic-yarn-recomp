@@ -359,6 +359,35 @@ synchronous GPU-to-RAM waits. Reducing those waits with verified copy visibility
 is the next performance target. The published executable contains no profiling
 switches or counters from this comparison.
 
+## Experimental batched texture readback (2026-11-13)
+
+The renderer now exposes an opt-in deferred texture-copy API. Eligible packed
+RGB8-to-RGBA8 copies can remain on the GPU until a display copy or explicit
+completion boundary, sharing one readback submission. GPU finish/token commands,
+destination reuse and sampling an overlapping RAM subview complete pending
+copies. Disabling the API also completes pending work. The queue is bounded to
+16 copies and readback payloads to 32 MiB.
+
+This mode is **disabled by default** and is not enabled by the game or launcher.
+Callers must complete pending copies before CPU reads or writes of their
+destinations. An unexpected CPU write is detected at completion and fails with
+an error; this is not a substitute for auditing guest cache and synchronization
+boundaries. CPU reads cannot be detected by the RAM snapshot comparison.
+
+The synthetic Vulkan suite passes 379 checks, including one submission for a
+texture/display batch, copies retaining different EFB colors, completion on GPU
+finish, destination reuse, disabling deferred mode, and sampling an I4 subview
+inside a pending RGBA8 destination. The subview regression failed before its
+completion check was added. Evidence is in ignored
+`build-logs/stage37-alias-{red,green}-{build,gpu}.log`.
+
+An isolated native timing attempt ended before completing the enabled interval.
+There is no complete native off/on comparison and no demonstrated gameplay
+speedup for this change. The published executable remains the Stage 36 build
+identified above. Before enabling batching in the game, audit CPU-visible
+completion boundaries, repeat native scene comparisons, and verify gameplay,
+frame pacing and audible output.
+
 ## Reproduce checks
 
 ```bash

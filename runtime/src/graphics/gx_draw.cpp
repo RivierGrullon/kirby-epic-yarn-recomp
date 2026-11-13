@@ -113,7 +113,7 @@ void GxRenderer::Draw(std::span<const uint8_t> bytes) {
         const auto address = (texture.image3 & 0xFFFFFF) << 5;
         const auto memory = resolve_(address, size);
         if (memory.size() != size) throw std::runtime_error("GX sampled texture lies outside guest RAM");
-        ValidateCopyTexture(address,texture.format(),texture.width(),texture.height(),texture.mip_count());
+        ValidateCopyTexture(address,texture.format(),texture.width(),texture.height(),texture.mip_count(),size);
         texture.data = memory.data();
         texture.texObjId = 0; // Hardware FIFO has no host GXTexObj identity.
     }
