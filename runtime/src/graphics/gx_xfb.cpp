@@ -32,6 +32,8 @@ struct GxRenderer::XfbState {
     };
     aurora::gfx::readback::StreamHandle stream = 0;
     std::map<uint32_t, Entry> entries;
+    struct TextureEntry { TextureCopy copy; std::vector<uint8_t> bytes; };
+    std::map<uint32_t, TextureEntry> textures;
     uint64_t presented = 0;
     std::vector<uint8_t> Read(const aurora::gfx::TextureHandle& texture, uint32_t format,
                               uint32_t width, uint32_t height, uint32_t address, bool quantize) {
@@ -143,13 +145,22 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
     state.texCopyFmt=static_cast<GXTexFmt>(copy.format); state.texCopyDest=memory.data();
     gx::fifo::handle_bp(value);
     const auto texture=state.copyTextures.at(memory.data()).handle;
-    const auto data=xfb_->Read(texture,copy.format,copy.width,copy.height,copy.address,
+    auto data=xfb_->Read(texture,copy.format,copy.width,copy.height,copy.address,
         gfx::readback::format_info(copy.format)->rawColor && state.pixelFmt==GX_PF_RGBA6_Z24);
     if (data.size()!=size_t(copy.rowBytes)*copy.rows) throw std::runtime_error("GX texture readback size differs from tile layout");
     for (uint32_t row=0;row<copy.rows;++row)
         write_(copy.address+row*copy.stride,std::span(data).subspan(row*copy.rowBytes,copy.rowBytes));
-    // RAM is authoritative: later CPU writes must not sample a stale GPU copy cache entry.
-    gx::evict_copy_texture(memory.data());
+    // A packed, unscaled RGB8->RGBA8 copy has the same sampled representation on
+    // the GPU and in RAM. Retain Aurora's allocation and avoid uploading it again.
+    // Other layouts keep the existing RAM path until their sampling is audited.
+    const bool retain = copy.format == GX_TF_RGBA8 && state.pixelFmt == GX_PF_RGB8_Z24 &&
+        copy.stride == copy.rowBytes && texture->size.width == copy.width && texture->size.height == copy.height &&
+        (xfb_->textures.contains(copy.address) || xfb_->textures.size() < 16);
+    if (retain) xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{copy,std::move(data)});
+    else {
+        xfb_->textures.erase(copy.address);
+        gx::evict_copy_texture(memory.data());
+    }
     if (!aurora_begin_frame_gx()) throw std::runtime_error("Aurora could not resume GX after texture readback");
     gfx::preserve_efb_contents();
     if (++textureCopies_==1) {
@@ -157,6 +168,21 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
                   << " format=0x" << copy.format << std::dec << " size=" << copy.width << 'x' << copy.height
                   << " row bytes=" << copy.rowBytes << " stride=" << copy.stride << std::endl;
     }
+}
+
+void GxRenderer::ValidateCopyTexture(uint32_t address, uint32_t format, uint32_t width,
+                                   uint32_t height, uint32_t mipCount) {
+    if (!xfb_) return;
+    const auto it = xfb_->textures.find(address);
+    if (it == xfb_->textures.end()) return;
+    const auto& entry = it->second;
+    const auto memory = resolve_(address,entry.copy.bytes);
+    if (format == entry.copy.format && width == entry.copy.width && height == entry.copy.height &&
+        mipCount == 1 && std::ranges::equal(memory,entry.bytes)) return;
+    // A guest write or a different interpretation of the RAM invalidates the
+    // direct GPU view before Aurora resolves this draw's texture bindings.
+    aurora::gx::evict_copy_texture(memory.data());
+    xfb_->textures.erase(it);
 }
 
 void GxRenderer::PollVideo(const VideoOutput& output) {

@@ -6,6 +6,7 @@
 #include "kirby/app/events.h"
 #include "gx/gx.hpp"
 #include "gx/fifo.hpp"
+#include "gx/texture.hpp"
 #include <dolphin/gx.h>
 #include <bit>
 #include <iostream>
@@ -253,6 +254,48 @@ void GpuXfb(bool startHidden = false) {
     Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
     Check(std::equal(red.begin(),red.end(),memory.begin()+0x1000+2*64+16*2),
           "sampling an EFB copy observes subsequent CPU writes to texture RAM");
+    // A packed 1x RGB8 EFB copy can stay on the GPU while RAM remains current.
+    Bp(renderer,0x49000000); Bp(renderer,0x4A000000 | (7<<10) | 7);
+    Bp(renderer,0x4B000060); Bp(renderer,0x4D000004); Bp(renderer,0x52000063);
+    Check(aurora::gx::g_gxState.copyTextures.contains(memory.data()+0xC00),
+          "packed RGBA8 copies retain Aurora's GPU texture instead of discarding it");
+    const auto retained = aurora::gx::g_gxState.copyTextures.at(memory.data()+0xC00).handle;
+    Bp(renderer,0x52000063);
+    Check(aurora::gx::g_gxState.copyTextures.at(memory.data()+0xC00).handle == retained,
+          "repeated packed copies reuse the render texture allocation");
+    Bp(renderer,0x4A000000 | (3<<10) | 31); Bp(renderer,0x4D000002);
+    Bp(renderer,0x94000060);
+    const auto uploadedBeforeCopySample = aurora::gx::texture_stats().uploadBytes;
+    renderer.Feed(quad);
+    Check(aurora::gx::texture_stats().uploadBytes == uploadedBeforeCopySample,
+          "sampling an unchanged copied texture avoids a RAM-to-GPU upload");
+    Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
+    Check(std::equal(green.begin(),green.end(),memory.begin()+0x1000+2*64+16*2),
+          "retained GPU copy samples the same green pixels as its RAM representation");
+    memory[0xC00]=255; memory[0xC01]=255; memory[0xC20]=0; memory[0xC21]=0;
+    renderer.Feed(quad);
+    Check(!aurora::gx::g_gxState.copyTextures.contains(memory.data()+0xC00),
+          "a CPU write invalidates the retained GPU copy before sampling");
+    Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
+    Check(std::equal(red.begin(),red.end(),memory.begin()+0x1000+2*64+16*2),
+          "CPU edits to a retained copy reach the displayed pixels without rebinding");
+    // Reinterpreting the same bytes as I4 must not reuse the green RGBA8 view.
+    Bp(renderer,0x4A000000 | (7<<10) | 7);
+    Bp(renderer,0x4B000060); Bp(renderer,0x4D000004); Bp(renderer,0x52000063);
+    Bp(renderer,0x88000000);
+    renderer.Feed(quad);
+    Check(!aurora::gx::g_gxState.copyTextures.contains(memory.data()+0xC00),
+          "a changed texture descriptor invalidates the retained GPU view");
+    Bp(renderer,0x4A000000 | (3<<10) | 31); Bp(renderer,0x4D000002);
+    Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
+    Check(std::equal(white.begin(),white.end(),memory.begin()+0x1000+2*64+16*2),
+          "an I4 reinterpretation samples copied RAM instead of the original RGBA8 colors");
+    // Other EFB precision modes retain the RAM conversion path.
+    Bp(renderer,0x4A000000 | (7<<10) | 7); Bp(renderer,0x4D000004);
+    Bp(renderer,0x4B000060); Bp(renderer,0x43000002); Bp(renderer,0x52000063);
+    Check(!aurora::gx::g_gxState.copyTextures.contains(memory.data()+0xC00),
+          "RGB565 EFB copies do not bypass the RAM conversion path");
+    Bp(renderer,0x43000000);
     Bp(renderer,0x49000000); Bp(renderer,0x4A000000 | (7<<10) | 7);
     Bp(renderer,0x4B000050); Bp(renderer,0x4D000002); Bp(renderer,0x52000263);
     Check(memory[0xA00]==255 && memory[0xA01]==0 && memory[0xA20]==255 && memory[0xA21]==0,

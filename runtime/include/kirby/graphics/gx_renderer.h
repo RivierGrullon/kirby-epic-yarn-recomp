@@ -26,6 +26,7 @@ private:
     struct XfbState;
     void CopyDisplay(uint32_t value);
     void CopyTexture(uint32_t value, uint32_t control);
+    void ValidateCopyTexture(uint32_t address, uint32_t format, uint32_t width, uint32_t height, uint32_t mipCount);
     void Draw(std::span<const uint8_t> bytes);
     void LoadPalette(uint32_t value);
     void CloseXfb();
