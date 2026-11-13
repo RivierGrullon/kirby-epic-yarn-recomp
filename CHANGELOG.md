@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reuse Aurora texture identities after exact source-byte validation, reducing
+  repeated texture hashing while preserving raw CPU edits and palette changes.
 - Present GPU-resident display copies directly in experimental performance mode,
   with on-demand XFB RAM materialization and a synchronous overlapping-view fallback.
 - Keep frame-rate selection separate from performance optimization; validated

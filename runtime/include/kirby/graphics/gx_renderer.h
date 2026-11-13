@@ -28,12 +28,15 @@ public:
     void SetGpuResidentTextureCopies(bool enabled);
     // VI presents the GPU image; audited CPU consumers materialize XFB RAM on demand.
     void SetGpuResidentDisplayCopies(bool enabled);
+    void SetTextureSnapshotReuse(bool enabled) { textureSnapshotReuse_=enabled; }
     void WritebackTextureCopiesForRange(uint32_t address, uint64_t size);
     void FlushTextureCopies();
     void FlushTextureCopiesForRange(uint32_t address, uint64_t size);
     uint64_t Readbacks() const { return readbacks_; }
 private:
     struct XfbState;
+    struct TextureState;
+    void CacheTextureBinding(unsigned slot, std::span<const uint8_t> memory);
     void CopyDisplay(uint32_t value);
     void CommitTextureCopies();
     void FlushDisplayCopiesForRange(uint32_t address, uint64_t size);
@@ -61,5 +64,7 @@ private:
     std::shared_ptr<XfbState> xfb_;
     std::vector<uint8_t> paletteMemory_, paletteValid_;
     std::array<std::vector<uint8_t>, 21> indexedSnapshots_;
+    std::shared_ptr<TextureState> textureState_;
+    bool textureSnapshotReuse_ = false;
 };
 }

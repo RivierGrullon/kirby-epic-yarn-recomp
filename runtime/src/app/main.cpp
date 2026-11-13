@@ -688,6 +688,7 @@ int main(int argc, char** argv) {
                 renderer->OpenWindow(mode == "--video-hidden", vsync);
                 renderer->SetGpuResidentTextureCopies(gpuResidentCopies);
                 renderer->SetGpuResidentDisplayCopies(gpuResidentCopies);
+                renderer->SetTextureSnapshotReuse(gpuResidentCopies);
                 if (gpuResidentCopies) std::cout << "[kirby] experimental GPU-resident texture and display copies enabled\n";
                 Kirby::SetWpadWindowActive(true);
             }

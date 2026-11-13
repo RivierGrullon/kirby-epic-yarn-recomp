@@ -10,6 +10,71 @@
 #include <stdexcept>
 
 namespace Kirby {
+struct GxRenderer::TextureState {
+    struct Key {
+        const void* data = nullptr;
+        const void* palette = nullptr;
+        std::array<uint32_t,8> layout{};
+        bool operator==(const Key&) const = default;
+    };
+    struct Entry {
+        Key key;
+        std::vector<uint8_t> bytes, palette;
+        uint32_t id = 0, paletteId = 0, version = 0;
+        uint64_t used = 0;
+    };
+    // At most 128 MiB of texture snapshots plus 512 KiB of palette snapshots.
+    // Reuse object IDs when evicting so Aurora's object cache stays bounded too.
+    std::array<Entry,16> entries;
+    uint64_t sequence = 0;
+};
+void GxRenderer::CacheTextureBinding(unsigned slot,std::span<const uint8_t> memory) {
+    using namespace aurora::gx;
+    auto& texture=g_gxState.loadedTextures[slot];
+    texture.texObjId=0;
+    if (!textureSnapshotReuse_ || memory.size()>8*1024*1024) {
+        g_gxState.dirty |= DirtyTextures;
+        return;
+    }
+    GXTlutObj_* palette=nullptr;
+    if (texture.format()==GX_TF_C4 || texture.format()==GX_TF_C8 || texture.format()==GX_TF_C14X2)
+        palette=&g_gxState.loadedTluts[slot];
+    const auto paletteBytes=palette ? std::span(static_cast<const uint8_t*>(palette->data),size_t(palette->numEntries)*2)
+                                    : std::span<const uint8_t>{};
+    if (!textureState_) textureState_=std::make_shared<TextureState>();
+    auto& cache=*textureState_;
+    const TextureState::Key key{memory.data(),palette ? palette->data : nullptr,
+        {texture.format(),texture.width(),texture.height(),texture.mip_count(),texture.mode0,texture.mode1,
+         palette ? uint32_t(palette->format) : 0,palette ? uint32_t(palette->numEntries) : 0}};
+    auto found=std::ranges::find(cache.entries,key,&TextureState::Entry::key);
+    if (found==cache.entries.end())
+        found=std::ranges::min_element(cache.entries,{},&TextureState::Entry::used);
+    auto& entry=*found;
+    if (!entry.id) {
+        GXTexObj object{};
+        GXInitTexObj(&object,nullptr,1,1,GX_TF_RGBA8,GX_CLAMP,GX_CLAMP,GX_FALSE);
+        entry.id=reinterpret_cast<const GXTexObj_*>(&object)->texObjId;
+    }
+    if (palette && !entry.paletteId) {
+        GXTlutObj object{};
+        GXInitTlutObj(&object,palette->data,palette->format,palette->numEntries);
+        entry.paletteId=reinterpret_cast<const GXTlutObj_*>(&object)->tlutObjId;
+    }
+    if (entry.key!=key || !std::ranges::equal(memory,entry.bytes) || !std::ranges::equal(paletteBytes,entry.palette)) {
+        entry.key=key;
+        entry.bytes.assign(memory.begin(),memory.end());
+        entry.palette.assign(paletteBytes.begin(),paletteBytes.end());
+        if (++entry.version==0) throw std::runtime_error("Texture snapshot version overflow");
+        g_gxState.dirty |= DirtyTextures;
+    }
+    entry.used=++cache.sequence;
+    texture.texObjId=entry.id;
+    texture.texDataVersion=entry.version;
+    if (palette) {
+        palette->tlutObjId=entry.paletteId;
+        palette->tlutDataVersion=entry.version;
+    }
+}
 void GxRenderer::LoadPalette(uint32_t value) {
     using namespace aurora::gx;
     const auto mask = g_gxState.bpRegCache[0xFE];
@@ -76,6 +141,9 @@ void GxRenderer::Draw(std::span<const uint8_t> bytes) {
         if (!unchanged) {
             array.cachedRange = {};
             snapshot.assign(memory.begin(), memory.end());
+            // A merged draw keeps the previous draw's array offsets. Uploading
+            // new bytes (or a larger prefix) requires its own immediate data.
+            state.dirty |= DirtyImmediates;
         }
         array.data = memory.data(); array.size = size; array.le = false;
         offset += indexBytes;
@@ -117,11 +185,10 @@ void GxRenderer::Draw(std::span<const uint8_t> bytes) {
         if (memory.size() != size) throw std::runtime_error("GX sampled texture lies outside guest RAM");
         ValidateCopyTexture(address,texture.format(),texture.width(),texture.height(),texture.mip_count(),size);
         texture.data = memory.data();
-        texture.texObjId = 0; // Hardware FIFO has no host GXTexObj identity.
+        // Supply stable, versioned Aurora identities only after checking every
+        // source byte. Raw CPU edits remain visible without a BP rebind or flush.
+        CacheTextureBinding(i,memory);
     }
-    // Guest RAM can change between draws. Aurora's content cache hashes validated
-    // sources, while its binding cache alone cannot observe those writes.
-    state.dirty |= DirtyTextures;
     const auto result = fifo::process(bytes.data(), bytes.size());
     if (result.bytesProcessed != bytes.size()) throw std::runtime_error("Aurora did not consume the GX draw");
     if (++draws_ == 1)

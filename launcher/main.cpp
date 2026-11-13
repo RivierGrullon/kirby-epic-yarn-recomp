@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
         ImGui::Checkbox("VSync", &vsync);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Off can reduce presentation stalls; driver behavior varies.");
         ImGui::Checkbox("Experimental performance mode", &performanceMode);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reduces GPU waits. Compatibility testing is ongoing. Applied next launch.");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reduces GPU copy waits and repeated texture processing. Compatibility testing is ongoing. Applied next launch.");
         ImGui::TextWrapped("Display: native resolution. Stable 30 / 60 FPS modes are not validated yet.");
         ImGui::TextWrapped("Controls: D-pad to move, south / cross to jump, east / circle for yarn, Start for +.");
         int count = 0; SDL_JoystickID* controllers = SDL_GetGamepads(&count);

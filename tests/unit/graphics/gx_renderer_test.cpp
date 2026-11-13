@@ -48,6 +48,7 @@ void GpuXfb(bool startHidden = false) {
         std::memcpy(memory.data() + address, bytes.data(), bytes.size()); ++writes;
     });
     renderer.OpenWindow(startHidden);
+    renderer.SetTextureSnapshotReuse(true);
     if (startHidden) {
         int count = 0;
         auto* windows = SDL_GetWindows(&count);
@@ -138,6 +139,32 @@ void GpuXfb(bool startHidden = false) {
     const std::array<uint8_t,4> blue{41,239,41,110};
     Check(std::equal(blue.begin(),blue.end(),memory.begin()+0x1000+2*64+16*2),
           "guest CI4 texture and uploaded RGB565 palette produce blue pixels");
+    renderer.Feed(quad);
+    const auto hashesBeforeRepeat=aurora::gx::texture_stats().hashedBytes;
+    renderer.Feed(quad);
+    Check(aurora::gx::texture_stats().hashedBytes==hashesBeforeRepeat,
+          "identical consecutive draws reuse validated texture bindings without hashing again");
+    std::fill_n(memory.begin()+0x440,32,0);
+    Bp(renderer,0x94000022); renderer.Feed(quad);
+    Bp(renderer,0x94000020);
+    const auto hashesBeforeRebind=aurora::gx::texture_stats().hashedBytes;
+    renderer.Feed(quad);
+    Check(aurora::gx::texture_stats().hashedBytes==hashesBeforeRebind,
+          "returning to an unchanged texture reuses its content cache identity without hashing again");
+    std::fill_n(memory.begin()+0x400,32,0);
+    renderer.Feed(quad);
+    Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
+    Check(std::equal(black.begin(),black.end(),memory.begin()+0x1000+2*64+16*2),
+          "raw CPU texture writes invalidate cached bindings without a BP update");
+    std::fill_n(memory.begin()+0x400,32,0x11);
+    memory[0x502]=0xF8; memory[0x503]=0;
+    Bp(renderer,0x65000400);
+    renderer.Feed(quad);
+    Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
+    Check(std::equal(red.begin(),red.end(),memory.begin()+0x1000+2*64+16*2),
+          "palette reload invalidates bindings even when texture indices are unchanged");
+    memory[0x502]=0; memory[0x503]=0x1F;
+    Bp(renderer,0x65000400);
     // Reproduce the game's XY-only UI vertices, texture matrix and two TEV stages.
     GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XY,GX_F32,0);
     GXLoadTexMtxImm(identity,GX_TEXMTX0,GX_MTX2x4);
@@ -225,6 +252,15 @@ void GpuXfb(bool startHidden = false) {
     Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
     Check(std::equal(green.begin(),green.end(),memory.begin()+0x1000+2*64+16*2),
           "indexed draws observe guest array changes without CP rebinding");
+    // No BP/CP command or host-frame boundary separates these draws. The first
+    // uses off-screen positions; the second must upload the restored positions
+    // instead of merging its indices into the first draw's old array snapshot.
+    renderer.Feed(indexed);
+    std::copy(quad.begin()+3,quad.end(),memory.begin()+0x600);
+    renderer.Feed(indexed);
+    Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
+    Check(std::equal(white.begin(),white.end(),memory.begin()+0x1000+2*64+16*2),
+          "consecutive draws with changed indexed RAM keep separate GPU array snapshots");
     // EFB -> tiled RGBA8 RAM with padding between tile rows.
     Bp(renderer,0x49000000); Bp(renderer,0x4A000000 | (7<<10) | 7);
     Bp(renderer,0x4B000040); Bp(renderer,0x4D000006);
@@ -236,7 +272,7 @@ void GpuXfb(bool startHidden = false) {
     }
     Check(memory[0x880]==0xCD && memory[0x8BF]==0xCD && memory[0x940]==0xCD,
           "texture-copy row padding and trailing RAM stay untouched");
-    Check(memory[0x8C0]!=0xCD && renderer.TextureCopies()==1 && renderer.DisplayCopies()==11,
+    Check(memory[0x8C0]!=0xCD && renderer.TextureCopies()==1 && renderer.DisplayCopies()==14,
           "second tile row uses guest stride and texture copies do not present");
     Check(!aurora::gx::g_gxState.copyTextures.contains(memory.data()+0x800),
           "texture copies leave RAM authoritative for future sampling and CPU writes");

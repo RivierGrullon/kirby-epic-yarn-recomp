@@ -30,7 +30,7 @@ After building, open **`build/native/kirby-launcher`**. The native C++ frontend 
 - Start `WiiCompiled` with a visible game window.
 - Set the master volume for the next launch.
 - Toggle VSync to compare driver presentation behavior.
-- Try **Experimental performance mode** to reduce texture and display-copy GPU waits.
+- Try **Experimental performance mode** to reduce GPU copy waits and repeated texture processing.
 - Show detected controllers and open saves, logs and the build guide.
 
 The launcher uses the toolchain's existing SDL3 and Dear ImGui. Archive extraction,

@@ -601,6 +601,86 @@ and fails explicitly. Full-game compatibility and visible pacing need further
 validation; the option remains experimental and defaults off. This change does
 not alter the guest timebase, audio rate or introduce a 30/60 FPS selector.
 
+## Texture hashing investigation and candidate regression (2026-11-13)
+
+A warm Fountain Gardens section-1 run near the tower sampled the guest thread
+inside `hash_texture_source` / XXH3 in 17 of 30 stack samples. In a separate
+same-process off/on/off experiment, Aurora's created-pipeline count remained
+302 and its queued-pipeline count remained zero throughout each ten-second
+interval. No display readbacks occurred. This identifies repeated CPU texture
+hashing as a measured cost in this scene; it does not exclude first-use shader
+compilation elsewhere. Evidence: ignored `stage42-tower-stack-samples.json`,
+`stage42-stacks.log`, `stage42-object-periods.json` and
+`stage42-object-benchmark.log` under `build-logs/`.
+
+The candidate supplies stable Aurora texture identities only after comparing
+the current source bytes and palette against bounded snapshots. An initial
+Fountain Gardens test revealed stretched geometry with this optimization
+enabled. The off/on/off captures (`stage42-door-{off,on,off-again}.png`) reproduce
+the regression. Its throughput measurements are **not accepted performance
+results**, because incorrect draw merging can itself reduce work.
+
+Previously, unconditional texture invalidation also prevented Aurora from
+merging consecutive draws. Removing it exposed a missing indexed-array
+invalidation: a draw with changed guest vertex data could retain the preceding
+draw's GPU array offsets. The candidate now marks immediate data dirty whenever
+an indexed array needs a new upload, including a larger referenced prefix.
+
+A regression draws off-screen indexed positions, changes the same guest RAM to
+on-screen positions, and draws again without an intervening BP/CP command or
+frame boundary. Before the fix, the second draw incorrectly disappears; the
+saved failing executable stops at check 227. After the fix, all 423 Vulkan XFB
+checks pass. Commands and logs:
+
+```bash
+LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  local/stage43-array-red-test --gpu-xfb-hidden
+# Expected failure: consecutive draws with changed indexed RAM.
+LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  build/native-candidate/kirby_gx_renderer_test --gpu-xfb-hidden
+# 423 Vulkan XFB checks passed.
+```
+
+The corrected candidate also passes 21 CTest targets and all 42 Python checks,
+including native video startup and launcher integration. Logs:
+`stage43-array-{red,green}.log`, `stage43-array-green-build.log`,
+`stage43-ctest.log` and `stage43-python.log`.
+
+An isolated native run reached Quilty Square, Grass Land and Fountain Gardens.
+Virtual PAD input moved Kirby from x=15.85 to 18.61 right, then to 15.97 left;
+jumping raised y from 20.925 to 23.135 and changed player state from 1 to 2.
+At the tower door, x=76.027/y=24.925, the corrected off/on/off captures no longer
+show the stretched enemy, HUD triangles or yellow line from the failed candidate.
+Evidence: `stage43-real-player.json`, `stage43-object-door.json`,
+`stage43-object-tower-door.png`, `stage43-door-{off,on,off-again}.png` and
+`stage43-visual-compare.log`. This is a bounded visual check, not full-game
+compatibility or physical-controller validation.
+
+A new same-process comparison near the tower used the corrected candidate,
+hidden Vulkan window, muted output and no VSync on the Acer/RTX 3050 test host:
+
+| Texture snapshots | VI submissions/s | Median interval | p95 | p99 |
+| --- | ---: | ---: | ---: | ---: |
+| Disabled | 21.80 | 47.89 ms | 69.35 ms | 76.54 ms |
+| Enabled | 25.00 | 36.44 ms | 60.82 ms | 65.73 ms |
+| Disabled again | 21.30 | 49.71 ms | 68.70 ms | 74.19 ms |
+
+Each phase lasted ten seconds after two seconds of settling. Stage/resource/
+section stayed `(1,101,1)`, no counter increments were missed by the 1 ms polling,
+and readbacks stayed zero. Queued/created pipeline counts stayed `(0,302)`.
+The first partial interval was discarded. Evidence:
+`stage43-object-periods.json` and `stage43-object-benchmark.log`. This is a modest
+submission-throughput improvement with substantial remaining stalls, not stable
+30/60 FPS, physical scanout timing or Legion Go performance. Neither the guest
+clock nor the audio rate changes, and there is no new 30/60 FPS setting.
+
+The verified candidate was published to `build/native/WiiCompiled` and the
+launcher, with byte-for-byte comparisons against both candidate executables.
+Build ID: `2b813afe91009ffeca47404b025bd58a8bc95532`;
+SHA-256: `80f6cfd9e5ca9a0eb00c6e82784bae5f5f14cd975c3c6d158b72748b8bf02736`.
+The existing experimental-performance checkbox enables texture snapshots on
+the next launch. Publication logs: `stage43-publish-{configure,build}.log`.
+
 ## Reproduce checks
 
 ```bash
