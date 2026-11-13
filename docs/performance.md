@@ -202,6 +202,91 @@ Replace `GAME_PID` with the owned native game's main-thread ID. Disabling inline
 symbol expansion avoids a costly `addr2line` pass over the generated executable;
 the recorded call chains remain available for caller analysis.
 
+## Deferred texture snapshots
+
+The main-thread profile also attributed 109 memory-move samples to `CopyTexture`.
+An eligible deferred copy previously duplicated the same RAM bytes for its
+sampling-cache validation and its completion-fence check. These consumers now
+share one immutable snapshot. Partial CPU writeback creates a separate snapshot
+before changing the expected cache-line bytes; completed readback buffers are
+moved into the sampling cache instead of copied again. Exact comparisons, GPU
+fences, alias handling and the bounded copy cache remain in place.
+
+`DeferredSnapshotBytes()` counts bytes copied into deferred validation snapshots,
+including partial-writeback detachment. It excludes GPU readback payloads and is
+not a memory-bandwidth measurement. `SetDeferredSnapshotSharing(false)` is a C++
+diagnostic baseline that creates independent snapshots. Both branches use the new
+ownership representation, so it is not an exact reproduction of the old binary.
+There is no new launcher option; the change affects eligible deferred copies in
+the existing experimental performance mode.
+
+The candidate passed 438 synthetic Vulkan checks, 51 Python tests including
+native integration, and 21 CTest targets. Coverage includes deferred GPU sampling,
+exact materialized pixels, partial/full CPU writeback, aliases and replacement
+copies. The one-snapshot assertion first failed against the duplicate-copy code.
+The first combined test run failed during Vulkan surface initialization with
+`VK_INCOMPLETE`, before the renderer checks; the isolated repeat passed. Both logs
+are retained as `stage50-gpu.log` and `stage50-gpu-retry.log` in `build-logs/`.
+
+A same-process visible Fountain Gardens comparison held section 1 at
+`(70.038, 24.103)`, with experimental copies, VSync off and muted output. The first
+off/on/off series used 20-second frame windows and approximately 29-second
+CPU/counter windows:
+
+| Shared snapshots | CPU ms / submission | Snapshot MB / submission | VI submissions/s | p99 interval | Maximum | Intervals over 25 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Off | 11.986 | 5.533 | 56.034 | 34.216 ms | 51.180 ms | 77 |
+| On | 10.529 | 2.766 | 55.986 | 61.011 ms | 71.007 ms | 37 |
+| Off again | 10.033 | 5.533 | 59.892 | 17.839 ms | 33.368 ms | 1 |
+
+The changing baseline makes that series inconclusive for CPU time and delivery.
+A longer on/off/on repeat used 40-second frame windows and approximately
+49-second CPU/counter windows:
+
+| Shared snapshots | CPU ms / submission | Snapshot MB / submission | VI submissions/s | p99 interval | Maximum | Intervals over 25 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| On | 10.062 | 2.766 | 59.615 | 18.457 ms | 48.439 ms | 11 |
+| Off | 10.470 | 5.526 | 59.169 | 31.765 ms | 70.797 ms | 28 |
+| On again | 10.020 | 2.765 | 59.864 | 18.039 ms | 33.606 ms | 3 |
+
+Both enabled phases in the repeat consumed about 4% less main-thread CPU per
+submission than the intervening baseline. Snapshot demand halved, and the longer
+repeat had fewer long intervals with sharing. This modest improvement supports
+retaining the change; the variable first series and remaining stalls prevent a
+stable-60 claim. Pipeline counts stayed at zero queued / 302 created, position was
+unchanged and no readbacks occurred in any measurement window. The repeat's draw
+demand remained about 1,893 draws per submission.
+
+The isolated candidate also reached the level through normal virtual PAD input;
+right/left movement and a jump changed observed player coordinates and state.
+Native captures before/after the measurements were inspected for visible defects.
+These checks do not certify physical controls, moving-gameplay pacing, audio or
+Legion Go performance. Evidence: `stage50-snapshots-{comparison,repeat}.json`,
+`stage50-snapshots-frames.csv`, `stage50-player.json`, `stage50-tower.png` and
+`stage50-enabled-final.png` under ignored `build-logs/`.
+
+The native executable used by the launcher was rebuilt and compared byte-for-byte
+with the tested candidate. SHA-256:
+`f6a496beb0a76760ba0b90b795e1cd392ce102906e8c050e3dff47f43db26a08`.
+The previous executable is retained locally under `local/verified-builds/before-stage50/`.
+
+Verification commands:
+
+```bash
+bash tools/container.sh cmake --build build/native \
+  --target WiiCompiled kirby-launcher kirby_gx_renderer_test --parallel 3
+# Run the Vulkan check separately from other video tests.
+LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  build/native/kirby_gx_renderer_test --gpu-xfb-hidden
+KIRBY_NATIVE_TEST="$PWD/build/native/WiiCompiled" \
+  KIRBY_NATIVE_VIDEO_TEST="$PWD/build/native/WiiCompiled" \
+  KIRBY_LAUNCHER_TEST="$PWD/build/native/kirby-launcher" \
+  LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  python3 -m unittest discover -s tests -v
+bash tools/container.sh ctest --test-dir build/native \
+  -R '^(kirby_|mkw_linux_host_context_tests$)' --output-on-failure
+```
+
 ## Measurements
 
 Hardware: Acer Nitro AN515-55, Intel i5-10300H, NVIDIA RTX 3050 Laptop GPU, Bazzite,

@@ -42,6 +42,9 @@ public:
     uint64_t TextureValidationBytes() const { return textureValidationBytes_; }
     uint64_t ShaderAnalyses() const { return shaderAnalyses_; }
     void SetShaderAnalysisReuse(bool enabled) { shaderAnalysisReuse_=enabled; sampledFormat_=0xFF; }
+    // CPU bytes copied for deferred-copy validation, excluding GPU readback payloads.
+    uint64_t DeferredSnapshotBytes() const { return deferredSnapshotBytes_; }
+    void SetDeferredSnapshotSharing(bool enabled) { deferredSnapshotSharing_=enabled; }
 private:
     struct XfbState;
     struct TextureState;
@@ -85,5 +88,7 @@ private:
     std::bitset<8> sampledTextures_;
     uint8_t sampledFormat_ = 0xFF, sampledPrimitive_ = 0xFF;
     bool shaderAnalysisReuse_ = true;
+    uint64_t deferredSnapshotBytes_ = 0;
+    bool deferredSnapshotSharing_ = true;
 };
 }

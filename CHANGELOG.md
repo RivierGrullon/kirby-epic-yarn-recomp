@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Share immutable RAM snapshots between deferred texture validation and completion
+  checks; detach for partial CPU writeback and adopt completed readback buffers.
 - Reuse shader texture-usage analysis within synchronous GX batches, rechecking
   pipeline state, vertex format and primitive changes before sampling textures.
 - Add a source-only frame-log analyzer with time-window selection, interval

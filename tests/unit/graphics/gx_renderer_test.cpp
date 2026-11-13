@@ -399,8 +399,11 @@ void GpuXfb(bool startHidden = false) {
     Bp(renderer,0x43000000);
     renderer.SetDeferredTextureCopies(true);
     const auto batchStart = renderer.Readbacks();
+    const auto snapshotStart = renderer.DeferredSnapshotBytes();
     Bp(renderer,0x4A000000 | (7<<10) | 7); Bp(renderer,0x4D000004);
     Bp(renderer,0x4B000070); Bp(renderer,0x52000063);
+    Check(renderer.DeferredSnapshotBytes()-snapshotStart==256,
+          "an 8x8 RGBA8 deferred copy captures one shared RAM validation snapshot");
     Check(memory[0xE00] == 0xCD && renderer.Readbacks() == batchStart,
           "deferred texture copy does not wait for a separate GPU readback");
     Bp(renderer,0x88000000 | (6<<20) | (7<<10) | 7); Bp(renderer,0x94000070);
@@ -489,10 +492,18 @@ void GpuXfb(bool startHidden = false) {
           "full CPU writeback replaces a resident copy without downloading obsolete pixels");
     Bp(renderer,0x4B000950); Bp(renderer,0x52000063);
     std::fill_n(memory.begin()+0x12A00,32,0x1C);
+    const auto beforePartialSnapshot=renderer.DeferredSnapshotBytes();
     renderer.WritebackTextureCopiesForRange(0x80012A00,32);
+    Check(renderer.DeferredSnapshotBytes()-beforePartialSnapshot==256,
+          "partial CPU writeback detaches the validation snapshot before updating expected bytes");
     Check(memory[0x12A00]==0x1C && memory[0x12A1F]==0x1C && memory[0x12A20]==255 && memory[0x12A21]==0,
           "partial CPU writeback preserves CPU cache-line bytes and materializes the remaining GPU bytes");
+    renderer.SetDeferredSnapshotSharing(false);
+    const auto separateSnapshotStart=renderer.DeferredSnapshotBytes();
     Bp(renderer,0x4B000958); Bp(renderer,0x52000063);
+    Check(renderer.DeferredSnapshotBytes()-separateSnapshotStart==512,
+          "diagnostic baseline captures separate validation and completion snapshots");
+    renderer.SetDeferredSnapshotSharing(true);
     const auto replacementStart=renderer.Readbacks();
     Bp(renderer,0x94000040); renderer.Feed(quad);
     Bp(renderer,0x52000063);

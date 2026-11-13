@@ -33,12 +33,14 @@ struct GxRenderer::XfbState {
     };
     aurora::gfx::readback::StreamHandle stream = 0;
     std::map<uint32_t, Entry> entries;
-    struct TextureEntry { TextureCopy copy; std::vector<uint8_t> bytes; uint64_t validatedEpoch = 0; };
+    using Snapshot = std::shared_ptr<const std::vector<uint8_t>>;
+    struct TextureEntry { TextureCopy copy; Snapshot bytes; uint64_t validatedEpoch = 0; };
     std::map<uint32_t, TextureEntry> textures;
     struct PendingTexture {
         TextureCopy copy;
         aurora::gfx::TextureHandle texture;
-        std::vector<uint8_t> before, bytes;
+        Snapshot before;
+        std::vector<uint8_t> bytes;
     };
     std::vector<PendingTexture> pending;
     uint64_t presented = 0;
@@ -166,8 +168,12 @@ void GxRenderer::WritebackTextureCopiesForRange(uint32_t address,uint64_t size) 
         } else {
             const auto bytes=resolve_(start,end-start);
             written.push_back({start,{bytes.begin(),bytes.end()}});
-            // Only the explicitly published cache lines may have changed.
-            std::copy(bytes.begin(),bytes.end(),it->before.begin()+start-copy.address);
+            // Detach before changing the expected CPU bytes: the sampling cache
+            // still owns the original immutable snapshot until this copy commits.
+            auto before=std::make_shared<std::vector<uint8_t>>(*it->before);
+            deferredSnapshotBytes_ += before->size();
+            std::copy(bytes.begin(),bytes.end(),before->begin()+start-copy.address);
+            it->before=std::move(before);
             ++it;
         }
     }
@@ -198,15 +204,16 @@ void GxRenderer::FlushPendingTextureCopiesForRange(uint32_t address, uint64_t si
     })) FlushTextureCopies();
 }
 void GxRenderer::CommitTextureCopies() {
-    for (const auto& entry : xfb_->pending) {
+    for (auto& entry : xfb_->pending) {
         const auto& copy = entry.copy;
-        if (!std::ranges::equal(resolve_(copy.address,copy.bytes),entry.before))
+        if (!std::ranges::equal(resolve_(copy.address,copy.bytes),*entry.before))
             throw std::runtime_error("CPU wrote a deferred GX copy before its completion fence");
         if (entry.bytes.size()!=size_t(copy.rowBytes)*copy.rows)
             throw std::runtime_error("GX texture batch result differs from tile layout");
         for (uint32_t row=0;row<copy.rows;++row)
             write_(copy.address+row*copy.stride,std::span(entry.bytes).subspan(row*copy.rowBytes,copy.rowBytes));
-        xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{copy,entry.bytes});
+        xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{
+            copy,std::make_shared<const std::vector<uint8_t>>(std::move(entry.bytes))});
     }
     xfb_->pending.clear();
 }
@@ -324,8 +331,15 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
         copy.stride == copy.rowBytes && texture->size.width == copy.width && texture->size.height == copy.height &&
         (xfb_->textures.contains(copy.address) || xfb_->textures.size() < 16);
     if (deferredTextureCopies_ && retain) {
-        std::vector<uint8_t> before(memory.begin(),memory.end());
-        xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{copy,before});
+        auto before=std::make_shared<const std::vector<uint8_t>>(memory.begin(),memory.end());
+        deferredSnapshotBytes_ += memory.size();
+        auto validation=before;
+        if (!deferredSnapshotSharing_) {
+            // Diagnostic baseline: keep independent validation and fence copies.
+            validation=std::make_shared<const std::vector<uint8_t>>(*before);
+            deferredSnapshotBytes_ += before->size();
+        }
+        xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{copy,std::move(validation)});
         xfb_->pending.push_back({copy,texture,std::move(before),{}});
     } else {
         ++readbacks_;
@@ -335,7 +349,8 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
         if (data.size()!=size_t(copy.rowBytes)*copy.rows) throw std::runtime_error("GX texture readback size differs from tile layout");
         for (uint32_t row=0;row<copy.rows;++row)
             write_(copy.address+row*copy.stride,std::span(data).subspan(row*copy.rowBytes,copy.rowBytes));
-        if (retain) xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{copy,std::move(data)});
+        if (retain) xfb_->textures.insert_or_assign(copy.address,XfbState::TextureEntry{
+            copy,std::make_shared<const std::vector<uint8_t>>(std::move(data))});
         else {
             xfb_->textures.erase(copy.address);
             gx::evict_copy_texture(memory.data());
@@ -370,7 +385,7 @@ void GxRenderer::ValidateCopyTexture(uint32_t address, uint32_t format, uint32_t
     const auto memory = resolve_(address,entry.copy.bytes);
     if (format == entry.copy.format && width == entry.copy.width && height == entry.copy.height &&
         mipCount == 1 && ((textureSnapshotReuse_ && textureBatchValidation_ &&
-                          entry.validatedEpoch == textureValidationEpoch_) || std::ranges::equal(memory,entry.bytes))) {
+                          entry.validatedEpoch == textureValidationEpoch_) || std::ranges::equal(memory,*entry.bytes))) {
         entry.validatedEpoch=textureValidationEpoch_;
         return;
     }
