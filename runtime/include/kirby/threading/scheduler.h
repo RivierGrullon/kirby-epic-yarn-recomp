@@ -3,6 +3,13 @@
 #include <cstdint>
 struct CpuContext;
 namespace Kirby {
+// IRQ frames live on their owning native stack, including while preempted.
+struct InterruptState {
+    uint32_t context = 0;
+    const CpuContext* savedCpu = nullptr;
+};
+InterruptState GetInterruptState();
+void SetInterruptState(InterruptState state);
 bool DispatchInterrupt(CpuContext& cpu, uint32_t guestContext, uint32_t resume);
 bool DispatchAlarm(CpuContext& cpu, uint32_t guestContext, uint32_t resume);
 uint64_t DeliveredAlarms();

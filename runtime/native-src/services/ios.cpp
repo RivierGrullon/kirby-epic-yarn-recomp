@@ -4,6 +4,7 @@
 #include "kirby/boot/boot_memory.h"
 #include "kirby/services/ios_bridge.h"
 #include "kirby/input/wpad.h"
+#include "kirby/threading/scheduler.h"
 #include <deque>
 #include <stdexcept>
 
@@ -105,6 +106,14 @@ extern "C" void KirbyRestoreInterrupts(CpuContext* ctx) {
     // Passing the whole context makes the translator flush resident registers.
     Kirby::DrainIosCompletions(ctx);
     Kirby::PollWpad(*ctx);
+    // This audited SDK boundary has flushed the translated registers. Pending
+    // device IRQs can run as EE is enabled, without waiting for scheduler idle.
+    if ((ctx->msr & 0x8000) && Memory::Contains(0x800000D4, 4)) {
+        const auto context = Memory::Read32(0x800000D4);
+        // Returning with EE set and an asserted IRQ immediately re-enters
+        // exception handling. Drain queued mailbox replies at this boundary.
+        if (context) while (Kirby::DispatchInterrupt(*ctx, context, ctx->lr)) {}
+    }
 }
 
 // Kirby addresses are already RK5E01 addresses. Never apply MKW's PAL region map.

@@ -20,8 +20,7 @@ namespace C = KirbyBootConfig;
 constexpr uint32_t CurrentContext = 0x800000D4, CurrentThread = 0x800000E4;
 constexpr uint32_t State = 0x2C8, Priority = 0x2D0, Queue = 0x2DC, Next = 0x2E0, Prev = 0x2E4;
 struct InterruptReturn { CpuContext restored; };
-uint32_t activeInterruptContext = 0;
-const CpuContext* interruptedCpu = nullptr;
+Kirby::InterruptState interruptState;
 uint64_t delivered = 0, wakeups = 0;
 uint64_t alarms = 0;
 
@@ -49,10 +48,12 @@ void SaveException(const CpuContext& cpu, uint32_t address, uint32_t resume) {
 }
 
 namespace Kirby {
+InterruptState GetInterruptState() { return interruptState; }
+void SetInterruptState(InterruptState state) { interruptState = state; }
 uint64_t DeliveredInterrupts() { return delivered; }
 uint64_t SchedulerWakeups() { return wakeups; }
 static bool DispatchException(CpuContext& cpu, uint32_t guestContext, uint32_t resume, uint32_t handler, uint32_t type) {
-    if (activeInterruptContext || !(cpu.msr & 0x8000)) return false;
+    if (interruptState.context || !(cpu.msr & 0x8000)) return false;
     SaveException(cpu, guestContext, resume);
     const CpuContext saved = cpu;
     CpuContext interrupt = cpu;
@@ -60,8 +61,8 @@ static bool DispatchException(CpuContext& cpu, uint32_t guestContext, uint32_t r
     interrupt.gpr[3] = type; interrupt.gpr[4] = guestContext;
     interrupt.pc = handler;
     struct Guard {
-        Guard(uint32_t context, const CpuContext& saved) { activeInterruptContext = context; interruptedCpu = &saved; }
-        ~Guard() { activeInterruptContext = 0; interruptedCpu = nullptr; }
+        Guard(uint32_t context, const CpuContext& saved) { interruptState = {context, &saved}; }
+        ~Guard() { interruptState = {}; }
     } guard(guestContext, saved);
     CpuContextScope scope(&interrupt);
     try {
@@ -76,7 +77,7 @@ static bool DispatchException(CpuContext& cpu, uint32_t guestContext, uint32_t r
     throw std::runtime_error("Original interrupt dispatcher returned without OSLoadContext");
 }
 bool DispatchInterrupt(CpuContext& cpu, uint32_t guestContext, uint32_t resume) {
-    if (activeInterruptContext || !(cpu.msr & 0x8000)) return false;
+    if (interruptState.context || !(cpu.msr & 0x8000)) return false;
     uint32_t cause = 0, mask = 0;
     KirbyMmioRead32(0xCC003000, cause);
     KirbyMmioRead32(0xCC003004, mask);
@@ -85,7 +86,7 @@ bool DispatchInterrupt(CpuContext& cpu, uint32_t guestContext, uint32_t resume) 
 }
 uint64_t DeliveredAlarms() { return alarms; }
 bool DispatchAlarm(CpuContext& cpu, uint32_t guestContext, uint32_t resume) {
-    if (activeInterruptContext || !(cpu.msr & 0x8000)) return false;
+    if (interruptState.context || !(cpu.msr & 0x8000)) return false;
     const auto head = Memory::Read32(C::AlarmQueue);
     if (!head) return false;
     Memory::GetPointer(head, 0x2C);
@@ -107,10 +108,10 @@ bool DispatchAlarm(CpuContext& cpu, uint32_t guestContext, uint32_t resume) {
 
 extern "C" void KirbyLoadContext(CpuContext* cpu) {
     const auto address = cpu->gpr[3];
-    if (!activeInterruptContext || address != activeInterruptContext)
+    if (!interruptState.context || address != interruptState.context)
         throw std::runtime_error("OSLoadContext requires a registered host continuation outside IRQ return");
     Memory::GetPointer(address, 0x2C8);
-    CpuContext restored = *interruptedCpu;
+    CpuContext restored = *interruptState.savedCpu;
     for (unsigned i = 0; i < 32; ++i) restored.gpr[i] = Memory::Read32(address + i*4);
     restored.cr = Memory::Read32(address + 0x80); restored.lr = Memory::Read32(address + 0x84);
     restored.ctr = Memory::Read32(address + 0x88); restored.xer = Memory::Read32(address + 0x8C);
@@ -143,11 +144,14 @@ extern "C" void KirbySelectThread(CpuContext* cpu) {
         Memory::Write32(C::RunQueueBits, Memory::Read32(C::RunQueueBits) | (1u << (31-priority)));
         Memory::Write32(C::RunQueueHint, 1);
     }
-    if (Memory::Read16(old + 0x1A2) & 2)
-        throw std::runtime_error("Scheduling a preempted guest context needs host continuation support");
+    const bool preempted = Memory::Read16(old + 0x1A2) & 2;
+    if (preempted && (interruptState.context != old || !interruptState.savedCpu))
+        throw std::runtime_error("Preempted guest context has no matching native IRQ continuation");
     // Save the SDK-visible registers with the original code. The corresponding
     // host continuation is this native invocation, including its complete CPU snapshot.
-    Call(*cpu, C::SaveContext, old);
+    // Exception entry already saved a preempted context. Saving the handler's
+    // scratch registers over it would destroy the interrupted thread's state.
+    if (!preempted) Call(*cpu, C::SaveContext, old);
     if (!Memory::Read32(C::RunQueueBits)) {
         SwitchCallback(*cpu, old, 0);
         Memory::Write32(CurrentThread, 0);

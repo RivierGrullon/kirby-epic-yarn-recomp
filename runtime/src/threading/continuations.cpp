@@ -5,6 +5,7 @@
 #include "host_context.h"
 #include "generated/KirbyBootConfig.h"
 #include "kirby/threading/continuations.h"
+#include "kirby/threading/scheduler.h"
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -21,6 +22,7 @@ struct Continuation {
     CpuContext* activeCpu = nullptr;
     uint32_t fpControl = 0;
     uint32_t savedPc = 0, savedLr = 0, savedSp = 0;
+    Kirby::InterruptState interrupts{};
     bool finished = false;
 };
 std::unordered_map<uint32_t, std::unique_ptr<Continuation>> threads;
@@ -32,6 +34,8 @@ uint64_t switches = 0;
 void Transfer(Continuation& source, Continuation& target) {
     source.activeCpu = TryGetCpuContext();
     source.fpControl = MkwGetHostFpControl();
+    source.interrupts = Kirby::GetInterruptState();
+    Kirby::SetInterruptState(target.interrupts);
     g_currentCpuContext = target.activeCpu;
     MkwRestoreHostMxcsr(target.fpControl);
     ++switches;
@@ -39,6 +43,7 @@ void Transfer(Continuation& source, Continuation& target) {
     // A host context does not switch C++ thread-local variables. Restore the
     // exact scope pointer, including a suspended guest ABI wrapper's scope.
     g_currentCpuContext = source.activeCpu;
+    Kirby::SetInterruptState(source.interrupts);
     MkwRestoreHostMxcsr(source.fpControl);
 }
 

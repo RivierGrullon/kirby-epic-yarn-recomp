@@ -88,6 +88,26 @@ void ProbeAx(CpuContext& cpu) {
         check(Memory::Read16(output+i*2) == 1000, "MEM2 PCM voice did not reach stereo AX output");
     check(reply() == 0xDCD10004 && reply() == 0xDCD10002,
           "MEM2 voice task sync/yield replies are out of order");
+    // A ready DSP reply must interrupt an enabled, running guest without an
+    // artificial scheduler-idle call. Keep EE masked first to verify deferral.
+    send(0xCDD10000);
+    send(0xCDD10000);
+    const auto beforeRestore = DeliveredInterrupts();
+    const auto resume = cpu.lr;
+    cpu.msr &= ~0x8000u;
+    cpu.gpr[3] = 0;
+    InvokeIndirectCpu(C::RestoreInterrupts, &cpu);
+    check(DeliveredInterrupts() == beforeRestore && (Memory::Read16(0xCC005004) & 0x8000),
+          "Masked OSRestoreInterrupts consumed a pending DSP reply");
+    cpu.gpr[3] = 1;
+    InvokeIndirectCpu(C::RestoreInterrupts, &cpu);
+    check(DeliveredInterrupts() == beforeRestore+2 && !(Memory::Read16(0xCC005004) & 0x8000),
+          "OSRestoreInterrupts did not drain both pending DSP replies outside scheduler idle");
+    check(cpu.gpr[1] == stack && cpu.gpr[2] == 0x808EE8E0 && cpu.gpr[13] == 0x808E73E0 &&
+          cpu.lr == resume && (cpu.msr & 0x8000) && Memory::Read32(0x800000D4) == context &&
+          !(Memory::Read16(context+0x1A2) & 2),
+          "Native interrupt-enable boundary failed to restore the interrupted context");
+    std::cout << "[kirby] pending DSP reply delivered at interrupt-enable boundary without scheduler idle\n";
     std::cout << "[kirby] retail MEM2 sample bounds and PCM voice stereo output verified\n";
     std::cout << "[kirby] original AX task boot and IRQ callback returned; 96 stereo samples mixed; task replies verified\n";
 }

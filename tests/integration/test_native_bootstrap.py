@@ -73,6 +73,7 @@ class NativeBootstrapTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("original AX task boot and IRQ callback returned; 96 stereo samples mixed; task replies verified", result.stdout)
         self.assertIn("retail MEM2 sample bounds and PCM voice stereo output verified", result.stdout)
+        self.assertIn("pending DSP reply delivered at interrupt-enable boundary without scheduler idle", result.stdout)
 
     def test_original_sleep_alarms_resume_and_respect_masks_and_cancellation(self):
         result = self.invoke("--probe-alarms")
