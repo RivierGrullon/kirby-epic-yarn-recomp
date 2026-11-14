@@ -25,7 +25,7 @@ void Finish(Job& job) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
-int Child(const std::string& mode) {
+int Child(const std::string& mode,const fs::path& workspace) {
     std::string line;std::getline(std::cin,line);const auto request=Json::parse(line);
     uint64_t sequence=0;
     const auto emit=[&](Json event) {
@@ -33,6 +33,20 @@ int Child(const std::string& mode) {
         std::cout << event.dump() << '\n' << std::flush;
     };
     emit({{"stage","inspect"},{"state","started"},{"log_path","/tmp/source.log"}});
+    if (mode.starts_with("install-")) {
+        Check(request.at("operation")=="install","Install client sent the wrong operation");
+        if (mode=="install-late-cancel") {
+            std::getline(std::cin,line);
+            Check(Json::parse(line).at("operation")=="cancel","Late cancellation was not sent");
+        }
+        emit({{"stage","compile"},{"state","started"}});
+        const std::string id(64,'a');
+        Json result={{"source",request.at("source")},{"data_root","/tmp/export/DATA"},
+          {"installation_id",id},{"committed",true},{"build_reused",false},{"translation_reused",true},
+          {"executable",(mode=="install-wrong-path" ? fs::path("/different") : workspace/"installations"/id/"WiiCompiled").string()}};
+        emit({{"stage","install"},{"state","complete"},{"result",result}});
+        return mode=="install-nonzero" ? 7 : 0;
+    }
     if (mode=="hang") { std::this_thread::sleep_for(std::chrono::seconds(10));return 0; }
     if (mode=="cancel") {
         std::getline(std::cin,line);
@@ -56,7 +70,7 @@ int Child(const std::string& mode) {
 }
 }
 int main(int argc,char** argv) {
-    if (argc==4 && std::string(argv[2])=="--workspace") return Child(fs::path(argv[1]).filename().string());
+    if (argc==4 && std::string(argv[2])=="--workspace") return Child(fs::path(argv[1]).filename().string(),argv[3]);
     std::string directory=(fs::temp_directory_path()/"kirby's setup client.XXXXXX").string();
     Check(mkdtemp(directory.data())!=nullptr,"Could not create test directory");
     struct Cleanup { fs::path path;~Cleanup() { fs::remove_all(path); } } cleanup{directory};
@@ -86,6 +100,14 @@ int main(int argc,char** argv) {
         Check(job.Start(fixture(mode),source,directory,self),"Cancellation fixture did not start");
         job.Cancel();Finish(job);
         Check(job.Current().status==Status::Cancelled && !job.Current().result,"Cancelled inspection changed the selection");
+    }
+    for (const auto mode : {"install-ready","install-late-cancel","install-wrong-path","install-nonzero"}) {
+        Check(job.Start(fixture(mode),source,directory,self,Operation::Install),"Install fixture did not start");
+        if (std::string(mode)=="install-late-cancel") job.Cancel();
+        Finish(job);
+        const bool success=std::string(mode)=="install-ready" || std::string(mode)=="install-late-cancel";
+        Check(job.Current().status==(success ? Status::Ready : Status::Failed),"Install completion/exit/cancellation was misclassified");
+        Check(job.Current().installation.has_value()==success,"Unverified installation result was accepted");
     }
     { Job owned(100);Check(owned.Start(fixture("hang"),source,directory,self),"Destructor fixture did not start"); }
     Check(!job.Start(fixture("failure"),source,directory,"/missing/python"),"Missing Python was accepted");

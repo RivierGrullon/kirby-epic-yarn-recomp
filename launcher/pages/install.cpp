@@ -9,6 +9,12 @@ const char* StageLabel(const std::string& stage) {
     if (stage=="unpack") return "Unpacking archive";
     if (stage=="extract") return "Extracting game data";
     if (stage=="validate") return "Verifying game data";
+    if (stage=="prepare") return "Preparing pinned build tools";
+    if (stage=="translate") return "Translating PowerPC code to C++";
+    if (stage=="compile") return "Compiling the native game";
+    if (stage=="verify") return "Checking native startup (silent)";
+    if (stage=="publish") return "Saving the verified native build";
+    if (stage=="select") return "Selecting the verified installation";
     return "Inspecting source";
 }
 }
@@ -28,7 +34,7 @@ Action DrawInstall(State& state) {
     if (setup.status!=Setup::Status::Idle) {
         ImGui::Spacing();
         if (setup.Busy()) {
-            ImGui::TextUnformatted(setup.status==Setup::Status::Cancelling ? "Cancelling import..." : StageLabel(setup.stage));
+            ImGui::TextUnformatted(setup.status==Setup::Status::Cancelling ? "Cancelling setup..." : StageLabel(setup.stage));
             if (setup.completed && setup.total && *setup.total>0) {
                 const auto label=std::to_string(*setup.completed/1048576)+" / "+std::to_string(*setup.total/1048576)+" MiB";
                 ImGui::PushStyleColor(ImGuiCol_PlotHistogram,ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered));
@@ -36,7 +42,7 @@ Action DrawInstall(State& state) {
                 ImGui::PopStyleColor();
             }
             ImGui::BeginDisabled(state.selfTest || setup.status==Setup::Status::Cancelling);
-            if (ImGui::Button("Cancel import")) action=Action::CancelSetup;
+            if (ImGui::Button(setup.operation==Setup::Operation::Install ? "Cancel build" : "Cancel import")) action=Action::CancelSetup;
             ImGui::EndDisabled();
         } else {
             ImGui::TextWrapped("%s",setup.message.c_str());
@@ -44,7 +50,7 @@ Action DrawInstall(State& state) {
                                         setup.result->cached ? " (cached export)" : "");
         }
         if (!setup.source.empty()) ImGui::TextWrapped("Source: %s",setup.source.c_str());
-        if (!setup.logPath.empty() && ImGui::Button("Open import logs")) action=Action::OpenSetupLogs;
+        if (!setup.logPath.empty() && ImGui::Button("Open setup logs")) action=Action::OpenSetupLogs;
     }
     ImGui::Spacing();
     ImGui::SeparatorText("Selected game data");
@@ -55,7 +61,13 @@ Action DrawInstall(State& state) {
     ImGui::EndDisabled();
     ImGui::Spacing();
     ImGui::SeparatorText("Native build");
-    ImGui::TextWrapped("Import verifies and keeps complete game data. Translation and compilation still use the build guide.");
+    ImGui::TextWrapped("Build from the selected DATA folder. A matching build is reused; damaged compiler outputs are rebuilt. Startup checks run silently before selection.");
+    if (!state.installationId.empty()) ImGui::TextWrapped("Selected installation: %.12s",state.installationId.c_str());
+    if (!state.installationError.empty()) ImGui::TextWrapped("%s",state.installationError.c_str());
+    ImGui::BeginDisabled(state.selfTest || state.gameRunning || setup.Busy() || state.choosingSource || !state.dataVerified);
+    if (ImGui::Button("Build / update native game")) action=Action::BuildGame;
+    ImGui::EndDisabled();
+    ImGui::TextWrapped("The pinned local toolchain image must already be prepared. First builds can take several minutes; details are in the build guide.");
     if (ImGui::Button("Open Build Guide")) action = Action::BuildGuide;
     return action;
 }

@@ -25,6 +25,10 @@ std::filesystem::path Path(const Json& object,const char* key) {
     if (!value.is_absolute()) throw std::runtime_error("Setup event requires an absolute path");
     return value;
 }
+bool Boolean(const Json& object,const char* key) {
+    if (!object.at(key).is_boolean()) throw std::runtime_error("Setup event requires a boolean");
+    return object.at(key).get<bool>();
+}
 }
 Event ParseEvent(std::string_view line,std::string_view identifier,uint64_t sequence) {
     if (line.empty() || line.size()>65536 || line.find('\0')!=std::string_view::npos)
@@ -39,7 +43,8 @@ Event ParseEvent(std::string_view line,std::string_view identifier,uint64_t sequ
     const auto oneOf=[](std::string_view value,std::initializer_list<std::string_view> items) {
         return std::find(items.begin(),items.end(),value)!=items.end();
     };
-    if (!oneOf(event.stage,{"inspect","hash","unpack","extract","validate","request"}) ||
+    if (!oneOf(event.stage,{"inspect","hash","unpack","extract","validate","request",
+                           "install","prepare","translate","compile","verify","publish","select"}) ||
         !oneOf(event.state,{"started","progress","complete","failed","cancelled","rejected"}))
         throw std::runtime_error("Unknown setup stage or state");
     if (object.contains("completed") || object.contains("total")) {
@@ -66,13 +71,26 @@ Event ParseEvent(std::string_view line,std::string_view identifier,uint64_t sequ
             info.cached=result.at("cached").get<bool>();
         }
         event.result=std::move(info);
+    } else if (event.stage=="install" && event.state=="complete") {
+        const auto& result=object.at("result");
+        Installation info;info.identifier=Text(result,"installation_id",64);
+        if (info.identifier.size()!=64 || info.identifier.find_first_not_of("0123456789abcdef")!=std::string::npos)
+            throw std::runtime_error("Invalid native installation identifier");
+        info.source=Path(result,"source");info.dataRoot=Path(result,"data_root");info.executable=Path(result,"executable");
+        info.committed=Boolean(result,"committed");info.buildReused=Boolean(result,"build_reused");
+        info.translationReused=Boolean(result,"translation_reused");
+        if (!info.committed) throw std::runtime_error("Native installation was not committed");
+        event.installation=std::move(info);
     } else if (object.contains("result")) throw std::runtime_error("Setup result arrived before completion");
-    if (event.stage=="inspect" && (event.state=="failed" || event.state=="cancelled") && event.error.empty())
+    if ((event.stage=="inspect" || event.stage=="install") && (event.state=="failed" || event.state=="cancelled") && event.error.empty())
         throw std::runtime_error("Setup failure has no explanation");
     return event;
 }
 std::string InspectRequest(std::string_view identifier,const std::filesystem::path& source) {
     return Json{{"version",1},{"id",identifier},{"operation","inspect"},{"source",source.string()}}.dump()+"\n";
+}
+std::string InstallRequest(std::string_view identifier,const std::filesystem::path& source) {
+    return Json{{"version",1},{"id",identifier},{"operation","install"},{"source",source.string()}}.dump()+"\n";
 }
 std::string CancelRequest(std::string_view identifier) {
     return Json{{"version",1},{"id",identifier},{"operation","cancel"}}.dump()+"\n";

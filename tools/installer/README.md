@@ -106,11 +106,26 @@ the terminal result reports `committed: true` even if a cancellation arrives lat
 The install result also includes `installation_id`, `executable`, `data_root`,
 `translation_reused` and `build_reused`.
 
-The current launcher still offers inspection/import only and runs its sibling
-developer executable. It does not yet consume the installation pointer. Native
-Install/repair/rollback controls and Play/build locking remain to be integrated.
-The worker requires an existing toolchain image; automatic toolchain preparation
-is pending. Repeating `--install` reuses matching caches and rebuilds damaged ones.
+The launcher offers **Build / update native game** for its selected DATA folder.
+Its asynchronous client accepts a committed install result only after a valid
+final event and exit 0, checking the selected source and expected installation
+path. It then rechecks the on-disk manifest and artifact hashes before using the
+new executable. A late cancellation cannot be reported as preserving the old
+selection after the worker has already committed. Build progress and cancellation
+remain available during translation/compilation; Play is disabled during that
+launcher's setup job. Closing waits for cancellation.
+
+On startup the launcher reads the active installation pointer, validates its
+manifest identity and hashes the executable and DSP resource. It uses its sibling
+developer executable only when no installation pointer exists. Broken installed
+metadata/artifacts block Play. The reader reuses Crypto++ from the pinned runtime;
+upstream source and license files remain intact. These hashes detect changes;
+they are not signatures from a trusted distributor.
+
+The worker requires an existing toolchain image; automatic toolchain preparation,
+dedicated repair/rollback controls and cross-process Play/build locking remain
+pending. Repeating `--install` reuses matching compiler caches and rebuilds damaged
+compiler outputs. It does not yet repair a corrupted immutable installation.
 
 ## Managed build containers
 

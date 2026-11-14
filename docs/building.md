@@ -100,9 +100,12 @@ sources stay under `local/setup/`; saves and executable files are not moved.
 The worker emits JSON lines; external tool output stays in `local/setup/logs/`.
 Only one job can use a setup workspace at a time. SIGINT/SIGTERM cancel active
 work and remove its temporary export. See [the worker protocol](../tools/installer/README.md)
-for launcher integration. Translation, compilation, repair and executable
-selection from the Install page remain under development. A source import is not
-a newly compiled build.
+for launcher integration. After importing, choose **Build / update native game**
+to translate, compile and verify that selected DATA folder. The page shows the
+actual stage and offers **Cancel build**. It selects an independent executable
+only after native startup checks pass. A source import alone is not a newly
+compiled build. Prepare the local toolchain image using the prerequisites above;
+automatic image setup and dedicated repair/rollback controls remain pending.
 
 To test the launcher's actual process/protocol client without opening a window
 or changing the selected data or settings:
@@ -170,8 +173,11 @@ This requires the pinned dependencies and existing toolchain image prepared
 above. It builds in a cache, verifies a separate native copy with silent hidden
 startup probes, and writes a verified bundle and atomic selection pointer under
 `local/`. It preserves the developer executable and user settings/saves.
-The current launcher does not yet read that pointer or offer compilation,
-repair and rollback buttons. See [Native installation](../tools/installer/README.md#native-installation)
+The launcher reads that pointer on startup and verifies the manifest, binary and
+DSP resource hashes before using the installed executable. Without a pointer it
+uses the sibling developer executable. Invalid installed artifacts block Play;
+they do not silently fall back to another executable. Repair and rollback
+controls remain pending. See [Native installation](../tools/installer/README.md#native-installation)
 for result fields, cache behavior and remaining integration limits.
 
 ## Run on the host
@@ -180,8 +186,9 @@ for result fields, cache behavior and remaining integration limits.
 build/native/kirby-launcher
 ```
 
-Run from the repository root and keep the launcher beside `WiiCompiled`. Select
-`disc/DATA` in the launcher. To launch directly:
+Run from the repository root and keep the launcher in `build/native`. It uses
+the selected verified installation when available. With a developer build,
+select `disc/DATA`. To launch the developer executable directly:
 
 ```bash
 build/native/WiiCompiled --video --game-data disc/DATA

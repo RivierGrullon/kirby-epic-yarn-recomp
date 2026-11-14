@@ -67,6 +67,7 @@ class InstallPipelineTests(unittest.TestCase):
         with self.job('first') as job:
             result=execute_install(job,self.root,self.source,services=self.tools)
         identifier=result['installation_id']
+        self.assertEqual(result['source'],str(self.data))
         self.assertEqual(self.store.read_active()['current'],identifier)
         self.assertEqual(self.store.executable(identifier).read_bytes(),b'synthetic native output')
         self.assertEqual(self.saved.read_bytes(),b'keep settings')

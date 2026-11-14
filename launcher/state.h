@@ -28,11 +28,12 @@ struct State {
     Setup::View setup;
     bool choosingSource=false;
     bool closing=false;
+    std::string installationId,installationError;
 };
 
 enum class Action {
     None, Play, ChooseData, VerifyData, SaveSettings, ReloadSettings,
     OpenLogs, OpenSaves, OpenSettings, BuildGuide, ShowInstall, RefreshBuildInfo,
-    ChooseImage, CancelSetup, OpenSetupLogs,
+    ChooseImage, CancelSetup, OpenSetupLogs, BuildGame,
 };
 } // namespace Launcher

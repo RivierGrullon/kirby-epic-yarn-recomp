@@ -7,6 +7,7 @@
 #include "input_focus.h"
 #include "build_probe.h"
 #include "setup/job.h"
+#include "setup/installation.h"
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
@@ -22,6 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <spawn.h>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -116,12 +118,13 @@ int main(int argc, char** argv) {
     }
     const bool selfTest = argc == 2 && std::string_view(argv[1]) == "--self-test";
     if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --check-source SOURCE | --print-settings TOML | --build-info | --check-native-build EXECUTABLE]\n"); return 2; }
-    const fs::path executable = fs::path(SDL_GetBasePath()) / "WiiCompiled";
-    const fs::path root = executable.parent_path().parent_path().parent_path();
+    const fs::path developerExecutable = fs::path(SDL_GetBasePath()) / "WiiCompiled";
+    const fs::path root = developerExecutable.parent_path().parent_path().parent_path();
     if (!fs::exists(root / "tools/kirby.py")) {
         std::fprintf(stderr,"Keep the launcher in this project's build/native folder\n"); return 2;
     }
-    Launcher::State state{root, executable, root / "local/user/settings.toml", Kirby::Settings{root / "disc/DATA"}};
+    Launcher::State state{root, developerExecutable, root / "local/user/settings.toml", Kirby::Settings{root / "disc/DATA"}};
+    auto& executable=state.executable;
     state.selfTest = selfTest;
     state.launcherBuild=Kirby::ParseBuildInformation(Kirby::BuildInformation(Kirby::BuildProgram::Launcher));
     if (selfTest) {
@@ -136,6 +139,14 @@ int main(int argc, char** argv) {
     if (!selfTest) {
         try { config = Kirby::LoadOrMigrateSettings(settings, root / "local/user/launcher.cfg", root, config); }
         catch (const std::exception& error) { settingsError = error.what(); }
+        try {
+            if (const auto installed=Launcher::Setup::ReadInstallation(root)) {
+                executable=installed->executable;state.installationId=installed->identifier;
+                if (!fs::exists(settings)) config.gameData=installed->dataRoot;
+            }
+        } catch (const std::exception& error) {
+            state.installationError=error.what();
+        }
     }
     auto& data = config.gameData;
     const auto saveSettings = [&] {
@@ -176,10 +187,10 @@ int main(int argc, char** argv) {
     Launcher::Setup::Job setupJob;
     bool setupApplied=false;
     std::string setupSelectionError;
-    const auto startInspection=[&](const fs::path& source) {
+    const auto startSetup=[&](const fs::path& source,Launcher::Setup::Operation operation=Launcher::Setup::Operation::Inspect) {
         if (game>0 || setupJob.Current().Busy() || state.closing) return;
         setupApplied=false;setupSelectionError.clear();
-        setupJob.Start(root/"tools/install.py",source,root/"local/setup");
+        setupJob.Start(root/"tools/install.py",source,root/"local/setup","python3",operation);
         state.setup=setupJob.Current();
     };
     Launcher::BuildProbe buildProbe;
@@ -208,17 +219,27 @@ int main(int argc, char** argv) {
           state.choosingSource=selection->pending;
           if (selection->ready) { selectedSource=selection->path;selectionError=selection->error;selection->ready=false; } }
         if (!selectionError.empty()) setupSelectionError="Could not open source chooser: "+selectionError;
-        if (!selectedSource.empty() && !selfTest) startInspection(selectedSource);
+        if (!selectedSource.empty() && !selfTest) startSetup(selectedSource);
         if (!selfTest) {
             setupJob.Poll();state.setup=setupJob.Current();
             if (state.setup.status==Launcher::Setup::Status::Ready && !setupApplied && !state.closing) {
                 setupApplied=true;
+                try {
                 std::string selectedStatus;
-                const auto& selected=state.setup.result->dataRoot;
+                const auto& selected=state.setup.installation ? state.setup.installation->dataRoot : state.setup.result->dataRoot;
                 if (Verify(selected,selectedStatus)) {
+                    if (state.setup.installation) {
+                        const auto installed=Launcher::Setup::ReadInstallation(root);
+                        if (!installed || installed->identifier!=state.setup.installation->identifier)
+                            throw std::runtime_error("Installation selection changed before the launcher verified it");
+                        executable=installed->executable;state.installationId=installed->identifier;
+                        state.installationError.clear();refreshBuild();
+                    }
                     if (data!=selected) { data=selected;settingsDirty=true; }
                     valid=true;status=std::move(selectedStatus);
+                    if (state.setup.installation && settingsDirty) saveSettings();
                 } else setupSelectionError="Imported data changed before selection. Import again. "+selectedStatus;
+                } catch (const std::exception& error) { setupSelectionError=error.what(); }
             }
             if (!setupSelectionError.empty()) {
                 state.setup.status=Launcher::Setup::Status::Failed;
@@ -266,6 +287,13 @@ int main(int argc, char** argv) {
             switch (action) {
             case Launcher::Action::Play:
                 if (setupJob.Current().Busy() || state.choosingSource || game>0) break;
+                if (!state.installationError.empty()) { state.gameStatus="Repair the installed build before playing. "+state.installationError;break; }
+                if (!state.installationId.empty()) {
+                    const auto installed=Launcher::Setup::ReadInstallation(root);
+                    if (!installed || installed->identifier!=state.installationId) {
+                        state.gameStatus="Installation selection changed. Restart the launcher before playing.";break;
+                    }
+                }
                 valid = Verify(data, status);
                 if (valid && fs::is_regular_file(executable) && saveSettings()) {
                     if (state.checkingBuild) {
@@ -302,7 +330,8 @@ int main(int argc, char** argv) {
                     SDL_ShowOpenFileDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,filters,2,nullptr,false);
                 }
                 break;
-            case Launcher::Action::VerifyData: if (!state.choosingSource) startInspection(data);break;
+            case Launcher::Action::VerifyData: if (!state.choosingSource) startSetup(data);break;
+            case Launcher::Action::BuildGame: if (!state.choosingSource) startSetup(data,Launcher::Setup::Operation::Install);break;
             case Launcher::Action::CancelSetup: setupJob.Cancel();break;
             case Launcher::Action::OpenSetupLogs:
                 OpenFolder(state.setup.logPath.empty() ? root/"local/setup/logs" : state.setup.logPath.parent_path());break;

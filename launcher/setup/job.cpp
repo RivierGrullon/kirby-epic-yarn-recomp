@@ -26,10 +26,11 @@ Job::~Job() {
     Close();
 }
 bool Job::Start(const std::filesystem::path& worker,const std::filesystem::path& source,
-                const std::filesystem::path& workspace,const std::string& python) {
+                const std::filesystem::path& workspace,const std::string& python,Operation operation) {
     if (view_.Busy()) return false;
     Close();view_=View{};sequence_=1;exited_=outputEof_=errorEof_=cancelled_=termSent_=killSent_=false;
     pending_.clear();buffer_.clear();stderr_.clear();abort_.clear();terminal_.clear();terminalError_.clear();result_.reset();
+    installation_.reset();view_.operation=operation;operation_=operation==Operation::Install ? "install" : "inspect";
     int input[2]{-1,-1},output[2]{-1,-1},error[2]{-1,-1};
     struct Pipes {
         int *input,*output,*error;
@@ -40,7 +41,8 @@ bool Job::Start(const std::filesystem::path& worker,const std::filesystem::path&
         if (view_.source.string().size()>8192 || view_.source.string().find('\0')!=std::string::npos)
             throw std::runtime_error("Invalid selected source path");
         identifier_="launcher-"+std::to_string(getpid())+"-"+std::to_string(Clock::now().time_since_epoch().count());
-        pending_=InspectRequest(identifier_,view_.source);
+        workspace_=std::filesystem::absolute(workspace);
+        pending_=operation==Operation::Install ? InstallRequest(identifier_,view_.source) : InspectRequest(identifier_,view_.source);
         if (socketpair(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0,input) || pipe2(output,O_CLOEXEC) || pipe2(error,O_CLOEXEC))
             throw std::runtime_error("Cannot open setup process pipes");
         // Desktop launchers may start with one of the standard descriptors closed.
@@ -75,11 +77,11 @@ bool Job::Start(const std::filesystem::path& worker,const std::filesystem::path&
 void Job::Cancel() {
     if (!view_.Busy() || cancelled_) return;
     cancelled_=true;cancelAt_=Clock::now();pending_+=CancelRequest(identifier_);
-    view_.status=Status::Cancelling;view_.message="Cancelling import...";view_.result.reset();
+    view_.status=Status::Cancelling;view_.message="Cancelling setup...";view_.result.reset();view_.installation.reset();
 }
 void Job::Abort(std::string message) {
     if (abort_.empty()) abort_=message.substr(0,1024);
-    Cancel();view_.message="Stopping failed import...";
+    Cancel();view_.message="Stopping failed setup...";
 }
 void Job::Consume(std::string_view line) {
     if (!abort_.empty()) return;
@@ -90,11 +92,20 @@ void Job::Consume(std::string_view line) {
         view_.stage=event.stage;view_.completed=event.completed;view_.total=event.total;
         if (!event.logPath.empty()) view_.logPath=std::move(event.logPath);
         if (event.result) {
+            if (view_.operation!=Operation::Inspect) throw std::runtime_error("Unexpected inspection completion during installation");
             if (std::filesystem::weakly_canonical(event.result->source)!=std::filesystem::weakly_canonical(view_.source))
                 throw std::runtime_error("Setup result belongs to another selected source");
             result_=std::move(event.result);
         }
-        if (event.stage=="inspect" && (event.state=="complete" || event.state=="failed" || event.state=="cancelled")) {
+        if (event.installation) {
+            if (view_.operation!=Operation::Install ||
+                std::filesystem::weakly_canonical(event.installation->source)!=std::filesystem::weakly_canonical(view_.source) ||
+                event.installation->executable.lexically_normal()!=
+                    (workspace_/"installations"/event.installation->identifier/"WiiCompiled").lexically_normal())
+                throw std::runtime_error("Installation result belongs to another source or executable store");
+            installation_=std::move(event.installation);
+        }
+        if (event.stage==operation_ && (event.state=="complete" || event.state=="failed" || event.state=="cancelled")) {
             terminal_=event.state;terminalError_=std::move(event.error);
         }
     } catch (const std::exception& errorMessage) { Abort("Invalid setup response: "+std::string(errorMessage.what())); }
@@ -149,8 +160,12 @@ void Job::Poll() {
 }
 void Job::Finish() {
     if (!abort_.empty()) { view_.status=Status::Failed;view_.message=abort_; }
+    else if (terminal_=="complete" && exitCode_==0 && installation_ && installation_->committed && buffer_.empty()) {
+        view_.status=Status::Ready;view_.message="Verified native installation selected";
+        view_.installation=std::move(installation_);
+    }
     else if (cancelled_ || (terminal_=="cancelled" && exitCode_==2)) {
-        view_.status=Status::Cancelled;view_.message="Import cancelled. Previous game data kept.";
+        view_.status=Status::Cancelled;view_.message="Setup cancelled. Previous native build and game data kept.";
     } else if (terminal_=="complete" && exitCode_==0 && result_ && buffer_.empty()) {
         view_.status=Status::Ready;view_.message="RK5E01 Rev 0 game data verified";view_.result=std::move(result_);
     } else {
@@ -159,7 +174,7 @@ void Job::Finish() {
             "Setup worker exited without valid completion (code "+std::to_string(exitCode_)+")";
         if (!stderr_.empty()) view_.message+="\n"+stderr_.substr(0,2048);
     }
-    if (view_.status!=Status::Ready) view_.result.reset();
+    if (view_.status!=Status::Ready) { view_.result.reset();view_.installation.reset(); }
     Close();
 }
 void Job::Close() {

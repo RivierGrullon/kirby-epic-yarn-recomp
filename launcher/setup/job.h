@@ -7,21 +7,24 @@
 namespace Launcher::Setup {
 enum class Status { Idle,Running,Cancelling,Ready,Failed,Cancelled };
 struct View {
+    Operation operation=Operation::Inspect;
     Status status=Status::Idle;
     std::string stage,message;
     std::filesystem::path source,logPath;
     std::optional<uint64_t> completed,total;
     std::optional<Inspection> result;
+    std::optional<Installation> installation;
     bool Busy() const { return status==Status::Running || status==Status::Cancelling; }
 };
 class Job {
 public:
-    explicit Job(uint64_t cancellationGraceMs=5000) : graceMs_(cancellationGraceMs) {}
+    explicit Job(uint64_t cancellationGraceMs=20000) : graceMs_(cancellationGraceMs) {}
     ~Job();
     Job(const Job&)=delete;
     Job& operator=(const Job&)=delete;
     bool Start(const std::filesystem::path& worker,const std::filesystem::path& source,
-               const std::filesystem::path& workspace,const std::string& python="python3");
+               const std::filesystem::path& workspace,const std::string& python="python3",
+               Operation operation=Operation::Inspect);
     void Poll();
     void Cancel();
     const View& Current() const { return view_; }
@@ -40,5 +43,8 @@ private:
     Clock::time_point cancelAt_,exitAt_;
     std::string identifier_,pending_,buffer_,stderr_,abort_,terminal_,terminalError_;
     std::optional<Inspection> result_;
+    std::optional<Installation> installation_;
+    std::filesystem::path workspace_;
+    std::string operation_;
 };
 } // namespace Launcher::Setup

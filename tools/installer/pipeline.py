@@ -159,5 +159,5 @@ def execute_install(job, root, source, *, services=None):
     store.activate(identifier, check_cancel=job.check_cancel)
     job.committed = True
     return dict(installation_id=identifier, executable=str(store.executable(identifier)),
-                data_root=str(data), build_reused=build_reused, translation_reused=translation_reused,
+                source=source['source'], data_root=str(data), build_reused=build_reused, translation_reused=translation_reused,
                 committed=True)
