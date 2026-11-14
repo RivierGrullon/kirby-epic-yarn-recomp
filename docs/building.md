@@ -131,6 +131,44 @@ changing native registrations or translation inputs, run translation and
 `build_native.py` again. After changing upstream patches, use `build_native.py`
 to check and apply them to the local snapshots.
 
+## Identify the executable being used
+
+Diagnostics shows separate build records for the launcher and its sibling
+`WiiCompiled` executable. Each record contains the project revision, whether the
+checkout was modified at build time, an authored-source fingerprint, dependency
+pins and CMake compiler configuration. Expand the details for full identifiers.
+Refresh queries the existing game executable; it does not rebuild or launch play.
+An older executable without this query remains launchable and reports unavailable
+build information.
+
+The same records are available without game data, settings or SDL device startup:
+
+```bash
+LD_LIBRARY_PATH="$PWD/local/host-libs" build/native/kirby-launcher --build-info
+LD_LIBRARY_PATH="$PWD/local/host-libs" build/native/WiiCompiled --build-info
+LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  build/native/kirby-launcher --check-native-build "$PWD/build/native/WiiCompiled"
+```
+
+Output is versioned TOML. The launcher reads the actual child's response with a
+2.5-second timeout and a 16 KiB output limit. Query subprocesses use offscreen
+video and dummy audio drivers, without changing the launcher's environment or
+user preferences. Missing executables, unsupported queries and malformed records
+produce a status message in Diagnostics.
+
+CMake runs `tools/build_info.py` before building the shared metadata library.
+The generator requires a Git checkout root with a commit. It hashes tracked and
+untracked, nonignored project files, recording symlink targets without following
+them. Disc files, generated game code, dependency snapshots, builds, caches and
+local settings remain excluded by this repository's ignore rules. Dependency
+fields record the declared pins. Binary checksums and installation verification
+are separate checks; this fingerprint does not inspect ignored inputs.
+
+The generated header stays under `build/native/kirby-generated/`. Unchanged
+content keeps its timestamp, and only a standalone metadata translation unit
+includes it. A version-record update therefore avoids rebuilding the translated
+game shards. Runtime settings changes still require no compilation.
+
 ## Tests and revision audits
 
 Tooling tests use synthetic fixtures and require no game:

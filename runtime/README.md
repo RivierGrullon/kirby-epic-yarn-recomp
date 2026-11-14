@@ -42,6 +42,15 @@ flat names only inside the ignored upstream snapshot, where the existing patches
 include them. Authored code uses the public header paths above. Upstream source and
 license files remain in ignored `vendor/`, with attribution in `../THIRD_PARTY.md`.
 
+`include/kirby/app/build_info.h` and `src/app/build_info.cpp` expose compiled build
+records shared by the launcher and runtime. `../tools/build_info.py` generates the
+private header through CMake; it is excluded from the game PCH and translated
+shards. Both programs' `--build-info` handlers return before settings or device
+initialization. `../launcher/build_probe.{h,cpp}` owns the asynchronous runtime
+query, its timeout, bounded output and child cleanup. The Diagnostics page shows
+the queried record separately from the launcher's record. See the
+[build identity guide](../docs/building.md#identify-the-executable-being-used).
+
 The tests mirror these boundaries: C++ unit tests under `../tests/unit/`, executable
 checks under `../tests/integration/`, and synthetic DOL/tooling checks under
 `../tests/tooling/`. Run Python discovery from the repository root with

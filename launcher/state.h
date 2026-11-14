@@ -2,7 +2,9 @@
 #pragma once
 #include "kirby/settings.h"
 #include "binding_capture.h"
+#include "kirby/app/build_info.h"
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace Launcher {
@@ -18,10 +20,14 @@ struct State {
     std::string gameStatus;
     std::string settingsError;
     BindingCapture bindingCapture;
+    Kirby::BuildInfo launcherBuild;
+    std::optional<Kirby::BuildInfo> runtimeBuild;
+    bool checkingBuild = false;
+    std::string buildStatus = "Native build has not been checked";
 };
 
 enum class Action {
     None, Play, ChooseData, VerifyData, SaveSettings, ReloadSettings,
-    OpenLogs, OpenSaves, OpenSettings, BuildGuide, ShowInstall,
+    OpenLogs, OpenSaves, OpenSettings, BuildGuide, ShowInstall, RefreshBuildInfo,
 };
 } // namespace Launcher

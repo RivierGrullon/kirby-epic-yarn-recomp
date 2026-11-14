@@ -16,6 +16,7 @@
 #include "kirby/graphics/gx_renderer.h"
 #include "kirby/graphics/cache.h"
 #include "kirby/graphics/pos_matrix.h"
+#include "kirby/app/build_info.h"
 #include "kirby/app/events.h"
 #include "kirby/app/frame_log.h"
 #include "kirby/settings.h"
@@ -140,6 +141,9 @@ bool KirbyAcceptRuntimeRegistration(uint32_t address, const char* name) noexcept
 }
 
 int main(int argc, char** argv) {
+    if (argc==2 && std::string_view(argv[1])=="--build-info") {
+        std::cout << Kirby::BuildInformation(Kirby::BuildProgram::Runtime); return 0;
+    }
     std::string_view mode = "--headless";
     std::filesystem::path dataRoot = "disc/DATA";
     float masterVolume = 100;
@@ -181,6 +185,7 @@ int main(int argc, char** argv) {
         else {
             std::cerr << "Usage: WiiCompiled [--headless|--video|--video-hidden|--probe-alarms|--probe-ax-task|--probe-thread-fault|--probe-threads|--probe-wpad|--probe-sdl-controller|--monitor-controller|--probe-video-retrace|--verify-bootstrap|--probe-init|--probe-interrupt-init|--probe-exi-init|--probe-si-init|--probe-sram-init|--probe-boot-memory|--probe-audio-clock|--probe-dsp-init|--probe-ipc-client|--probe-stm-init|--probe-system-config|--probe-disc|--probe-es-metadata|--probe-ave] [--game-data DATA] [--volume 0..100] [--no-vsync] [--gpu-resident-copies] [--frame-log CSV]\n";
             std::cerr << "Settings: [--config TOML] or --print-settings TOML; CLI values override saved settings.\n";
+            std::cerr << "Build identity: --build-info (no game or device startup).\n";
             return 2;
         }
     }

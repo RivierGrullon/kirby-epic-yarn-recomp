@@ -650,12 +650,14 @@ The owned session later stopped at its time limit. Local evidence is under
 ignored `build-logs/stage70-*`, including the comparison JSON files, native GPU
 captures, `stage70-long-motion-{states,summary}.json` and the complete frame log.
 
-The tested runtime is selected by the existing local launcher at
-`build/native/WiiCompiled`; its SHA-256 is
+The runtime tested in this section was selected locally at
+`build/native/WiiCompiled` with SHA-256
 `68271cc2770f5830a7bd96f7943e65b71071d41183c0c13001d28feb4f379e0e`.
 The previous executable and unchanged launcher are preserved under
 `local/verified-builds/before-stage70/`. This is a local development update,
 not a release or a claim that the remaining visible pacing problem is fixed.
+Subsequent build-information changes can alter the binary hash; use Diagnostics
+or `--build-info` to identify the currently compiled source record.
 
 ## Fragmented FIFO packet lengths
 

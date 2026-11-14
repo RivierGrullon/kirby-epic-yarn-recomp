@@ -211,6 +211,34 @@ target_include_directories(kirby_cache_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 target_compile_features(kirby_cache_test PRIVATE cxx_std_20)
 add_test(NAME kirby_cache COMMAND kirby_cache_test)
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(kirby_build_info_header "${CMAKE_CURRENT_BINARY_DIR}/kirby-generated/KirbyBuildInfo.h")
+string(TOUPPER "${CMAKE_BUILD_TYPE}" kirby_build_configuration)
+add_custom_target(kirby_build_record
+    COMMAND "${Python3_EXECUTABLE}" "${KIRBY_PROJECT_ROOT}/tools/build_info.py"
+        --source "${KIRBY_PROJECT_ROOT}" --output "${kirby_build_info_header}"
+        "--compiler=${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
+        "--build-type=${CMAKE_BUILD_TYPE}"
+        "--compiler-options=${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${kirby_build_configuration}}"
+    BYPRODUCTS "${kirby_build_info_header}" VERBATIM)
+add_library(kirby_build_info STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/app/build_info.cpp")
+add_dependencies(kirby_build_info kirby_build_record)
+target_include_directories(kirby_build_info PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/include"
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/kirby-generated")
+target_link_libraries(kirby_build_info PRIVATE mkw::toml11)
+target_compile_features(kirby_build_info PUBLIC cxx_std_20)
+target_compile_options(kirby_build_info PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(WiiCompiled PRIVATE kirby_build_info)
+add_executable(kirby_build_info_test "${KIRBY_PROJECT_ROOT}/tests/unit/build_info_test.cpp")
+target_link_libraries(kirby_build_info_test PRIVATE kirby_build_info)
+add_test(NAME kirby_build_info COMMAND kirby_build_info_test)
+add_executable(kirby_build_probe_test "${KIRBY_PROJECT_ROOT}/tests/unit/build_probe_test.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/build_probe.cpp")
+target_include_directories(kirby_build_probe_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
+target_link_libraries(kirby_build_probe_test PRIVATE kirby_build_info SDL3::SDL3-static)
+add_test(NAME kirby_build_probe COMMAND kirby_build_probe_test)
+set_tests_properties(kirby_build_probe PROPERTIES TIMEOUT 10)
+
 add_library(kirby_settings STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/app/settings.cpp")
 target_sources(kirby_settings PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/input/bindings.cpp")
 target_include_directories(kirby_settings PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/include"
@@ -244,10 +272,12 @@ add_test(NAME kirby_launcher_input COMMAND kirby_launcher_input_test)
 get_property(kirby_build_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 set(kirby_test_targets)
 foreach(target IN LISTS kirby_build_targets)
+    get_target_property(kirby_target_type ${target} TYPE)
     if(target MATCHES "^kirby_.*_test$")
         list(APPEND kirby_test_targets ${target})
     endif()
-    if(target MATCHES "^kirby_" OR target STREQUAL "WiiCompiled" OR target STREQUAL "mkw_runtime_common")
+    if(NOT kirby_target_type STREQUAL "UTILITY" AND
+       (target MATCHES "^kirby_" OR target STREQUAL "WiiCompiled" OR target STREQUAL "mkw_runtime_common"))
         target_include_directories(${target} PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/include")
     endif()
 endforeach()
@@ -256,6 +286,7 @@ add_custom_target(kirby_tests DEPENDS ${kirby_test_targets})
 
 add_executable(kirby-launcher "${KIRBY_PROJECT_ROOT}/launcher/main.cpp")
 target_sources(kirby-launcher PRIVATE
+    "${KIRBY_PROJECT_ROOT}/launcher/build_probe.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/binding_capture.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/input_focus.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/pages/layout.cpp"
@@ -269,5 +300,5 @@ target_sources(kirby-launcher PRIVATE
 target_include_directories(kirby-launcher PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
 target_compile_features(kirby-launcher PRIVATE cxx_std_20)
 target_compile_definitions(kirby-launcher PRIVATE SDL_MAIN_HANDLED)
-target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends SDL3::SDL3-static kirby_settings)
+target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends SDL3::SDL3-static kirby_settings kirby_build_info)
 set_target_properties(kirby-launcher PROPERTIES BUILD_RPATH "\$ORIGIN/../../local/host-libs")

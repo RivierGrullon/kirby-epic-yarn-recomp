@@ -2,8 +2,10 @@
 // Linux desktop frontend using the project's existing SDL3 and Dear ImGui libraries.
 #include <SDL3/SDL.h>
 #include "kirby/settings.h"
+#include "kirby/app/build_info.h"
 #include "pages/pages.h"
 #include "input_focus.h"
+#include "build_probe.h"
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
@@ -75,6 +77,19 @@ void OpenFolder(const fs::path& path) {
 }
 
 int main(int argc, char** argv) {
+    if (argc==2 && std::string_view(argv[1])=="--build-info") {
+        std::cout << Kirby::BuildInformation(Kirby::BuildProgram::Launcher); return 0;
+    }
+    if (argc==3 && std::string_view(argv[1])=="--check-native-build") {
+        try {
+            Launcher::BuildProbe probe;
+            const auto root=(fs::path(SDL_GetBasePath())/"WiiCompiled").parent_path().parent_path().parent_path();
+            probe.Start(argv[2],root/"local/host-libs");
+            while (probe.Status()==Launcher::BuildProbeStatus::Checking) { probe.Poll();SDL_Delay(1); }
+            if (probe.Status()==Launcher::BuildProbeStatus::Ready) { std::cout << probe.Document();return 0; }
+            std::cerr << probe.Error() << '\n';return 1;
+        } catch (const std::exception& error) { std::cerr << error.what() << '\n';return 1; }
+    }
     if (argc == 3 && std::string_view(argv[1]) == "--print-settings")
         return Kirby::InspectSettings(argv[2], std::cout, std::cerr);
     if (argc == 3 && std::string_view(argv[1]) == "--check-data") {
@@ -83,7 +98,7 @@ int main(int argc, char** argv) {
         std::puts(status.c_str()); return valid ? 0 : 1;
     }
     const bool selfTest = argc == 2 && std::string_view(argv[1]) == "--self-test";
-    if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --print-settings TOML]\n"); return 2; }
+    if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --print-settings TOML | --build-info | --check-native-build EXECUTABLE]\n"); return 2; }
     const fs::path executable = fs::path(SDL_GetBasePath()) / "WiiCompiled";
     const fs::path root = executable.parent_path().parent_path().parent_path();
     if (!fs::exists(root / "tools/kirby.py")) {
@@ -91,6 +106,12 @@ int main(int argc, char** argv) {
     }
     Launcher::State state{root, executable, root / "local/user/settings.toml", Kirby::Settings{root / "disc/DATA"}};
     state.selfTest = selfTest;
+    state.launcherBuild=Kirby::ParseBuildInformation(Kirby::BuildInformation(Kirby::BuildProgram::Launcher));
+    if (selfTest) {
+        // Render a fixture record without launching a query or touching user data.
+        state.runtimeBuild=state.launcherBuild;state.runtimeBuild->program="runtime";
+        state.buildStatus.clear();
+    }
     const auto& settings = state.settingsFile;
     auto& config = state.config;
     auto& settingsError = state.settingsError;
@@ -135,6 +156,13 @@ int main(int argc, char** argv) {
     auto& status = state.dataStatus;
     if (!selfTest) valid = Verify(data, status);
     pid_t game = -1;
+    Launcher::BuildProbe buildProbe;
+    const auto refreshBuild=[&] {
+        state.runtimeBuild.reset();
+        state.checkingBuild=buildProbe.Start(executable,root/"local/host-libs");
+        state.buildStatus=state.checkingBuild ? "Checking native executable..." : buildProbe.Error();
+    };
+    if (!selfTest) refreshBuild();
     auto page = Launcher::Page::Play;
     while (running) {
         SDL_Event event;
@@ -152,6 +180,16 @@ int main(int argc, char** argv) {
             if (waitpid(game, &result, WNOHANG) == game) {
                 game = -1; SDL_ShowWindow(window); SDL_RaiseWindow(window);
                 state.gameStatus = WIFEXITED(result) && WEXITSTATUS(result) == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
+                refreshBuild();
+            }
+        }
+        if (!selfTest) {
+            buildProbe.Poll();
+            state.checkingBuild=buildProbe.Status()==Launcher::BuildProbeStatus::Checking;
+            if (buildProbe.Status()==Launcher::BuildProbeStatus::Ready && !state.runtimeBuild) {
+                state.runtimeBuild=buildProbe.Information();state.buildStatus.clear();
+            } else if (buildProbe.Status()==Launcher::BuildProbeStatus::Failed) {
+                state.runtimeBuild.reset();state.buildStatus=buildProbe.Error();
             }
         }
         const bool focused = SDL_GetKeyboardFocus() == window &&
@@ -176,6 +214,10 @@ int main(int argc, char** argv) {
             case Launcher::Action::Play:
                 valid = Verify(data, status);
                 if (valid && fs::is_regular_file(executable) && saveSettings()) {
+                    if (state.checkingBuild) {
+                        buildProbe.Cancel();state.checkingBuild=false;
+                        state.buildStatus="Refresh build information after the game closes";
+                    }
                     const auto libs = (root / "local/host-libs").string();
                     const char* previous = std::getenv("LD_LIBRARY_PATH");
                     const std::string libraryPath = libs + (previous ? std::string(":") + previous : "");
@@ -212,6 +254,7 @@ int main(int argc, char** argv) {
             case Launcher::Action::OpenSettings: OpenFolder(settings.parent_path()); break;
             case Launcher::Action::BuildGuide: SDL_OpenURL(("file://"+(root/"docs/building.md").string()).c_str()); break;
             case Launcher::Action::ShowInstall: page = Launcher::Page::Install; break;
+            case Launcher::Action::RefreshBuildInfo: refreshBuild(); break;
             case Launcher::Action::None: break;
             }
         } catch (const std::exception& error) { state.gameStatus = error.what(); }
@@ -223,6 +266,7 @@ int main(int argc, char** argv) {
         SDL_Delay(5);
     }
     if (settingsDirty && !saveSettings()) std::fprintf(stderr,"Settings: %s\n",settingsError.c_str());
+    buildProbe.Cancel();
     ImGui_ImplSDLRenderer3_Shutdown(); ImGui_ImplSDL3_Shutdown(); ImGui::DestroyContext();
     SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
     return 0;
