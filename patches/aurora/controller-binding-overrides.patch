@@ -1,0 +1,120 @@
+# SPDX-License-Identifier: MIT
+--- a/aurora/include/aurora/pad.hpp
++++ b/aurora/include/aurora/pad.hpp
+@@ -50,4 +50,13 @@
+ // Extra per-port bindings for game-defined controls, e.g. "metaforce.open_menu".
+ void set_action_bindings(uint32_t port, std::vector<binding::Binding> bindings);
+ 
++// Replace base keyboard/controller bindings for these targets, then add the
++// supplied actions. Source assignment, cancellation and virtual producers are
++// retained. An empty action list can intentionally unbind a replaced control.
++// The two-argument overload restores the base bindings for all targets.
++// sharedKeyboard enables key/mouse actions without selecting exclusive keyboard
++// mode, and keeps the port connected when no physical controller is assigned.
++void set_action_bindings(uint32_t port, std::vector<binding::Binding> bindings,
++                         std::vector<binding::ControlId> replacedControls, bool sharedKeyboard = false);
++
+ } // namespace aurora::pad
+--- a/aurora/lib/dolphin/pad/adapter.cpp
++++ b/aurora/lib/dolphin/pad/adapter.cpp
+@@ -158,6 +158,7 @@
+ struct PortInputs {
+   SourceId controller = kInvalidSourceId;
+   bool keyboardActive = false;
++  bool sharedKeyboard = false;
+   std::array<PADButtonMapping, PAD_BUTTON_COUNT> buttons{};
+   std::array<PADButtonMapping, PAD_BUTTON_COUNT> altButtons{};
+   std::array<PADAxisMapping, PAD_AXIS_COUNT> axes{};
+@@ -170,8 +171,8 @@
+ 
+   bool operator==(const PortInputs&) const = default;
+ 
+-  static PortInputs for_port(u32 port, uint64_t actionGeneration) {
+-    PortInputs inputs{.actionGeneration = actionGeneration};
++  static PortInputs for_port(u32 port, uint64_t actionGeneration, bool sharedKeyboard) {
++    PortInputs inputs{.sharedKeyboard = sharedKeyboard, .actionGeneration = actionGeneration};
+     const auto& keyboard = detail::keyboard_state(port);
+     inputs.keyboardActive = keyboard.m_mappingsSet;
+     // A port in keyboard mode ignores its controller.
+@@ -208,15 +209,16 @@
+ 
+   [[nodiscard]] SourceId source_for(const PhysicalInput& input) const {
+     if (input.control.is<PhysicalInput::Key>()) {
+-      return keyboardActive ? input::keyboard_source().id : kInvalidSourceId;
++      return keyboardActive || sharedKeyboard ? input::keyboard_source().id : kInvalidSourceId;
+     }
+     if (input.control.is<PhysicalInput::MouseButton>()) {
+-      return keyboardActive ? input::mouse_source().id : kInvalidSourceId;
++      return keyboardActive || sharedKeyboard ? input::mouse_source().id : kInvalidSourceId;
+     }
+     return controller;
+   }
+ 
+-  [[nodiscard]] std::shared_ptr<const BindingSet> resolve(const std::vector<Binding>& actions) const {
++  [[nodiscard]] std::shared_ptr<const BindingSet>
++  resolve(const std::vector<Binding>& actions, const std::vector<ControlId>& replacedControls = {}) const {
+     auto set = std::make_shared<BindingSet>();
+     auto& out = set->bindings;
+     if (controller != kInvalidSourceId) {
+@@ -225,6 +227,9 @@
+     if (keyboardActive) {
+       add_keyboard_bindings(out);
+     }
++    std::erase_if(out, [&](const Binding& binding) {
++      return std::ranges::find(replacedControls, binding.target) != replacedControls.end();
++    });
+     for (auto binding : actions) {
+       binding.input.source = source_for(binding.input);
+       bool resolved = binding.input.source != kInvalidSourceId;
+@@ -384,19 +389,21 @@
+   std::shared_ptr<const BindingSet> set;
+   binding::State gameplay;
+   std::vector<Binding> actions;
++  std::vector<ControlId> replacedControls;
++  bool sharedKeyboard = false;
+   uint64_t actionGeneration = 0;
+   binding::ProducerId virtualProducer = binding::kInvalidProducerId;
+   std::optional<PADStatus> virtualStatus;
+   bool cancelled = false;
+ 
+   void sync(u32 port) {
+-    auto next = PortInputs::for_port(port, actionGeneration);
++    auto next = PortInputs::for_port(port, actionGeneration, sharedKeyboard);
+     if (built && next == inputs) {
+       return;
+     }
+     inputs = next;
+     built = true;
+-    set = inputs.resolve(actions);
++    set = inputs.resolve(actions, replacedControls);
+     note(gameplay.set_bindings(set));
+   }
+ 
+@@ -556,10 +563,17 @@
+ }
+ 
+ void set_action_bindings(uint32_t port, std::vector<Binding> bindings) {
++  set_action_bindings(port, std::move(bindings), {});
++}
++
++void set_action_bindings(uint32_t port, std::vector<Binding> bindings,
++                         std::vector<ControlId> replacedControls, bool sharedKeyboard) {
+   if (port >= PAD_MAX_CONTROLLERS) {
+     return;
+   }
+   g_ports[port].actions = std::move(bindings);
++  g_ports[port].replacedControls = std::move(replacedControls);
++  g_ports[port].sharedKeyboard = sharedKeyboard;
+   ++g_ports[port].actionGeneration;
+ }
+ 
+@@ -578,7 +592,8 @@
+ bool read(uint32_t port, PADStatus& status) {
+   auto& state = synced_port(port);
+   state.apply_virtual_status();
+-  if (state.inputs.controller == kInvalidSourceId && !state.inputs.keyboardActive && !state.virtualStatus) {
++  if (state.inputs.controller == kInvalidSourceId && !state.inputs.keyboardActive &&
++      !state.inputs.sharedKeyboard && !state.virtualStatus) {
+     return false;
+   }
+   state.read(status);

@@ -87,6 +87,16 @@ Aurora and the guest WPAD serializer, including release and unplug while held.
 The same checks cover standard, PS5, Xbox 360 and Xbox One presets. Kirby sets
 positional Xbox face-button defaults before PAD initialization, preserving the
 existing axis layout and leaving saved mappings to Aurora's normal loader.
+
+`patches/aurora/controller-binding-overrides.patch` adds a binding overload that
+replaces selected physical controls rather than appending alternatives. It keeps
+Aurora's per-port routing, capture, virtual producers and device source resolution.
+An explicit shared-keyboard option enables keyboard actions alongside a controller
+without changing the existing exclusive-keyboard mode. The SDL probe checks
+jump/yarn and plus/minus swaps, simultaneous keyboard/controller input, blocking,
+reset and reconnect with a new SDL instance across four virtual device presets.
+The settings schema and launcher remapping UI have not yet adopted this API;
+normal launches retain their existing mappings.
 It uses a virtual SDL device and its own input configuration; physical input and the
 window's focus/capture behavior still require verification.
 Its `--monitor-controller` mode reads physical devices for 30 seconds without a

@@ -19,6 +19,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace Kirby {
 void ProbeSdlController(CpuContext& cpu, bool monitorPhysical) {
@@ -190,6 +191,87 @@ void ProbeSdlController(CpuContext& cpu, bool monitorPhysical) {
             check(SDL_SetJoystickVirtualButton(device.joystick, button, false), SDL_GetError());
             check(report() == 0, "SDL button release left a held guest button");
         }
+        // Replace original physical bindings, including the extended Back key.
+        // Adding an alternative alone would leave both old and new actions on.
+        using namespace aurora::binding;
+        const auto& controls = aurora::pad::controls();
+        const auto back = aurora::pad::control_for_ext_button(PAD_BUTTON_BACK);
+        std::vector<Binding> remapped;
+        for (auto [button, target] : {
+                std::pair{SDL_GAMEPAD_BUTTON_EAST, controls.a},
+                {SDL_GAMEPAD_BUTTON_SOUTH, controls.b},
+                {SDL_GAMEPAD_BUTTON_BACK, controls.start},
+                {SDL_GAMEPAD_BUTTON_START, back}}) {
+            Binding binding;
+            binding.input.control = PhysicalInput::GamepadButton{button};
+            binding.target = target;
+            remapped.push_back(binding);
+        }
+        Binding keyboardJump;
+        keyboardJump.input.control = PhysicalInput::Key{SDL_SCANCODE_SPACE};
+        keyboardJump.target = controls.a;
+        remapped.push_back(keyboardJump);
+        aurora::pad::set_action_bindings(0, remapped, {controls.a, controls.b, controls.start, back}, true);
+        check(report() == 0, "Binding replacement introduced a held button");
+        for (auto [button, expected] : {
+                std::pair{SDL_GAMEPAD_BUTTON_EAST, 0x0100},
+                {SDL_GAMEPAD_BUTTON_SOUTH, 0x0200},
+                {SDL_GAMEPAD_BUTTON_BACK, 0x0010},
+                {SDL_GAMEPAD_BUTTON_START, 0x1000}}) {
+            check(SDL_SetJoystickVirtualButton(device.joystick, button, true), SDL_GetError());
+            const auto actual = report();
+            if (actual != expected)
+                std::cerr << "[kirby] remap mismatch: button=" << SDL_GetGamepadStringForButton(button)
+                          << " guest=0x" << std::hex << actual << " expected=0x" << expected << std::dec << '\n';
+            check(actual == expected, "Remapped button retained an original physical action");
+            check(SDL_SetJoystickVirtualButton(device.joystick, button, false), SDL_GetError());
+            check(report() == 0, "Remapped button remained held after release");
+        }
+        auto key = [&](bool pressed) {
+            SDL_Event event{};
+            event.type = pressed ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+            event.key.scancode = SDL_SCANCODE_SPACE;
+            event.key.key = SDLK_SPACE;
+            event.key.down = pressed;
+            check(SDL_PushEvent(&event), SDL_GetError());
+        };
+        key(true);
+        check(report() == 0x0100, "Remapped keyboard input differs from the guest jump bit");
+        check(SDL_SetJoystickVirtualButton(device.joystick, SDL_GAMEPAD_BUTTON_SOUTH, true), SDL_GetError());
+        check(report() == 0x0300, "Keyboard and controller cannot contribute simultaneously");
+        key(false);
+        check(report() == 0x0200, "Releasing keyboard input also released the controller");
+        check(SDL_SetJoystickVirtualButton(device.joystick, SDL_GAMEPAD_BUTTON_SOUTH, false), SDL_GetError());
+        check(report() == 0, "Mixed keyboard/controller input did not release");
+        PADStatus virtualPad{};
+        virtualPad.button = PAD_BUTTON_A;
+        PADSetVirtualStatus(0, &virtualPad);
+        check(report() == 0x0100, "Replacing physical bindings discarded virtual input");
+        PADClearVirtualStatus(0);
+        check(report() == 0, "Virtual producer was not released");
+        check(SDL_SetJoystickVirtualButton(device.joystick, SDL_GAMEPAD_BUTTON_EAST, true), SDL_GetError());
+        check(report() == 0x0100, "Remapped input was not held before blocking");
+        PADBlockInput(true);
+        check(report() == 0, "Blocked remapped input reached the guest");
+        PADBlockInput(false);
+        check(report() == 0, "Unblocking replayed held remapped input");
+        check(SDL_SetJoystickVirtualButton(device.joystick, SDL_GAMEPAD_BUTTON_EAST, false), SDL_GetError());
+        check(report() == 0, "Blocked input was not released");
+        check(SDL_SetJoystickVirtualButton(device.joystick, SDL_GAMEPAD_BUTTON_EAST, true), SDL_GetError());
+        check(report() == 0x0100, "Fresh remapped input failed after unblocking");
+        check(SDL_SetJoystickVirtualButton(device.joystick, SDL_GAMEPAD_BUTTON_EAST, false), SDL_GetError());
+        check(report() == 0, "Fresh remapped input did not release");
+        aurora::pad::set_action_bindings(0, {});
+        check(report() == 0, "Restoring defaults introduced input");
+        key(true);
+        check(report() == 0, "Restoring defaults retained custom keyboard input");
+        key(false);
+        check(report() == 0, "Removed keyboard binding did not remain neutral");
+        check(SDL_SetJoystickVirtualButton(device.joystick, SDL_GAMEPAD_BUTTON_EAST, true), SDL_GetError());
+        check(report() == 0x0200, "Restoring base bindings left the override active");
+        check(SDL_SetJoystickVirtualButton(device.joystick, SDL_GAMEPAD_BUTTON_EAST, false), SDL_GetError());
+        check(report() == 0, "Restored binding did not release");
+        std::cout << "[kirby] SDL binding replacement verified: " << profile.name << '\n';
         check(SDL_SetJoystickVirtualButton(device.joystick, SDL_GAMEPAD_BUTTON_SOUTH, true), SDL_GetError());
         check(report() == 0x0100, "SDL held button was not sampled before disconnect");
         SDL_CloseJoystick(std::exchange(device.joystick, nullptr));
@@ -200,6 +282,39 @@ void ProbeSdlController(CpuContext& cpu, bool monitorPhysical) {
         InvokeIndirectCpu(KirbyBootConfig::WPADRead, &cpu);
         check(Memory::Read16(output) == 0 && Memory::Read8(output+0x29) == 255,
               "SDL disconnect left stale buttons or success status");
+        aurora::pad::set_action_bindings(0, remapped, {controls.a, controls.b, controls.start, back}, true);
+        check(report() == 0, "Keyboard-enabled port was not connected without a controller");
+        key(true);
+        check(report() == 0x0100, "Keyboard-only input failed without a physical controller");
+        key(false);
+        check(report() == 0, "Keyboard-only input did not release");
+        // A new SDL instance must resolve the same per-port bindings, rather
+        // than retaining source IDs from the disconnected controller.
+        device.id = SDL_AttachVirtualJoystick(&descriptor);
+        check(device.id != 0, SDL_GetError());
+        device.joystick = SDL_OpenJoystick(device.id);
+        check(device.joystick != nullptr, SDL_GetError());
+        pump();
+        assigned = false;
+        for (uint32_t i = 0; i < PADCount(); ++i) {
+            if (SDL_GetGamepadID(PADGetSDLGamepadForIndex(i)) == device.id) {
+                PADSetPortForIndex(i, 0); assigned = true; break;
+            }
+        }
+        check(assigned, "Reconnected device did not enter the controller list");
+        check(report() == 0, "Reconnect replayed old input");
+        check(SDL_SetJoystickVirtualButton(device.joystick, SDL_GAMEPAD_BUTTON_SOUTH, true), SDL_GetError());
+        check(report() == 0x0200, "Reconnected controller lost its binding replacement");
+        SDL_CloseJoystick(std::exchange(device.joystick, nullptr));
+        check(SDL_DetachVirtualJoystick(device.id), SDL_GetError());
+        device.id = 0;
+        check(report() == 0, "Disconnect left a remapped button held on the keyboard-enabled port");
+        aurora::pad::set_action_bindings(0, {});
+        pump();
+        cpu.gpr[3] = 0; cpu.gpr[4] = output;
+        InvokeIndirectCpu(KirbyBootConfig::WPADRead, &cpu);
+        check(Memory::Read8(output+0x29) == 255, "Reset did not restore disconnected port status");
+        std::cout << "[kirby] SDL mixed input and reconnect verified: " << profile.name << '\n';
         std::cout << "[kirby] SDL preset verified: " << profile.name << '\n';
     }
     aurora::gamepad::shutdown();

@@ -30,6 +30,13 @@ used as a behavior reference at revision `db2afcbdf8f5175a6b8414d9f5e21c978775f6
 its source files are not linked into the native product. Review copies, retaining
 their original copyright and SPDX notices, are under ignored `local/references/dolphin/`.
 
+`patches/aurora/controller-binding-overrides.patch` extends Aurora's PAD binding
+adapter with replacement controls and opt-in shared keyboard/controller input.
+The changes in that patch are provided under Aurora's MIT license. Its original
+copyright and license notices remain in the pinned source tree. Kirby's GPL
+integration tests exercise the existing routed input and guest WPAD serializer;
+no game-specific addresses or disc instructions are included in the patch.
+
 
 The SRAM layout reference in Dolphin's `Sram.h` retains its embedded libogc notice,
 crediting Michael Wiedenbauer and Dave Murphy; the review copy is kept intact locally.

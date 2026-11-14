@@ -58,6 +58,8 @@ class NativeBootstrapTests(unittest.TestCase):
         for preset in ("standard", "PS5", "Xbox 360", "Xbox One"):
             with self.subTest(preset=preset):
                 self.assertIn(f"SDL preset verified: Kirby {preset} probe", result.stdout)
+                self.assertIn(f"SDL binding replacement verified: Kirby {preset} probe", result.stdout)
+                self.assertIn(f"SDL mixed input and reconnect verified: Kirby {preset} probe", result.stdout)
 
     def test_original_threads_sleep_wake_exit_and_preserve_native_continuations(self):
         result = self.invoke("--probe-threads")
