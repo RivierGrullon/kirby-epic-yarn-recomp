@@ -123,6 +123,44 @@ logs remain in `build-logs/`; a failed command stops the build. The helper prepa
 the shared runtime, applies the checked-in patches and builds `WiiCompiled` and
 `kirby-launcher`. It does not launch the game.
 
+### Build separately from the runnable version
+
+Both helpers accept `--stage-root` for setup work. Use a directory below the
+reserved `local/setup/builds/` subtree:
+
+```bash
+stage_root="local/setup/builds/manual-01"
+bash tools/container.sh python3 tools/kirby.py translate \
+  --stage-root "$stage_root" --dol disc/DATA/sys/main.dol --threads 2
+bash tools/container.sh python3 tools/build_native.py \
+  --stage-root "$stage_root" --jobs 2 --translated-jobs 2
+```
+
+The stage retains `metadata/` (profile, function map and DOL audit), `generated/`,
+`translator/bin/`, patched `native-workspace/`, `build/` and separate `logs/`.
+Authored sources and pinned dependencies are read from the checkout. Translation
+and compilation do not replace the developer `generated/` tree or `build/native`
+executables. The ownership record refuses a nonempty, unowned stage or one from
+another checkout; user directories and the developer build cannot be stage roots.
+The final directory component is a job ID of 1–80 ASCII letters, digits,
+underscores or hyphens. This is an internal build-tool path requirement: Ninja's
+dependency parser can lose filenames containing apostrophes and rebuild them
+on every invocation. Original image/archive filenames are preserved. Use the
+container workflow above so compiler source/output paths use `/workspace`.
+
+Staged .NET compilation uses a private temporary artifacts directory and retains
+the runnable translator binaries in the stage. This avoids .NET 8 item-transform
+failures with apostrophes in output paths, while keeping dependency `bin/` and
+`obj/` trees unchanged. Later translation commands may use
+`--translator-dll "$stage_root/translator/bin/Translator.Cli/release/Translator.Cli.dll"`
+to reuse that explicitly built tool.
+
+The staged native game is `"$stage_root/build/WiiCompiled"`. Run bootstrap checks
+with an explicit `--game-data DATA` and keep diagnostic user data separate.
+Staging alone does not install or select the new executable. The normal launcher
+stays at `build/native/kirby-launcher`; build coordination, native verification,
+installation manifests and atomic executable selection are still being integrated.
+
 ## Run on the host
 
 ```bash

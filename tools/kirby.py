@@ -5,10 +5,13 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shlex
 import shutil
 import struct
 import subprocess
 import sys
+import tempfile
+from build_layout import BuildLayout
 from audits import scheduler as scheduler_audit
 from audits import wpad as wpad_audit
 from audits import audio as audio_audit
@@ -137,9 +140,10 @@ def community_symbols():
     return entries
 
 
-def write_map(entries):
-    path = ROOT / "local/RK5E01-functions.txt"
-    path.parent.mkdir(exist_ok=True)
+def write_map(entries, *, layout=None):
+    layout=layout or BuildLayout(ROOT)
+    layout.ensure()
+    path = layout.metadata / "RK5E01-functions.txt"
     # FunctionMap.Parse expects hexadecimal digits WITHOUT a 0x prefix.
     path.write_text("".join(f"{address:08X} {name}\n" for address, name, _ in entries))
     print(f"Function map: {len(entries)} unique functions -> {path}")
@@ -167,7 +171,23 @@ def looks_like_rel(path, header):
     return executable
 
 
-def prepare(path):
+def render_profile(manifest, path, layout):
+    replacements={
+        'workspace_root: ../..': 'workspace_root: '+json.dumps(layout.root.as_posix()),
+        '    path: disc/DATA/sys/main.dol': '    path: '+json.dumps(path.resolve().as_posix()),
+        '    path: local/RK5E01-functions.txt': '    path: '+json.dumps((layout.metadata/'RK5E01-functions.txt').as_posix()),
+        '  native_index: local/native-index.json': '  native_index: '+json.dumps((layout.metadata/'native-index.json').as_posix()),
+        '  root: generated': '  root: '+json.dumps(layout.generated.as_posix()),
+    }
+    for before, after in replacements.items():
+        if manifest.count(before)!=1:
+            raise ValueError(f'Profile output-path contract changed: {before.strip()}')
+        manifest=manifest.replace(before,after)
+    return manifest
+
+
+def prepare(path, *, layout=None):
+    layout=layout or BuildLayout(ROOT)
     if not path.is_file():
         raise ValueError(f"Game DOL not found: {path}. Extract your WBFS or supply --dol /path/to/sys/main.dol")
     data = path.read_bytes()
@@ -300,8 +320,8 @@ def prepare(path):
     audio = audio_audit.audit(dol, by_name, source_symbols)
     cache = cache_audit.audit(dol, by_name)
     matrix = matrix_audit.audit(dol, by_name)
-    write_map(entries)
-    generated = ROOT / "generated"
+    write_map(entries,layout=layout)
+    generated = layout.generated
     generated.mkdir(exist_ok=True)
     (generated / "KirbyBootConfig.h").write_text(
         "// Generated from the verified RK5E01 DOL and community symbols.\n#pragma once\n#include <cstdint>\n"
@@ -362,9 +382,8 @@ def prepare(path):
                      f"sha256: {sha256}", f"- 0x{dol.entry:08X}"):
         if expected not in manifest:
             raise ValueError(f"Checked-in profile disagrees with the DOL: expected {expected}")
-    manifest = manifest.replace("workspace_root: ../..", f"workspace_root: {json.dumps(ROOT.as_posix())}")
-    manifest = manifest.replace("path: disc/DATA/sys/main.dol", f"path: {json.dumps(path.resolve().as_posix())}")
-    output = ROOT / "local/RK5E01.yml"
+    manifest = render_profile(manifest,path,layout)
+    output = layout.metadata / "RK5E01.yml"
     output.write_text(manifest)
     files = path.parent.parent / "files" if path.parent.name == "sys" else None
     modules = []
@@ -384,32 +403,48 @@ def prepare(path):
                   files_root=str(files) if files and files.is_dir() else None,
                   possible_rel_modules=modules,
                   module_scan="Header and extension candidates only; compressed/embedded modules require further inspection")
-    (ROOT / "local/dol-report.json").write_text(json.dumps(report, indent=2) + "\n")
+    (layout.metadata / "dol-report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
     print(f"Profile: {output}")
     return dol.entry, output
 
 
-def run_logged(name, command):
-    logs = ROOT / "build-logs"
-    logs.mkdir(exist_ok=True)
-    print("+ " + " ".join(map(str, command)), flush=True)
+def run_logged(name, command, *, layout=None):
+    layout=layout or BuildLayout(ROOT)
+    layout.ensure()
+    logs = layout.logs
+    print("+ " + shlex.join(list(map(str, command))), flush=True)
     with (logs / f"{name}.log").open("w") as log:
         result = subprocess.run(list(map(str, command)), cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
     if result.returncode:
         print((logs / f"{name}.log").read_text()[-8000:], file=sys.stderr)
-        raise ValueError(f"{name} failed (exit {result.returncode}); see build-logs/{name}.log")
-    print(f"{name}: passed; build-logs/{name}.log")
+        raise ValueError(f"{name} failed (exit {result.returncode}); see {logs/name}.log")
+    print(f"{name}: passed; {logs/name}.log")
 
 
-def translator(existing=None):
+def translator(existing=None, *, layout=None):
+    layout=layout or BuildLayout(ROOT)
     if existing is not None:
         if not existing.is_file():
             raise ValueError(f"Translator DLL not found: {existing}")
         return ["dotnet", existing.resolve()]
     project = ROOT / "vendor/wiicompiled/translator/src/Translator.Cli"
-    run_logged("translator-build", ["dotnet", "build", project / "Translator.Cli.csproj", "-c", "Release"])
-    return ["dotnet", project / "bin/Release/net8.0/Translator.Cli.dll"]
+    command=["dotnet", "build", project / "Translator.Cli.csproj", "-c", "Release"]
+    if layout.stage is not None:
+        layout.ensure()
+        # .NET 8's reference-copy item transform breaks when OutDir contains an
+        # apostrophe. Build in owned scratch, then retain the runnable binaries
+        # under the requested stage. Source checkouts and their obj/ stay intact.
+        with tempfile.TemporaryDirectory(prefix='kirby-translator-',dir='/tmp') as scratch:
+            run_logged("translator-build",[*command,"--artifacts-path",scratch],layout=layout)
+            shutil.copytree(Path(scratch)/'bin',layout.translator_artifacts/'bin',dirs_exist_ok=True)
+        assembly=layout.translator_artifacts/'bin/Translator.Cli/release/Translator.Cli.dll'
+    else:
+        assembly=project / "bin/Release/net8.0/Translator.Cli.dll"
+        run_logged("translator-build",command,layout=layout)
+    if not assembly.is_file():
+        raise ValueError(f'Translator build did not produce {assembly}')
+    return ["dotnet",assembly]
 
 
 def main():
@@ -418,8 +453,10 @@ def main():
     parser.add_argument("--dol", type=Path, default=ROOT / "disc/DATA/sys/main.dol")
     parser.add_argument("--threads", type=int, default=2)
     parser.add_argument("--translator-dll", type=Path, help="Use an explicitly prebuilt translator without NuGet restore")
+    parser.add_argument("--stage-root",type=Path,help="Isolate outputs below local/setup/builds/JOB")
     args = parser.parse_args()
     try:
+        layout=BuildLayout(ROOT,args.stage_root)
         if args.command == "doctor":
             missing = []
             for tool in ("git", "python3", "dotnet", "clang", "clang++", "cmake", "ninja", "pkg-config"):
@@ -430,27 +467,27 @@ def main():
             if missing:
                 raise ValueError("Missing tools: " + ", ".join(missing) + ". Use tools/container.sh")
         elif args.command == "map":
-            write_map(community_symbols())
+            write_map(community_symbols(),layout=layout)
         elif args.command == "translator":
-            translator(args.translator_dll)
+            translator(args.translator_dll,layout=layout)
         else:
-            entry, profile = prepare(args.dol)
+            entry, profile = prepare(args.dol,layout=layout)
             if args.command in ("translate", "shards"):
-                tr = translator(args.translator_dll)
+                tr = translator(args.translator_dll,layout=layout)
             if args.command == "translate":
-                run_logged("info", [*tr, "info", "--project", profile])
+                run_logged("info", [*tr, "info", "--project", profile],layout=layout)
                 run_logged("translate", [*tr, "translate-recursive", f"0x{entry:08X}", "--project", profile,
-                                         "--outdir", ROOT / "generated/functions", "--output-metadata",
-                                         ROOT / "generated/base_translation_output.json", "--prune-stale",
-                                         "--threads", str(max(1, args.threads))])
-                run_logged("data-init", [*tr, "generate-data-init", "--project", profile])
+                                         "--outdir", layout.generated / "functions", "--output-metadata",
+                                         layout.generated / "base_translation_output.json", "--prune-stale",
+                                         "--threads", str(max(1, args.threads))],layout=layout)
+                run_logged("data-init", [*tr, "generate-data-init", "--project", profile],layout=layout)
             if args.command in ("translate", "shards"):
                 run_logged("shards", [*tr, "emit-build-shards", "--project", profile,
-                                      "--base-metadata", ROOT / "generated/base_translation_output.json",
-                                      "--base-functions-dir", ROOT / "generated/functions",
+                                      "--base-metadata", layout.generated / "base_translation_output.json",
+                                      "--base-functions-dir", layout.generated / "functions",
                                       "--native-source-dir", ROOT / "runtime/native-src",
-                                      "--native-index", ROOT / "local/native-index.json",
-                                      "--out", ROOT / "generated/build_shards"])
+                                      "--native-index", layout.metadata / "native-index.json",
+                                      "--out", layout.generated / "build_shards"],layout=layout)
                 print("Build shards emitted. Rebuild the native executable before testing.")
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

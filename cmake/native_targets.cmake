@@ -1,3 +1,7 @@
+if(NOT DEFINED KIRBY_GENERATED_ROOT)
+    set(KIRBY_GENERATED_ROOT "${KIRBY_PROJECT_ROOT}/generated")
+endif()
+
 # Bring-up requires Dawn validation even when translated code uses Release.
 # Upstream disables validation and robustness in this translation unit with NDEBUG.
 set_property(SOURCE "${MKW_AURORA_DIR}/lib/webgpu/gpu.cpp"
@@ -13,7 +17,7 @@ target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/c
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/devices/ax.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/native-src/devices/dsp.cpp"
     "${KIRBY_PROJECT_ROOT}/tests/integration/ax_probe.cpp"
-    "${KIRBY_PROJECT_ROOT}/generated/functions/func_80684770.cpp")
+    "${KIRBY_GENERATED_ROOT}/functions/func_80684770.cpp")
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/boot/boot_memory.cpp")
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/boot/clock.cpp")
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/devices/interrupts.cpp")
@@ -146,8 +150,8 @@ target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/g
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/pos_matrix.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/native-src/graphics/matrix.cpp"
     "${KIRBY_PROJECT_ROOT}/tests/integration/pos_matrix_probe.cpp"
-    "${KIRBY_PROJECT_ROOT}/generated/functions/func_8068BD70.cpp")
-set_source_files_properties("${KIRBY_PROJECT_ROOT}/generated/functions/func_8068BD70.cpp" PROPERTIES
+    "${KIRBY_GENERATED_ROOT}/functions/func_8068BD70.cpp")
+set_source_files_properties("${KIRBY_GENERATED_ROOT}/functions/func_8068BD70.cpp" PROPERTIES
     SKIP_PRECOMPILE_HEADERS ON COMPILE_OPTIONS "-O2;-fno-fast-math;-ffp-contract=off;-fno-slp-vectorize")
 foreach(target WiiCompiled kirby_interrupts_test kirby_exi_dma_test)
     target_sources(${target} PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/gx_fifo.cpp")
@@ -205,7 +209,7 @@ target_include_directories(WiiCompiled PRIVATE "${MKW_AURORA_DIR}/lib")
 add_executable(kirby_cache_test "${KIRBY_PROJECT_ROOT}/tests/unit/graphics/cache_test.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/cache.cpp")
 foreach(address 80663A80 80663AB0 80663AE0 80663B10 80663B40)
-    target_sources(kirby_cache_test PRIVATE "${KIRBY_PROJECT_ROOT}/generated/functions/func_${address}.cpp")
+    target_sources(kirby_cache_test PRIVATE "${KIRBY_GENERATED_ROOT}/functions/func_${address}.cpp")
 endforeach()
 target_include_directories(kirby_cache_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_features(kirby_cache_test PRIVATE cxx_std_20)
