@@ -476,6 +476,73 @@ under ignored `build-logs/`. Experimental executable SHA-256:
 The patch is local at `local/stage54-cache-candidate.patch`; no game-generated
 source, binaries or captures were added to Git. Owned test sessions were closed.
 
+## Fragmented FIFO packet lengths
+
+The stream decoder previously called the vertex-layout callback again whenever
+another fragment arrived for an incomplete draw. Once the draw header has been
+decoded, no later CP command can precede its remaining payload. The decoder now
+keeps that packet length until dispatch and clears it before processing the next
+command. Display-list expansion still derives each child's length in order, so
+its CP format changes affect the following draws. No packet bytes or draw calls
+are omitted. Texture caching, guest clocks and audio are unchanged.
+
+`VertexSizeQueries()` counts the decoder's layout callback invocations; it excludes
+the renderer's separate draw preparation. `SetPacketLengthReuse(false)` provides
+a diagnostic baseline. The new fragmented-draw assertion first failed against the
+old decoder. The retained implementation passes 83 stream checks, 440 Vulkan
+checks, 51 Python tests including native startup, and 21 CTest targets. New tests
+cover exact payload delivery, baseline equivalence and CP changes inside a nested
+list between fragmented parent draws.
+
+A standalone optimized parser benchmark delivered 100,000 draws of 4,003 bytes
+each, fed in 32-byte pieces, to a trivial backend. Both modes delivered
+400,300,000 bytes. Its vertex-size callback returns a constant stride; it does not
+render or execute the game's vertex-layout routine:
+
+| Reuse | Process CPU seconds | Wall seconds | Layout queries |
+| --- | ---: | ---: | ---: |
+| Off | 0.268790 | 0.272058 | 12,600,000 |
+| On | 0.186460 | 0.188736 | 100,000 |
+| Off | 0.258648 | 0.261417 | 12,600,000 |
+| On | 0.183407 | 0.185321 | 100,000 |
+
+This reduced the isolated decoder benchmark's CPU time by about 30%. It is not
+an estimate of whole-game speedup. Separate visible Quilty Square comparisons
+used six-second frame windows and approximately 15-second CPU/counter windows:
+
+| Series | Reuse | CPU ms / submission | Layout queries / submission | VI submissions/s |
+| --- | --- | ---: | ---: | ---: |
+| First | Off | 9.740 | 4,807 | 58.937 |
+| First | On | 9.790 | 1,101 | 58.947 |
+| First | Off | 10.099 | 4,780 | 59.441 |
+| Repeat | On | 8.685 | 1,102 | 58.430 |
+| Repeat | Off | 8.470 | 4,840 | 59.934 |
+| Repeat | On | 8.220 | 1,101 | 59.944 |
+
+Position stayed `(49.010,11.972)` in Quilty Square, with unchanged pipeline
+population. The native runs confirm fewer layout queries but do not establish a
+consistent end-to-end CPU or pacing benefit. The component optimization is
+retained on the strength of the repeated parser CPU reduction and functional
+checks; smooth gameplay remains unproven. GDB needed a separate local debug-type
+object for this decoder, whose native translation unit has no full type debug
+information. Its initial failed counter-reading attempt is excluded.
+
+Normal virtual gamepad input then loaded Fountain Gardens. Right movement changed
+x=15.850 to 18.730, left returned to 16.066, and a jump raised y=20.925 to 22.858
+with state 1 changing to 2. The native scene capture was inspected. This is a short
+functional check, not long-session, physical-controller or audio validation.
+
+Evidence under ignored `build-logs/`: `stage58-red.log`, `stage58-stream-green.log`,
+`stage58-stream-benchmark.jsonl`, `stage58-stride-comparison.json`,
+`stage58-repeat-comparison.json`, `stage58-fountain-input.json` and
+`stage58-fountain.png`. The benchmark and debug-type helper stay local. The owned
+game, controller and audio sink were closed after testing.
+
+The executable used by the launcher was rebuilt and compared byte-for-byte with
+the tested candidate. SHA-256:
+`4a0edf9591acea2c44c1dcc72c356d70c87fda88310ffcba96c86abc726c01be`.
+The previous published executable remains under `local/verified-builds/before-stage58/`.
+
 ## Measurements
 
 Hardware: Acer Nitro AN515-55, Intel i5-10300H, NVIDIA RTX 3050 Laptop GPU, Bazzite,

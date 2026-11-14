@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Derive an incomplete FIFO packet's length once while awaiting its payload,
+  preserving CP format changes and nested display-list ordering.
 - Count texture-cache lookups, missing identities, evictions, retained-content
   changes and snapshot bytes for diagnosing copy demand.
 - Share immutable RAM snapshots between deferred texture validation and completion

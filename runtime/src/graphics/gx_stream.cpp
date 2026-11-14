@@ -10,7 +10,7 @@ uint32_t GxBig32(const uint8_t* p) {
 }
 GxStream::GxStream(Packet packet, VertexSize vertexSize, Resolve resolve)
     : packet_(std::move(packet)), vertexSize_(std::move(vertexSize)), resolve_(std::move(resolve)) {}
-size_t GxStream::PacketSize(std::span<const uint8_t> bytes) const {
+size_t GxStream::PacketSize(std::span<const uint8_t> bytes) {
     if (bytes.empty()) return 0;
     switch (bytes[0]) {
     case 0x00: case 0x48: return 1;
@@ -24,6 +24,7 @@ size_t GxStream::PacketSize(std::span<const uint8_t> bytes) const {
         if (bytes[0] >= 0x80 && bytes[0] <= 0xBF) {
             if (bytes.size() < 3) return 0;
             const uint32_t count = (uint32_t(bytes[1]) << 8) | bytes[2];
+            ++vertexSizeQueries_;
             const auto stride = vertexSize_(bytes[0] & 7);
             if (!stride && count) throw std::runtime_error("GX draw has no vertex attributes");
             const uint64_t size = 3 + uint64_t(count) * stride;
@@ -68,8 +69,13 @@ void GxStream::Feed(std::span<const uint8_t> bytes) {
         size_t offset = 0, budget = MaxBytes;
         while (offset < pending_.size()) {
             const auto remaining = std::span<const uint8_t>(pending_).subspan(offset);
-            const auto length = PacketSize(remaining);
+            // Once its header is known, an incomplete FIFO command cannot be
+            // preceded by another CP format change. Keep its length until the
+            // payload arrives instead of deriving the same stride per fragment.
+            if (!reusePacketLength_ || !pendingPacketSize_) pendingPacketSize_=PacketSize(remaining);
+            const auto length = pendingPacketSize_;
             if (!length || length > remaining.size()) break;
+            pendingPacketSize_=0;
             Dispatch(remaining.first(length), 0, budget);
             offset += length;
         }

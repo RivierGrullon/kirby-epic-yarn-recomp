@@ -66,6 +66,39 @@ int main() {
         Check(draw.received.empty() && draw.stream.PendingBytes() == 10, "incomplete draw is retained");
         draw.stream.Feed(std::span(vertices).last(1));
         Check(draw.received.size() == 1 && draw.received[0].size() == 11, "vertex count and stride determine draw packet size");
+        Fixture fragmented;
+        std::vector<uint8_t> longDraw(3+4*100,0x12);
+        longDraw[0]=0x90; longDraw[1]=0; longDraw[2]=100;
+        for (size_t offset=0;offset<longDraw.size();offset+=32)
+            fragmented.stream.Feed(std::span(longDraw).subspan(offset,std::min(size_t(32),longDraw.size()-offset)));
+        Check(fragmented.received.size()==1 && fragmented.received[0]==longDraw,
+              "fragmented vertex payload reaches the backend exactly once and byte-for-byte");
+        Check(fragmented.stream.VertexSizeQueries()==1,
+              "one draw header derives its stride once while awaiting FIFO fragments");
+        Fixture baseline;
+        baseline.stream.SetPacketLengthReuse(false);
+        for (size_t offset=0;offset<longDraw.size();offset+=32)
+            baseline.stream.Feed(std::span(longDraw).subspan(offset,std::min(size_t(32),longDraw.size()-offset)));
+        Check(baseline.received==fragmented.received && baseline.stream.VertexSizeQueries()>1,
+              "diagnostic baseline reparses headers but delivers identical packets");
+        uint32_t changingStride=2;
+        std::array<uint8_t,32> child{};
+        const std::array<uint8_t,6> cp4{8,0x70,0,0,0,4};
+        std::copy(cp4.begin(),cp4.end(),child.begin());
+        child[6]=0x90; child[8]=2;
+        std::vector<size_t> drawSizes;
+        Kirby::GxStream changing([&](auto packet) {
+            if (packet[0]==8) changingStride=packet[5];
+            else if (packet[0]>=0x80) drawSizes.push_back(packet.size());
+        },[&](auto) {return changingStride;},[&](uint32_t,uint32_t) {return std::span<const uint8_t>(child);});
+        std::vector<uint8_t> mixed{0x90,0,2,1,2,3,4};
+        mixed.insert(mixed.end(),call.begin(),call.end());
+        mixed.insert(mixed.end(),{0x90,0,3}); mixed.resize(mixed.size()+12,0);
+        for (auto byte:mixed) changing.Feed({&byte,1});
+        Check(drawSizes==std::vector<size_t>{7,11,15} && changing.PendingBytes()==0,
+              "CP changes in a nested list update the next draw without corrupting fragmented packet lengths");
+        Check(changing.VertexSizeQueries()==3,
+              "nested and following draw headers each derive their own current format");
         Fixture oversized; oversized.stride = 0xFFFFFFFF;
         Throws([&] { oversized.stream.Feed(vertices); }, "vertex-size arithmetic cannot wrap allocation bound");
         Fixture zero; zero.stride = 0;
