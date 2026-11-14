@@ -232,6 +232,16 @@ endforeach()
 add_custom_target(kirby_tests DEPENDS ${kirby_test_targets})
 
 add_executable(kirby-launcher "${KIRBY_PROJECT_ROOT}/launcher/main.cpp")
+target_sources(kirby-launcher PRIVATE
+    "${KIRBY_PROJECT_ROOT}/launcher/pages/layout.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/pages/play.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/pages/install.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/pages/display.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/pages/audio.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/pages/controls.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/pages/saves.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/pages/diagnostics.cpp")
+target_include_directories(kirby-launcher PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
 target_compile_features(kirby-launcher PRIVATE cxx_std_20)
 target_compile_definitions(kirby-launcher PRIVATE SDL_MAIN_HANDLED)
 target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends SDL3::SDL3-static kirby_settings)

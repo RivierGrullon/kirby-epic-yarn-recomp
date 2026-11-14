@@ -108,6 +108,14 @@ The AX memory adaptation reads actual configured MEM2 bounds, avoiding a null
 sample window when the retail 64 MiB map is smaller than the upstream NDEV limit.
 Its integration probe includes a synthetic MEM2 PCM16 voice, not only bus constants.
 
-The native desktop frontend is in `../launcher/main.cpp`, built as `kirby-launcher`.
+The native desktop frontend is built as `kirby-launcher`. Its process and folder
+dialog ownership remain in `../launcher/main.cpp`; `../launcher/state.h` contains
+the view state and actions. `../launcher/pages/` holds the layout and separate
+Play, Install, Display, Audio, Controls, Saves and Diagnostics views. Pages edit
+shared settings or return actions; they do not own subprocesses or file writes.
 It shares existing SDL3/ImGui libraries but runs the game as a separate process.
-Folder/revision checks precede launch, and `--volume` sets backend gain before startup.
+Folder/revision checks precede launch, which passes the shared TOML path using
+`--config`. `src/app/settings.cpp` and `include/kirby/settings.h` form the common
+configuration adapter; see `../docs/settings.md` for its schema and migration.
+The launcher's hidden `--self-test` renders every page at desktop and compact
+sizes without dispatching file or process actions.

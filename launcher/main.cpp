@@ -2,6 +2,7 @@
 // Linux desktop frontend using the project's existing SDL3 and Dear ImGui libraries.
 #include <SDL3/SDL.h>
 #include "kirby/settings.h"
+#include "pages/pages.h"
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
@@ -87,18 +88,17 @@ int main(int argc, char** argv) {
     if (!fs::exists(root / "tools/kirby.py")) {
         std::fprintf(stderr,"Keep the launcher in this project's build/native folder\n"); return 2;
     }
-    const auto settings = root / "local/user/settings.toml";
-    Kirby::Settings config{root / "disc/DATA"};
-    std::string settingsError;
-    bool settingsDirty = false;
+    Launcher::State state{root, executable, root / "local/user/settings.toml", Kirby::Settings{root / "disc/DATA"}};
+    state.selfTest = selfTest;
+    const auto& settings = state.settingsFile;
+    auto& config = state.config;
+    auto& settingsError = state.settingsError;
+    auto& settingsDirty = state.settingsDirty;
     if (!selfTest) {
         try { config = Kirby::LoadOrMigrateSettings(settings, root / "local/user/launcher.cfg", root, config); }
         catch (const std::exception& error) { settingsError = error.what(); }
     }
     auto& data = config.gameData;
-    auto& volume = config.masterVolume;
-    auto& vsync = config.vsync;
-    auto& performanceMode = config.gpuResidentCopies;
     const auto saveSettings = [&] {
         if (selfTest || !settingsError.empty()) return false;
         try { Kirby::SaveSettings(settings, config); settingsDirty = false; return true; }
@@ -109,6 +109,7 @@ int main(int argc, char** argv) {
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | (selfTest ? SDL_WINDOW_HIDDEN : 0));
     SDL_Renderer* renderer = window ? SDL_CreateRenderer(window, nullptr) : nullptr;
     if (!renderer) { std::fprintf(stderr,"%s\n",SDL_GetError()); SDL_Quit(); return 1; }
+    SDL_SetWindowMinimumSize(window, 640, 520);
     SDL_SetRenderVSync(renderer, 1);
     IMGUI_CHECKVERSION(); ImGui::CreateContext();
     auto& io = ImGui::GetIO(); io.IniFilename = nullptr;
@@ -123,12 +124,17 @@ int main(int argc, char** argv) {
     style.Colors[ImGuiCol_Button] = {0.52f,0.20f,0.38f,1};
     style.Colors[ImGuiCol_ButtonHovered] = {0.68f,0.28f,0.48f,1};
     style.Colors[ImGuiCol_ButtonActive] = {0.78f,0.35f,0.55f,1};
+    style.Colors[ImGuiCol_Header] = {0.36f,0.15f,0.28f,1};
+    style.Colors[ImGuiCol_HeaderHovered] = style.Colors[ImGuiCol_ButtonHovered];
+    style.Colors[ImGuiCol_HeaderActive] = style.Colors[ImGuiCol_ButtonActive];
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer); ImGui_ImplSDLRenderer3_Init(renderer);
     auto selection = std::make_shared<Selection>();
-    bool running = true, valid = false; unsigned frames = 0;
-    std::string status = "Select your extracted DATA folder";
+    bool running = true; unsigned frames = 0;
+    auto& valid = state.dataVerified;
+    auto& status = state.dataStatus;
     if (!selfTest) valid = Verify(data, status);
     pid_t game = -1;
+    auto page = Launcher::Page::Play;
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -142,82 +148,67 @@ int main(int argc, char** argv) {
             int result = 0;
             if (waitpid(game, &result, WNOHANG) == game) {
                 game = -1; SDL_ShowWindow(window); SDL_RaiseWindow(window);
-                status = WIFEXITED(result) && WEXITSTATUS(result) == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
+                state.gameStatus = WIFEXITED(result) && WEXITSTATUS(result) == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
             }
         }
         ImGui_ImplSDLRenderer3_NewFrame(); ImGui_ImplSDL3_NewFrame(); ImGui::NewFrame();
-        ImGui::SetNextWindowPos({0,0}); ImGui::SetNextWindowSize(io.DisplaySize);
-        ImGui::Begin("Launcher", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-        ImGui::TextColored({1,0.66f,0.80f,1}, "KIRBY"); ImGui::SameLine(); ImGui::TextDisabled("NATIVE / LINUX");
-        ImGui::TextUnformatted("Kirby's Epic Yarn"); ImGui::Separator();
-        ImGui::BeginChild("play", {0,155}, ImGuiChildFlags_Borders);
-        ImGui::TextUnformatted("Play your own copy"); ImGui::TextWrapped("%s",status.c_str());
-        ImGui::BeginDisabled(!valid || game > 0 || selfTest || !settingsError.empty());
-        if (ImGui::Button("Play", {170,42})) {
-            valid = Verify(data,status);
-            if (valid && fs::exists(executable) && saveSettings()) {
-                const auto libs = (root / "local/host-libs").string();
-                const char* previous = std::getenv("LD_LIBRARY_PATH");
-                const std::string libraryPath = libs + (previous ? std::string(":") + previous : "");
-                setenv("LD_LIBRARY_PATH", libraryPath.c_str(), 1);
-                std::string exe = executable.string(), configArg = settings.string();
-                std::vector<char*> args{exe.data(),const_cast<char*>("--video"),const_cast<char*>("--config"),configArg.data()};
-                args.push_back(nullptr);
-                fs::create_directories(root / "build-logs");
-                posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
-                posix_spawn_file_actions_addopen(&actions,STDOUT_FILENO,(root/"build-logs/launcher-game.log").c_str(),O_WRONLY|O_CREAT|O_APPEND,0600);
-                posix_spawn_file_actions_adddup2(&actions,STDOUT_FILENO,STDERR_FILENO);
-                // The development build keeps its established save paths relative to the repository.
-                fs::current_path(root);
-                const int error = posix_spawn(&game,exe.c_str(),&actions,nullptr,args.data(),environ);
-                posix_spawn_file_actions_destroy(&actions);
-                if (error) { game = -1; status = "Could not start the native executable"; }
-                else { status = "Game running"; SDL_MinimizeWindow(window); }
-            } else if (valid) status = fs::exists(executable) ? "Could not save settings" : "Native executable missing. See the build guide.";
+        state.gameRunning = game > 0;
+        if (selfTest) {
+            // Exercise every page at both layout sizes without file/process actions.
+            page = static_cast<Launcher::Page>((frames / 3) % Launcher::PageNames.size());
+            if (frames == 0) SDL_SetWindowSize(window, 960, 680);
+            if (frames == Launcher::PageNames.size() * 3) SDL_SetWindowSize(window, 640, 520);
         }
-        ImGui::EndDisabled(); ImGui::SameLine();
-        if (ImGui::Button("Choose DATA folder", {200,42}))
-            SDL_ShowOpenFolderDialog(FolderChosen,new std::shared_ptr<Selection>(selection),window,data.c_str(),false);
-        ImGui::EndChild();
-        ImGui::TextDisabled("Game data"); ImGui::TextWrapped("%s",data.c_str());
-        ImGui::Separator();
-        ImGui::BeginDisabled(!settingsError.empty() || selfTest);
-        settingsDirty |= ImGui::SliderFloat("Master volume", &volume, 0, 100, "%.0f%%");
-        ImGui::TextDisabled("Applied next launch. In-game audio is still under investigation.");
-        settingsDirty |= ImGui::Checkbox("VSync", &vsync);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Off can reduce presentation stalls; driver behavior varies.");
-        settingsDirty |= ImGui::Checkbox("Experimental performance mode", &performanceMode);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reduces GPU copy waits and repeated texture processing. Compatibility testing is ongoing. Applied next launch.");
-        if (ImGui::Button("Save settings")) saveSettings();
-        ImGui::SameLine(); ImGui::TextDisabled("%s",settingsDirty ? "Unsaved changes" : "Settings saved on Play or close");
-        ImGui::EndDisabled();
-        if (!settingsError.empty()) {
-            ImGui::TextWrapped("Settings error: %s. Original file preserved.",settingsError.c_str());
-            if (ImGui::Button("Open Settings Folder")) OpenFolder(settings.parent_path());
-            ImGui::SameLine();
-            if (ImGui::Button("Reload settings")) {
+        const auto action = Launcher::DrawLauncher(state, page);
+        if (!selfTest) try {
+            switch (action) {
+            case Launcher::Action::Play:
+                valid = Verify(data, status);
+                if (valid && fs::is_regular_file(executable) && saveSettings()) {
+                    const auto libs = (root / "local/host-libs").string();
+                    const char* previous = std::getenv("LD_LIBRARY_PATH");
+                    const std::string libraryPath = libs + (previous ? std::string(":") + previous : "");
+                    setenv("LD_LIBRARY_PATH", libraryPath.c_str(), 1);
+                    std::string exe = executable.string(), configArg = settings.string();
+                    char* args[]{exe.data(), const_cast<char*>("--video"), const_cast<char*>("--config"), configArg.data(), nullptr};
+                    fs::create_directories(root / "build-logs");
+                    posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
+                    posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, (root/"build-logs/launcher-game.log").c_str(), O_WRONLY|O_CREAT|O_APPEND, 0600);
+                    posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO);
+                    // Existing save paths stay relative to the repository.
+                    fs::current_path(root);
+                    const int error = posix_spawn(&game, exe.c_str(), &actions, nullptr, args, environ);
+                    posix_spawn_file_actions_destroy(&actions);
+                    if (error) { game = -1; state.gameStatus = "Could not start the native executable"; }
+                    else { state.gameStatus = "Game running"; SDL_MinimizeWindow(window); }
+                } else if (valid) state.gameStatus = fs::exists(executable)
+                    ? "Could not save settings" : "Native executable missing. See the build guide.";
+                break;
+            case Launcher::Action::ChooseData:
+                SDL_ShowOpenFolderDialog(FolderChosen, new std::shared_ptr<Selection>(selection), window, data.c_str(), false);
+                break;
+            case Launcher::Action::VerifyData: valid = Verify(data, status); break;
+            case Launcher::Action::SaveSettings: saveSettings(); break;
+            case Launcher::Action::ReloadSettings:
                 try {
                     config = Kirby::LoadOrMigrateSettings(settings, root / "local/user/launcher.cfg", root,
                                                         Kirby::Settings{root / "disc/DATA"});
-                    settingsError.clear(); settingsDirty = false; valid = Verify(data,status);
+                    settingsError.clear(); settingsDirty = false; valid = Verify(data, status);
                 } catch (const std::exception& error) { settingsError = error.what(); }
+                break;
+            case Launcher::Action::OpenLogs: OpenFolder(root / "build-logs"); break;
+            case Launcher::Action::OpenSaves: OpenFolder(root / "local/user/nand/title/00010000/524b3545/data"); break;
+            case Launcher::Action::OpenSettings: OpenFolder(settings.parent_path()); break;
+            case Launcher::Action::BuildGuide: SDL_OpenURL(("file://"+(root/"docs/building.md").string()).c_str()); break;
+            case Launcher::Action::ShowInstall: page = Launcher::Page::Install; break;
+            case Launcher::Action::None: break;
             }
-        }
-        ImGui::TextWrapped("Display: native resolution. Stable 30 / 60 FPS modes are not validated yet.");
-        ImGui::TextWrapped("Controls: D-pad to move, south / cross to jump, east / circle for yarn, Start for +.");
-        int count = 0; SDL_JoystickID* controllers = SDL_GetGamepads(&count);
-        ImGui::Text("Controllers detected: %d",count);
-        for (int i=0;i<count;++i) ImGui::TextDisabled("%s",SDL_GetGamepadNameForID(controllers[i]));
-        SDL_free(controllers);
-        if (ImGui::Button("Open Logs")) OpenFolder(root / "build-logs");
-        ImGui::SameLine(); if (ImGui::Button("Open Saves")) OpenFolder(root / "local/user/nand/title/00010000/524b3545/data");
-        ImGui::SameLine(); if (ImGui::Button("Build Guide")) SDL_OpenURL(("file://"+(root/"docs/building.md").string()).c_str());
-        ImGui::TextDisabled("Development build | WiiCompiled + Aurora | GPL-3.0-only / third-party licenses preserved");
-        ImGui::End(); ImGui::Render();
+        } catch (const std::exception& error) { state.gameStatus = error.what(); }
+        ImGui::Render();
         SDL_SetRenderScale(renderer,io.DisplayFramebufferScale.x,io.DisplayFramebufferScale.y);
         SDL_SetRenderDrawColor(renderer,14,15,23,255); SDL_RenderClear(renderer);
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(),renderer); SDL_RenderPresent(renderer);
-        if (selfTest && ++frames == 5) running = false;
+        if (selfTest && ++frames == Launcher::PageNames.size() * 6) running = false;
         SDL_Delay(5);
     }
     if (settingsDirty && !saveSettings()) std::fprintf(stderr,"Settings: %s\n",settingsError.c_str());

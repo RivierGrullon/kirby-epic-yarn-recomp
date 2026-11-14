@@ -61,6 +61,12 @@ The launcher can currently:
   texture validation.
 - Display detected controllers and open saves, logs and the build guide.
 
+These actions are organized into **Play**, **Install**, **Display**, **Audio**,
+**Controls**, **Saves** and **Diagnostics**. Navigation uses a sidebar on wider
+windows and tabs on compact windows. Settings saving stays available on every
+page. The Install page currently selects an extracted folder and opens the build
+guide; it does not import or compile a dump yet.
+
 Settings are shared with the native game and saved on **Save settings**, **Play**,
 or closing the launcher. Changes apply on the next game launch. Existing launcher
 preferences migrate automatically while retaining the original file. See the

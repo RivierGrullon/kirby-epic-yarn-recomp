@@ -4,6 +4,13 @@ The launcher and native game share `local/user/settings.toml`. The launcher save
 changes when you select **Save settings**, select **Play**, or close its window.
 Changes apply on the next game launch and do not require recompilation.
 
+Find VSync and experimental performance mode under **Display**, master volume
+under **Audio**, and the extracted game-folder selection under **Install**.
+**Controls** lists connected gamepads and default bindings. **Saves** opens the
+existing save folder; **Diagnostics** provides logs, settings recovery and paths.
+The save action remains available on every page. Keyboard and SDL gamepad
+navigation use Dear ImGui's standard controls.
+
 Only implemented Kirby options are written:
 
 ```toml
@@ -67,7 +74,9 @@ build/native/WiiCompiled --video --config local/user/settings.toml --volume 50 -
 
 Malformed TOML, invalid supported values, and missing or unsupported schema
 versions produce an error. The original file is preserved. The launcher disables
-Play and saving, and offers **Open Settings Folder** and **Reload settings**.
+Play and saving. Open **Diagnostics** for **Open Settings Folder** and **Reload
+settings**. If there are unsaved edits, the latter is labeled **Discard changes
+and reload**.
 Correct the file and reload it, or move it aside to retain a backup before
 restarting. To restore defaults rather than migrate old preferences again, move
 both settings files aside. Never move or delete the NAND/save directory for this.
