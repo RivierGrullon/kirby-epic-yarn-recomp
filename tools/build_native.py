@@ -56,7 +56,7 @@ def main():
                                 f"New-Item -ItemType Junction -Path '{link_literal}' -Target '{target_literal}' | Out-Null"], check=True)
             else:
                 link.symlink_to(os.path.relpath(target, workspace), target_is_directory=True)
-        apply = ["git", "apply", "--directory=local/native-workspace"]
+        apply = ["git", "apply", "--ignore-space-change", "--directory=local/native-workspace"]
         for patch in sorted((ROOT / "patches/wiicompiled").glob("*.patch")):
             if subprocess.run([*apply, "--check", str(patch)], cwd=ROOT, capture_output=True).returncode == 0:
                 subprocess.run([*apply, str(patch)], cwd=ROOT, check=True)
