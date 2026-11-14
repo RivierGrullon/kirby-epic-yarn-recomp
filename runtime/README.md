@@ -147,3 +147,24 @@ backend polls global controller state. Actions are also checked against current
 window focus before dispatch. The ImGui input regression covers initial absence
 of focus, repeated background polling, focus loss/regain, interrupted clicks and
 fresh foreground input; it does not certify physical controller mappings.
+
+## Windows host adaptation
+
+`include/kirby/services/windows_fs.h` supplies the descriptor operations used by
+the disc and NAND services on Windows. Directory handles protect path resolution;
+each child component rejects traversal, device/stream syntax and reparse points.
+Binary reads retain 64-bit offsets. Four authored NAND attribute bytes live in
+the `kirby.isfs` NTFS stream and travel with a file when it is renamed. The Linux
+descriptor/xattr implementation remains selected on Linux.
+
+Windows settings use exclusive temporary files, flushed writes and atomic
+replacement. The launcher uses Windows process handles and SHA-256 verification
+rather than POSIX spawning and `sha1sum`. Game startup performs the same ID,
+revision, size and hash validation before guest execution. Native registry audits
+compare names by content, independently of compiler string-literal merging.
+
+`patches/wiicompiled/windows-fail-closed.patch` rejects unmapped Windows guest
+faults after the existing copy/code-protection handlers, rather than allocating
+new guest RAM. Build junctions and Windows SDK discovery live in `tools/build_native.py`.
+See [Windows bring-up](../docs/bringup.md#windows-x64-port-2026-11-14) for evidence
+and unverified paths.

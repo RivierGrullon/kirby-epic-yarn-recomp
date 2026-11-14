@@ -6,7 +6,7 @@ Read the [build guide](docs/building.md), [runtime layout](runtime/README.md) an
 
 ## Bug reports
 
-Include the commit, Linux distribution, CPU/GPU, graphics driver, game revision,
+Include the commit, operating system/version, CPU/GPU, graphics driver, game revision,
 scene and steps to reproduce. State whether Experimental performance mode and
 VSync were enabled. For controls, include the controller model, connection type,
 button pressed and observed result. For audio, distinguish silence, crackling,
@@ -56,6 +56,22 @@ python3 -m unittest discover -s tests -v
 
 Run C++ unit targets relevant to your change with CTest. Check that the requested
 targets were built; a stale executable is not validation of new source.
+
+On Windows, after following the [native build steps](docs/building.md#windows-x64):
+
+```powershell
+cmake --build build/native --target kirby_tests --parallel 2
+ctest --test-dir build/native -R '^kirby_' --output-on-failure
+$env:KIRBY_NATIVE_TEST = (Resolve-Path build/native/WiiCompiled.exe).Path
+python -m unittest discover -s tests/integration -p test_windows_input.py -v
+```
+
+The Windows input test uses synthetic invalid headers/DOL files and checks
+rejection before guest execution. The existing video integration test's SIGTERM
+shutdown expectation is POSIX-specific; `Popen.terminate()` on Windows does not
+exercise graceful SDL window shutdown. Do not describe those tests as validated
+Windows equivalents without adapting their process lifecycle. Keep real-DOL
+probes and their isolated user directories separate from synthetic checks.
 
 ## Pull requests
 

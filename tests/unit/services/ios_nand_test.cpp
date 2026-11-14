@@ -4,9 +4,16 @@
 #include <cstring>
 #include <iostream>
 #include <fstream>
+#ifndef _WIN32
 #include <sys/xattr.h>
+#endif
 #include <stdexcept>
 #include <unistd.h>
+#include "../../windows_fixtures.h"
+#ifdef _WIN32
+#define setxattr WindowsTest::SetAttr
+#define getxattr WindowsTest::GetAttr
+#endif
 namespace {
 std::array<uint8_t,65536> ram{};
 unsigned checks;
@@ -16,10 +23,14 @@ uint32_t Get(uint32_t a) { return uint32_t(ram[a])<<24|uint32_t(ram[a+1])<<16|ui
 void Check(bool v,const char* why) { ++checks;if(!v)throw std::runtime_error(why); }
 }
 int main() {
+#ifdef _WIN32
+    const auto root = WindowsTest::TemporaryDirectory();
+#else
     char pattern[]="/tmp/kirby-ios-nand-test-XXXXXX";
     const auto* temp=mkdtemp(pattern);
     if(!temp)return 1;
     const std::filesystem::path root(temp);
+#endif
     try {
         Kirby::IosServices ios(Resolve);
         ios.ConfigureNand(root,0x00010000524B3545ull);
@@ -97,7 +108,13 @@ int main() {
         Check(submit()==-101,"GetAttr rejects short output");
         Put(60,0x4C);Put(56,65534);Check(submit()==-101,"GetAttr validates output mapping before access");
         Check(attributes("/../outside")==-101,"GetAttr rejects path traversal");
+
+#ifdef _WIN32
+        WindowsTest::FileLink("/etc/passwd",root/"escape");
+#else
         std::filesystem::create_symlink("/etc/passwd",root/"escape");
+#endif
+
         Check(attributes("/escape")==-102,"GetAttr does not follow symlinks");
         const std::array<uint8_t,4> invalidMetadata{4,1,0,7};
         Check(setxattr((root/"shared2/new/save.bin").c_str(),"user.kirby.isfs",invalidMetadata.data(),4,0)==0,
@@ -135,7 +152,13 @@ int main() {
         Check(rename("/shared2/moved/save.bin","/missing/save.bin")==-106,
               "rename does not invent destination parents");
         Check(rename("/../outside","/shared2/moved/save.bin")==-101,"rename rejects traversal");
+
+#ifdef _WIN32
+        WindowsTest::Junction("/etc",root/"linked");
+#else
         std::filesystem::create_directory_symlink("/etc",root/"linked");
+#endif
+
         Check(rename("/shared2/moved/save.bin","/linked/save.bin")==-102,"rename cannot traverse host symlinks");
         rename("/missing","/shared2/moved/missing");Put(52,127);
         Check(submit()==-101,"rename validates both complete path fields");

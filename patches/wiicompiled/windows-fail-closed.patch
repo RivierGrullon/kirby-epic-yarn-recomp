@@ -1,0 +1,15 @@
+--- a/runtime/src/guest_flat_memory.cpp
++++ b/runtime/src/guest_flat_memory.cpp
+@@ -813,6 +813,12 @@
+         return true;
+     }
+ 
++#if defined(_WIN32)
++    // Kirby rejects unmapped accesses instead of manufacturing zero-filled RAM.
++    ReportFatalGuestFault("unmapped guest access", guestAddress, isWrite,
++                          "The address has no validated guest mapping; execution cannot continue.");
++    return false;
++#endif
+     // 4) Unmapped address: commit the block on demand (reproducing the old zero-fill sparse-map behavior)
+     //    and report it, since a commit here means a wild guest pointer that would otherwise walk over silently.
+     const uint64_t blockBase = static_cast<uint64_t>(guestAddress) & ~(kAllocationGranularity - 1u);

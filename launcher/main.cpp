@@ -18,12 +18,17 @@
 #include <fcntl.h>
 #include <memory>
 #include <mutex>
+#ifndef _WIN32
 #include <spawn.h>
+#endif
 #include <string>
 #include <string_view>
 #include <vector>
+#ifndef _WIN32
 #include <sys/wait.h>
+#endif
 #include <unistd.h>
+#include "kirby/boot/validate_input.h"
 
 extern char** environ;
 namespace fs = std::filesystem;
@@ -41,6 +46,12 @@ bool Verify(const fs::path& data, std::string& status) {
     for (const char* entry : {"sys/main.dol", "sys/boot.bin", "sys/fst.bin", "ticket.bin", "tmd.bin", "files"}) {
         if (!fs::exists(data / entry)) { status = std::string("Missing ") + entry; return false; }
     }
+#ifdef _WIN32
+    try {
+        Kirby::ValidateWindowsInput(data);
+        status = "RK5E01 Rev 0 (USA) verified"; return true;
+    } catch (const std::exception& error) { status = error.what(); return false; }
+#else
     int pipefd[2];
     if (pipe(pipefd)) { status = "Could not open verification pipe"; return false; }
     posix_spawn_file_actions_t actions;
@@ -67,6 +78,7 @@ bool Verify(const fs::path& data, std::string& status) {
         digest.starts_with(std::string(ExpectedSha1) + " ");
     status = valid ? "RK5E01 Rev 0 (USA) verified" : "Wrong revision or SHA-1 verification failed";
     return valid;
+#endif
 }
 void OpenFolder(const fs::path& path) {
     fs::create_directories(path);
@@ -84,7 +96,12 @@ int main(int argc, char** argv) {
     }
     const bool selfTest = argc == 2 && std::string_view(argv[1]) == "--self-test";
     if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --print-settings TOML]\n"); return 2; }
-    const fs::path executable = fs::path(SDL_GetBasePath()) / "WiiCompiled";
+    const fs::path executable = fs::path(SDL_GetBasePath()) /
+#ifdef _WIN32
+        "WiiCompiled.exe";
+#else
+        "WiiCompiled";
+#endif
     const fs::path root = executable.parent_path().parent_path().parent_path();
     if (!fs::exists(root / "tools/kirby.py")) {
         std::fprintf(stderr,"Keep the launcher in this project's build/native folder\n"); return 2;
@@ -134,7 +151,11 @@ int main(int argc, char** argv) {
     auto& valid = state.dataVerified;
     auto& status = state.dataStatus;
     if (!selfTest) valid = Verify(data, status);
+#ifdef _WIN32
+    intptr_t game = -1;
+#else
     pid_t game = -1;
+#endif
     auto page = Launcher::Page::Play;
     while (running) {
         SDL_Event event;
@@ -148,11 +169,20 @@ int main(int argc, char** argv) {
         { std::lock_guard lock(selection->mutex);
           if (selection->ready) { data = selection->path; selection->ready = false; settingsDirty = true; valid = Verify(data,status); } }
         if (game > 0) {
+#ifdef _WIN32
+            DWORD result = 0;
+            if (!GetExitCodeProcess(reinterpret_cast<HANDLE>(game), &result) || result != STILL_ACTIVE) {
+                CloseHandle(reinterpret_cast<HANDLE>(game)); game = -1;
+                SDL_ShowWindow(window); SDL_RaiseWindow(window);
+                state.gameStatus = result == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
+            }
+#else
             int result = 0;
             if (waitpid(game, &result, WNOHANG) == game) {
                 game = -1; SDL_ShowWindow(window); SDL_RaiseWindow(window);
                 state.gameStatus = WIFEXITED(result) && WEXITSTATUS(result) == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
             }
+#endif
         }
         const bool focused = SDL_GetKeyboardFocus() == window &&
             !(SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED);
@@ -176,6 +206,27 @@ int main(int argc, char** argv) {
             case Launcher::Action::Play:
                 valid = Verify(data, status);
                 if (valid && fs::is_regular_file(executable) && saveSettings()) {
+#ifdef _WIN32
+                    fs::create_directories(root / "build-logs");
+                    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+                    HANDLE log = CreateFileW((root / "build-logs/launcher-game.log").c_str(), FILE_APPEND_DATA,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, &attributes, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                    if (log == INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot open game log");
+                    STARTUPINFOW startup{}; startup.cb = sizeof(startup);
+                    startup.dwFlags = STARTF_USESTDHANDLES;
+                    startup.hStdOutput = startup.hStdError = log;
+                    startup.hStdInput = nullptr;
+                    PROCESS_INFORMATION child{};
+                    std::wstring command = L"\"" + executable.wstring() + L"\" --video --config \"" + settings.wstring() + L"\"";
+                    const bool started = CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, TRUE,
+                        CREATE_NO_WINDOW, nullptr, root.c_str(), &startup, &child);
+                    CloseHandle(log);
+                    if (!started) { game = -1; state.gameStatus = "Could not start the native executable"; }
+                    else {
+                        CloseHandle(child.hThread); game = reinterpret_cast<intptr_t>(child.hProcess);
+                        state.gameStatus = "Game running"; SDL_MinimizeWindow(window);
+                    }
+#else
                     const auto libs = (root / "local/host-libs").string();
                     const char* previous = std::getenv("LD_LIBRARY_PATH");
                     const std::string libraryPath = libs + (previous ? std::string(":") + previous : "");
@@ -192,11 +243,12 @@ int main(int argc, char** argv) {
                     posix_spawn_file_actions_destroy(&actions);
                     if (error) { game = -1; state.gameStatus = "Could not start the native executable"; }
                     else { state.gameStatus = "Game running"; SDL_MinimizeWindow(window); }
+#endif
                 } else if (valid) state.gameStatus = fs::exists(executable)
                     ? "Could not save settings" : "Native executable missing. See the build guide.";
                 break;
             case Launcher::Action::ChooseData:
-                SDL_ShowOpenFolderDialog(FolderChosen, new std::shared_ptr<Selection>(selection), window, data.c_str(), false);
+                SDL_ShowOpenFolderDialog(FolderChosen, new std::shared_ptr<Selection>(selection), window, data.string().c_str(), false);
                 break;
             case Launcher::Action::VerifyData: valid = Verify(data, status); break;
             case Launcher::Action::SaveSettings: saveSettings(); break;
@@ -225,5 +277,8 @@ int main(int argc, char** argv) {
     if (settingsDirty && !saveSettings()) std::fprintf(stderr,"Settings: %s\n",settingsError.c_str());
     ImGui_ImplSDLRenderer3_Shutdown(); ImGui_ImplSDL3_Shutdown(); ImGui::DestroyContext();
     SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
+#ifdef _WIN32
+    if (game > 0) CloseHandle(reinterpret_cast<HANDLE>(game));
+#endif
     return 0;
 }

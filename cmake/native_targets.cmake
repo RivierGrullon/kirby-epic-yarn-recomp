@@ -209,7 +209,7 @@ add_library(kirby_settings STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/app/setting
 target_sources(kirby_settings PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/input/bindings.cpp")
 target_include_directories(kirby_settings PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/include"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${MKW_AURORA_DIR}/include")
-target_link_libraries(kirby_settings PRIVATE mkw::toml11 SDL3::SDL3-static)
+target_link_libraries(kirby_settings PRIVATE mkw::toml11 ${AURORA_SDL3_TARGET})
 target_compile_features(kirby_settings PUBLIC cxx_std_20)
 target_compile_definitions(kirby_settings PRIVATE TARGET_PC=1)
 target_compile_options(kirby_settings PRIVATE -Wall -Wextra -Werror)
@@ -223,7 +223,7 @@ add_test(NAME kirby_bindings COMMAND kirby_bindings_test)
 add_executable(kirby_binding_capture_test "${KIRBY_PROJECT_ROOT}/tests/unit/binding_capture_test.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/binding_capture.cpp")
 target_include_directories(kirby_binding_capture_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
-target_link_libraries(kirby_binding_capture_test PRIVATE kirby_settings SDL3::SDL3-static)
+target_link_libraries(kirby_binding_capture_test PRIVATE kirby_settings ${AURORA_SDL3_TARGET})
 add_test(NAME kirby_binding_capture COMMAND kirby_binding_capture_test)
 
 add_executable(kirby_launcher_input_test "${KIRBY_PROJECT_ROOT}/tests/unit/launcher_input_test.cpp"
@@ -263,5 +263,10 @@ target_sources(kirby-launcher PRIVATE
 target_include_directories(kirby-launcher PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
 target_compile_features(kirby-launcher PRIVATE cxx_std_20)
 target_compile_definitions(kirby-launcher PRIVATE SDL_MAIN_HANDLED)
-target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends SDL3::SDL3-static kirby_settings)
+target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends ${AURORA_SDL3_TARGET} kirby_settings)
 set_target_properties(kirby-launcher PROPERTIES BUILD_RPATH "\$ORIGIN/../../local/host-libs")
+if(WIN32)
+    target_link_libraries(WiiCompiled PRIVATE bcrypt)
+    target_link_libraries(kirby-launcher PRIVATE bcrypt)
+    aurora_copy_runtime_dlls(kirby-launcher)
+endif()

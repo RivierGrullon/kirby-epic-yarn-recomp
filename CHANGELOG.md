@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Build and run the native game and launcher on Windows x64 with LLVM-MinGW,
+  the Windows SDK and Vulkan, using the existing translation/runtime pipeline.
+- Adapt extracted-disc and NAND descriptor operations to Windows; preserve
+  save attributes in NTFS streams and reject host reparse-point traversal.
+- Add Windows process launch, input hash/revision checks, exclusive frame logs,
+  atomic settings replacement and CRLF-aware legacy settings migration.
+- Compare native registration names by content rather than string-literal
+  addresses, retaining the cache, IOS, scheduler and WPAD registration audits.
+- Reject unmapped guest faults on Windows instead of creating zero-filled RAM;
+  retain the existing deferred-copy and executable-protection handlers.
+- Add Windows test fixtures and synthetic startup-rejection coverage. Startup
+  and save creation were observed; complete Windows gameplay/reload remains open.
+
 - Derive an incomplete FIFO packet's length once while awaiting its payload,
   preserving CP format changes and nested display-list ordering.
 - Count texture-cache lookups, missing identities, evictions, retained-content

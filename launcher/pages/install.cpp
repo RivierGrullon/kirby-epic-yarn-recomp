@@ -11,7 +11,7 @@ Action DrawInstall(State& state) {
     if (ImGui::Button("Choose DATA folder")) action = Action::ChooseData;
     if (ImGui::Button("Verify selected folder")) action = Action::VerifyData;
     ImGui::EndDisabled();
-    ImGui::TextWrapped("%s", state.config.gameData.c_str());
+    ImGui::TextWrapped("%s", state.config.gameData.string().c_str());
     ImGui::TextWrapped("%s", state.dataStatus.c_str());
     ImGui::Spacing();
     ImGui::SeparatorText("Supported copy");

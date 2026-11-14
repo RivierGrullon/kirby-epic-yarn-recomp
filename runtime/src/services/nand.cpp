@@ -8,13 +8,20 @@
 #include <cstring>
 #include <cstdio>
 #include <fcntl.h>
+#ifndef _WIN32
 #include <dirent.h>
+#endif
 #include <stdexcept>
 #include <string_view>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <sys/xattr.h>
+#endif
 #include <unistd.h>
 #include <vector>
+#ifdef _WIN32
+#include "kirby/services/windows_fs.h"
+#endif
 
 namespace Kirby {
 namespace {
@@ -122,6 +129,7 @@ void CreateDefault(int root, const std::string& path, std::span<const uint8_t> b
         throw std::runtime_error("Cannot create NAND default " + path);
     }
     try { EnsureMetadata(file.value); } catch (...) {
+        close(file.value); file.value = -1;
         unlinkat(parent.value,leaf.c_str(),0); throw;
     }
     size_t done = 0;
@@ -129,6 +137,7 @@ void CreateDefault(int root, const std::string& path, std::span<const uint8_t> b
         const auto n = write(file.value, bytes.data()+done, bytes.size()-done);
         if (n < 0 && errno == EINTR) continue;
         if (n <= 0) {
+            close(file.value); file.value = -1;
             unlinkat(parent.value, leaf.c_str(), 0);
             throw std::runtime_error("Cannot write NAND default " + path);
         }
@@ -260,7 +269,9 @@ int32_t NandStore::Create(const std::string& path, std::array<uint8_t,4> metadat
         O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600)};
     if (node.value<0 && !directory) return errno==EEXIST ? -105 : Error();
     if (node.value<0 || fsetxattr(node.value,"user.kirby.isfs",metadata.data(),metadata.size(),0)<0) {
-        const auto result=Error(); unlinkat(parent.value,leaf.c_str(),directory ? AT_REMOVEDIR : 0); return result;
+        const auto result=Error();
+        if (node.value >= 0) { close(node.value); node.value = -1; }
+        unlinkat(parent.value,leaf.c_str(),directory ? AT_REMOVEDIR : 0); return result;
     }
     return 0;
 }

@@ -8,6 +8,10 @@
 #include <string>
 #include <utility>
 #include <vector>
+#ifdef _WIN32
+#undef CreateFile
+#undef CreateDirectory
+#endif
 
 namespace Kirby {
 class NandFile {

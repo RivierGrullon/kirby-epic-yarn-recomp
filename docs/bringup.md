@@ -3396,3 +3396,77 @@ and audible synchronization remain unverified. The remaining performance fault i
 below-target video delivery: the Quilty Square observation was 43.94 VI submissions/s,
 not certified compositor FPS. Next work is to measure copy/presentation frame time
 and verify the corrected audio by listening, followed by physical controller play.
+
+## Windows x64 port (2026-11-14)
+
+The native game and launcher now build and run on Windows x64 through the same
+WiiCompiled/Aurora pipeline. Testing used Windows build 26100, Ryzen 5 9600X,
+RTX 3060, LLVM-MinGW Clang 23.1.5, .NET SDK 8, Python 3.14.6, CMake 4.3.4,
+Ninja 1.13.2 and Windows SDK 10.0.26100.0. Game input was validated as RK5E01
+Rev 0 with the expected DOL hashes. The working setup reused pinned dependencies
+and a complete extraction; clean-machine onboarding was not exercised.
+
+Initial Windows compilation failed at POSIX disc/NAND functions, Linux xattrs,
+process spawning and frame-log flags. Native Windows storage now preserves real
+reads/writes, metadata, usage queries and save renames. NTFS named streams store
+the four authored attributes without adding guest-visible directory entries.
+Synthetic fixtures reject reparse points and exercise corrupt/missing metadata,
+open-source rename restrictions, replacement saves and offsets above 4 GiB.
+Windows junctions exercise both intermediate and final reparse components;
+file-symlink creation privileges were not required.
+
+The first linked game rejected valid cache registrations because the audit
+compared string-literal addresses across translation units. Content comparisons
+fixed cache, IOS, scheduler and WPAD validation without removing those audits.
+The bootstrap probe still rejects foreign native and translated overrides.
+The inherited Windows unmapped-fault fallback now fails explicitly; deferred
+copy and executable-protection handling remain unchanged. Linux's pre-existing
+fault path is not changed by this Windows patch.
+
+Direct observations: the original wrist-strap screen and new-save confirmation
+appeared in a visible Vulkan window. Native NAND create/rename logs and 32 title
+files establish initial save creation. The local tester took over and reported
+that the game works. This is owner confirmation, not an independently recorded
+level-completion or progression-reload sequence. Experimental performance mode
+and VSync were enabled, at 50% master volume. No Windows frame-time comparison,
+audio synchronization measurement or full-game compatibility claim is made.
+
+The final source preparation passed 24 `kirby_` CTest targets and 440 synthetic
+hardware Vulkan XFB checks. Python discovery found 70 tests: 25 passed and 45
+optional executable checks were skipped. The separately enabled Windows input
+test passed its four synthetic wrong-ID/revision/size/hash subcases. The launcher
+hidden UI self-test passed, including the Windows platform label. Storage target
+coverage includes 26 NAND, 66 IOS NAND, 39 disc/DI and 36 ES metadata assertions.
+
+Earlier native execution checks also passed registry/ABI validation, startup
+registers, retail boot memory, native threads, system configuration, disc/ES,
+VI waits, alarms, AX tasks and virtual SDL controller input. Worker-fault and
+headless-rendering checks stopped with their expected diagnostics. These real-DOL
+checks remain distinct from synthetic tests. An initial unfiltered CTest attempt
+reported unbuilt upstream `mkw_*` executables; only the built `kirby_` group is
+included in the 24-target result.
+
+Commands from the prepared repository, with the native tools on PATH:
+
+```powershell
+python tools/build_native.py --jobs 12 --translated-jobs 8
+cmake --build build/native --target kirby_tests --parallel 12
+ctest --test-dir build/native -R '^kirby_' --output-on-failure
+python -m unittest discover -s tests -v
+$env:KIRBY_NATIVE_TEST = (Resolve-Path build/native/WiiCompiled.exe).Path
+python -m unittest discover -s tests/integration -p test_windows_input.py -v
+.\build\native\kirby-launcher.exe --self-test
+.\build\native\kirby_gx_renderer_test.exe --gpu-xfb-hidden
+```
+
+Final build/test logs are ignored `build-logs/windows-commit-*.log`; earlier
+execution evidence and build identities are retained under
+`build-logs/windows-port/`. No disc bytes, translated program, executable, cache,
+save or capture is committed. The dependency checkouts remain unchanged.
+
+Next: exercise a complete Windows level/save/reload loop, verify physical
+controller behavior, and measure repeatable scenes with visible pacing/audio.
+Save backups must preserve NTFS streams. Other writable filesystem formats,
+Linux regression execution for this port commit, and a portable installer remain
+unverified. The POSIX integration harness's SIGTERM shutdown assertion is not a
+Windows `Popen.terminate()` equivalent.

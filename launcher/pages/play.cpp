@@ -20,7 +20,7 @@ Action DrawPlay(State& state) {
     }
     ImGui::Spacing();
     ImGui::SeparatorText("Game data");
-    ImGui::TextWrapped("%s", state.config.gameData.c_str());
+    ImGui::TextWrapped("%s", state.config.gameData.string().c_str());
     ImGui::SeparatorText("Next launch");
     ImGui::Text("Master volume: %.0f%%", state.config.masterVolume);
     ImGui::Text("VSync: %s", state.config.vsync ? "On" : "Off");

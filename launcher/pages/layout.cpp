@@ -26,7 +26,12 @@ Action DrawLauncher(State& state, Page& selected) {
     ImGui::Begin("Launcher", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                       ImGuiWindowFlags_NoSavedSettings);
     ImGui::TextColored({1, 0.66f, 0.80f, 1}, "Kirby's Epic Yarn");
-    ImGui::SameLine(); ImGui::TextDisabled("Native / Linux");
+    ImGui::SameLine();
+#ifdef _WIN32
+    ImGui::TextDisabled("Native / Windows");
+#else
+    ImGui::TextDisabled("Native / Linux");
+#endif
     ImGui::Separator();
     ImGui::BeginDisabled(state.bindingCapture.Busy());
     if (io.DisplaySize.x < 760 && ImGui::BeginTabBar("Pages", ImGuiTabBarFlags_FittingPolicyScroll)) {

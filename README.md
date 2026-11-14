@@ -1,6 +1,6 @@
 # Kirby's Epic Yarn Recompiled
 
-**A native Linux x86-64 port of Kirby's Epic Yarn, built with
+**A native Linux and Windows x86-64 port of Kirby's Epic Yarn, built with
 [WiiCompiled](https://github.com/patchzyy/Wiicompiled) and
 [Aurora](https://github.com/patchzyy/aurora-wiicompiled).**
 
@@ -28,9 +28,10 @@ not stable frame pacing or full-game compatibility.*
 
 ## Requirements
 
-- Linux x86-64 with a desktop session and a working Vulkan driver.
+- Linux x86-64 or Windows x64 with a desktop session and a working Vulkan driver.
 - Your own complete RK5E01 Rev 0 dump, including the extracted `files/` tree.
-- Git, Python 3 and rootless Podman for the build environment.
+- Git and Python; Linux uses rootless Podman, while Windows uses a native
+  LLVM-MinGW/.NET toolchain. See the [Windows build steps](docs/building.md#windows-x64).
 - Dolphin's `dolphin-tool` for extraction; 7-Zip for a `.7z` containing a WBFS.
 - Several GB of storage and enough memory to compile the generated C++.
 
@@ -40,6 +41,9 @@ Expected `sys/main.dol` SHA-1:
 The target handheld is a **Lenovo Legion Go with Bazzite**. Current graphics and
 performance measurements were taken on an **Acer Nitro AN515-55 with an RTX 3050
 Laptop GPU**. Legion Go performance has not yet been measured.
+The Windows port was exercised on a Ryzen 5 9600X and RTX 3060. Startup and save
+creation were observed, and the local tester reported that it works; level
+completion, save reload and sustained Windows performance remain unverified.
 
 ## Build and play
 
@@ -51,6 +55,10 @@ From a completed local build, run:
 ```bash
 build/native/kirby-launcher
 ```
+
+On Windows, open `build/native/kirby-launcher.exe`. Keep it beside
+`WiiCompiled.exe` and the runtime DLLs, within the source tree. Windows does not
+require the Linux build container. See the [Windows evidence](docs/bringup.md#windows-x64-port-2026-11-14).
 
 The launcher can currently:
 
@@ -111,7 +119,7 @@ reconnection/cooperative play still need implementation or validation.
 | Audio | Music tempo verified in a three-minute Fountain Gardens clip; long-session quality and broader synchronization remain unverified |
 | Input | Virtual mappings tested; physical controllers and Legion Go controls need validation |
 | Graphics | Native GX/VI rendering through Aurora; some formats and display modes remain unsupported |
-| Saves | Creation and independent reload verified; broad compatibility testing pending |
+| Saves | Creation/reload verified on Linux; Windows creation verified, reload pending |
 | Distribution | Source-tree build and launcher; no portable installer or public binary release |
 
 The window's FPS counter measures Aurora presentations. It does not establish
@@ -132,6 +140,9 @@ When launched from the repository root:
 
 Back up saves before testing development changes. Launching the executable from a
 different working directory uses a different local user directory.
+Windows NAND attributes use NTFS named streams. Save backups must preserve those
+streams; ordinary file contents alone do not retain Wii permission metadata.
+Filesystems without named-stream support have not been validated.
 
 ## Documentation
 

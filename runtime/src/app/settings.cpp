@@ -7,6 +7,10 @@
 #include <cstring>
 #include <stdexcept>
 #include <unistd.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <atomic>
+#endif
 
 namespace fs = std::filesystem;
 namespace Kirby {
@@ -98,6 +102,30 @@ std::string Update(std::string text, const Settings& settings) {
 void WriteAtomically(const fs::path& file, const std::string& text) {
     const auto destination = fs::absolute(file);
     fs::create_directories(destination.parent_path());
+#ifdef _WIN32
+    static std::atomic<uint64_t> sequence{};
+    fs::path temporary;
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    for (unsigned attempt = 0; attempt < 128; ++attempt) {
+        temporary = destination.wstring() + L".tmp." + std::to_wstring(GetCurrentProcessId()) +
+                    L"." + std::to_wstring(GetTickCount64()) + L"." + std::to_wstring(sequence++);
+        handle = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                             FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (handle != INVALID_HANDLE_VALUE || GetLastError() != ERROR_FILE_EXISTS) break;
+    }
+    if (handle == INVALID_HANDLE_VALUE) throw std::runtime_error("cannot create temporary settings");
+    try {
+        DWORD written{};
+        if (!WriteFile(handle, text.data(), DWORD(text.size()), &written, nullptr) || written != text.size() ||
+            !FlushFileBuffers(handle)) throw std::runtime_error("cannot write and flush temporary settings");
+        CloseHandle(handle); handle = INVALID_HANDLE_VALUE;
+        if (!MoveFileExW(temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            throw std::runtime_error("cannot replace settings");
+    } catch (...) {
+        if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle);
+        DeleteFileW(temporary.c_str()); throw;
+    }
+#else
     std::string temporary = destination.string() + ".tmp.XXXXXX";
     int fd = mkstemp(temporary.data()); // Exclusive creation, mode 0600, same filesystem.
     if (fd < 0) throw std::runtime_error("cannot create temporary settings: " + std::string(std::strerror(errno)));
@@ -120,6 +148,7 @@ void WriteAtomically(const fs::path& file, const std::string& text) {
         std::error_code ec; fs::remove(temporary, ec);
         throw;
     }
+#endif
 }
 } // namespace
 
@@ -142,8 +171,9 @@ Settings LoadOrMigrateSettings(const fs::path& file, const fs::path& legacy,
     std::istringstream input(*text);
     std::string data;
     int sync = 1, performance = 0;
-    if (!std::getline(input, data) || data.empty() ||
-        !(input >> defaults.masterVolume >> sync) || (sync != 0 && sync != 1))
+    if (!std::getline(input, data)) throw std::runtime_error("invalid legacy launcher.cfg; original file preserved");
+    if (!data.empty() && data.back() == '\r') data.pop_back();
+    if (data.empty() || !(input >> defaults.masterVolume >> sync) || (sync != 0 && sync != 1))
         throw std::runtime_error("invalid legacy launcher.cfg; original file preserved");
     input >> std::ws;
     if (!input.eof() && (!(input >> performance) || (performance != 0 && performance != 1)))

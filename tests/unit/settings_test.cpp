@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <unistd.h>
 
+#include "../windows_fixtures.h"
 namespace fs = std::filesystem;
 namespace {
 unsigned checks;
@@ -26,9 +27,13 @@ template<class F> void Reject(F&& action) {
 struct Directory {
     fs::path path;
     Directory() {
+#ifdef _WIN32
+        path = WindowsTest::TemporaryDirectory();
+#else
         char name[] = "/tmp/kirby-settings-XXXXXX";
         if (!mkdtemp(name)) throw std::runtime_error("Cannot create test directory");
         path = name;
+#endif
     }
     ~Directory() { std::error_code ec; fs::remove_all(path, ec); }
 };

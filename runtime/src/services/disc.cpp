@@ -10,6 +10,9 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include "kirby/services/windows_fs.h"
+#endif
 
 namespace Kirby {
 namespace {

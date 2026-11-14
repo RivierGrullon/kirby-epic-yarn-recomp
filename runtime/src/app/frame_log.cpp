@@ -10,7 +10,11 @@
 
 namespace Kirby {
 FrameLog::FrameLog(const std::filesystem::path& path) {
+#ifdef _WIN32
+    const int fd = _wopen(path.c_str(),_O_WRONLY|_O_CREAT|_O_EXCL|_O_NOINHERIT|_O_BINARY,0600);
+#else
     const int fd = open(path.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC,0600);
+#endif
     if (fd < 0) throw std::runtime_error(std::string("Cannot create frame log: ")+std::strerror(errno));
     file_.reset(fdopen(fd,"w"));
     if (!file_) { close(fd); throw std::runtime_error("Cannot open frame log stream"); }

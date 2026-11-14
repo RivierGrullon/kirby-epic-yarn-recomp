@@ -10,6 +10,7 @@
 #include "kirby/threading/continuations.h"
 #include "kirby/input/wpad.h"
 #include "kirby/boot/boot_memory.h"
+#include "kirby/boot/validate_input.h"
 #include "kirby/boot/clock.h"
 #include "kirby/services/ios_bridge.h"
 #include "kirby/graphics/gx_fifo.h"
@@ -198,6 +199,10 @@ int main(int argc, char** argv) {
         std::cout << Kirby::FormatSettings({dataRoot, masterVolume, vsync, gpuResidentCopies, controlBindings});
         return 0;
     }
+#ifdef _WIN32
+    try { Kirby::ValidateWindowsInput(dataRoot); }
+    catch (const std::exception& error) { std::cerr << "Input: " << error.what() << '\n'; return 2; }
+#endif
     if (!frameLogPath.empty() && mode != "--video" && mode != "--video-hidden") {
         std::cerr << "--frame-log requires --video or --video-hidden\n";
         return 2;
@@ -240,20 +245,20 @@ int main(int argc, char** argv) {
         TranslatedFunctionRegistry::Finalize();
         for (const auto& [address,name] : cacheHooks) {
             const auto* hook=TranslatedFunctionRegistry::FindByAddressPtr(address);
-            Require(hook && hook->kind==FunctionKind::Native && hook->name==name,
+            Require(hook && hook->kind==FunctionKind::Native && std::string_view(hook->name)==name,
                     "Audited Kirby cache boundary is missing from the native registry");
         }
         Kirby::VerifyWpadRegistrations();
         const auto* ios = TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::IosTransport);
-        Require(ios && ios->kind == FunctionKind::Native && ios->name == "KirbyIosSubmit",
+        Require(ios && ios->kind == FunctionKind::Native && std::string_view(ios->name) == "KirbyIosSubmit",
                 "Audited Kirby IOS transport is missing from the native registry");
         const auto* restore = TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::RestoreInterrupts);
-        Require(restore && restore->kind == FunctionKind::Native && restore->name == "KirbyRestoreInterrupts",
+        Require(restore && restore->kind == FunctionKind::Native && std::string_view(restore->name) == "KirbyRestoreInterrupts",
                 "Audited Kirby interrupt boundary is missing from the native registry");
         for (const auto [address, name] : {std::pair{KirbyBootConfig::SelectThread, "KirbySelectThread"},
                                           std::pair{KirbyBootConfig::LoadContext, "KirbyLoadContext"}}) {
             const auto* hook = TranslatedFunctionRegistry::FindByAddressPtr(address);
-            Require(hook && hook->kind == FunctionKind::Native && hook->name == name,
+            Require(hook && hook->kind == FunctionKind::Native && std::string_view(hook->name) == name,
                     "Audited Kirby scheduler/context boundary is missing from the native registry");
         }
         const auto* entry = TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::Entry);

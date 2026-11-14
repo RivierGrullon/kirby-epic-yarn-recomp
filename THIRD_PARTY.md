@@ -207,3 +207,12 @@ shader and layout metadata. Aurora's MIT license and copyright notices remain in
 the pinned source tree. The authored YUYV packing follows the same Dolphin-referenced
 coefficients and quantization as this project's CPU encoder; no game shader or
 game asset is included. The CPU encoder remains the synthetic regression oracle.
+
+The Windows host adapter, launcher process/input verification, settings writes
+and synthetic Windows fixtures are authored GPL-3.0-only code using Windows APIs.
+`patches/wiicompiled/windows-fail-closed.patch` modifies the pinned GPL-3.0
+WiiCompiled runtime snapshot and retains its source notices. No source from the
+separate KEY-Recomp runtime is imported. The Windows build uses locally installed
+Microsoft Windows SDK C++/WinRT headers under their SDK license; those headers
+are not copied into this repository or a distribution. Existing Aurora, SDL,
+WiiCompiled and key revisions/licenses are unchanged.

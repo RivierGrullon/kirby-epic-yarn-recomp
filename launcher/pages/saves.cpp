@@ -8,7 +8,7 @@ Action DrawSaves(State& state) {
     std::error_code ec;
     const bool found = std::filesystem::is_regular_file(folder / "FLF.bin", ec);
     ImGui::TextUnformatted(found ? "Game save found" : "No game save yet");
-    ImGui::TextWrapped("%s", folder.c_str());
+    ImGui::TextWrapped("%s", folder.string().c_str());
     ImGui::Spacing();
     const bool open = ImGui::Button("Open Saves");
     ImGui::Spacing();
