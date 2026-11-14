@@ -141,7 +141,12 @@ void GpuXfb(bool startHidden = false) {
           "guest CI4 texture and uploaded RGB565 palette produce blue pixels");
     renderer.Feed(quad);
     const auto hashesBeforeRepeat=aurora::gx::texture_stats().hashedBytes;
+    const auto cacheBeforeRepeat=renderer.TextureCacheStats();
     renderer.Feed(quad);
+    Check(renderer.TextureCacheStats().lookups==cacheBeforeRepeat.lookups+1 &&
+          renderer.TextureCacheStats().snapshotBytes==cacheBeforeRepeat.snapshotBytes &&
+          renderer.TextureCacheStats().keyMisses==cacheBeforeRepeat.keyMisses,
+          "unchanged texture lookup adds no snapshot or cache miss");
     Check(aurora::gx::texture_stats().hashedBytes==hashesBeforeRepeat,
           "identical consecutive draws reuse validated texture bindings without hashing again");
     std::fill_n(memory.begin()+0x440,32,0);
@@ -216,7 +221,11 @@ void GpuXfb(bool startHidden = false) {
           "renderer RAM writes inside a batch invalidate texture byte validation");
     std::fill_n(memory.begin()+0x400,32,0x11); renderer.Feed(quad);
     std::fill_n(memory.begin()+0x400,32,0);
+    const auto cacheBeforeWrite=renderer.TextureCacheStats();
     renderer.Feed(quad);
+    Check(renderer.TextureCacheStats().contentChanges==cacheBeforeWrite.contentChanges+1 &&
+          renderer.TextureCacheStats().snapshotBytes==cacheBeforeWrite.snapshotBytes+64,
+          "raw CPU edit records a content update and its texture/palette snapshot bytes");
     Bp(renderer,0x4B000080); Bp(renderer,0x52004803);
     Check(std::equal(black.begin(),black.end(),memory.begin()+0x1000+2*64+16*2),
           "raw CPU texture writes invalidate cached bindings without a BP update");

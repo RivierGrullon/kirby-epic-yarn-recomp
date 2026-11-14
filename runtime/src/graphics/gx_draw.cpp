@@ -51,8 +51,13 @@ void GxRenderer::CacheTextureBinding(unsigned slot,std::span<const uint8_t> memo
         {texture.format(),texture.width(),texture.height(),texture.mip_count(),texture.mode0,texture.mode1,
          palette ? uint32_t(palette->format) : 0,palette ? uint32_t(palette->numEntries) : 0}};
     auto found=std::ranges::find(cache.entries,key,&TextureState::Entry::key);
-    if (found==cache.entries.end())
+    ++textureCacheMetrics_.lookups;
+    const bool keyMiss=found==cache.entries.end();
+    if (keyMiss) {
+        ++textureCacheMetrics_.keyMisses;
         found=std::ranges::min_element(cache.entries,{},&TextureState::Entry::used);
+        if (found->used) ++textureCacheMetrics_.evictions;
+    }
     auto& entry=*found;
     if (!entry.id) {
         GXTexObj object{};
@@ -69,6 +74,8 @@ void GxRenderer::CacheTextureBinding(unsigned slot,std::span<const uint8_t> memo
     if (!validated) textureValidationBytes_ += memory.size() + paletteBytes.size();
     if (!validated && (entry.key!=key || !std::ranges::equal(memory,entry.bytes) ||
                        !std::ranges::equal(paletteBytes,entry.palette))) {
+        if (!keyMiss) ++textureCacheMetrics_.contentChanges;
+        textureCacheMetrics_.snapshotBytes += memory.size()+paletteBytes.size();
         entry.key=key;
         entry.bytes.assign(memory.begin(),memory.end());
         entry.palette.assign(paletteBytes.begin(),paletteBytes.end());

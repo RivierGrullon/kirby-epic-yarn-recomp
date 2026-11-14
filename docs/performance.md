@@ -404,6 +404,78 @@ Evidence under ignored `build-logs/`: `stage52-cpu-observe.json`,
 audio sink were closed afterward. This diagnostic run changed no runtime code or
 launcher setting and establishes no performance improvement.
 
+## Texture-cache churn experiment
+
+`TextureCacheStats()` now exposes eligible lookups, full-key misses, replacement
+evictions, changed contents under retained keys and copied texture/palette snapshot
+bytes. These are cumulative C++ diagnostic counters; there is no launcher option.
+A content-change count of zero concerns retained keys only: it cannot establish
+whether an evicted source changed while absent. Snapshot bytes measure requested
+CPU copies, not physical memory bandwidth or GPU uploads.
+
+A 30-second moving Fountain Gardens observation with the original 16-entry policy
+recorded 1,731 presentations, about 458 lookups and 85 evictions per presentation,
+and 3.337 MB of copied snapshots per presentation. No retained-key content changes
+were observed. Evidence: `stage53-cache-measure.json` in ignored `build-logs/`.
+
+An experimental candidate allowed 128 identities under a combined 128 MiB CPU
+payload budget, retiring GPU object-cache references when releasing snapshots.
+It passed 453 synthetic Vulkan checks, 51 Python tests and 21 CTest targets,
+including repeated traversal of more than 16 sources, byte-budget pressure and
+exact pixels after identity reuse. It was **not retained**: reduced snapshot demand
+did not establish a consistent gameplay performance benefit.
+
+At the level entrance, a same-process 16/128/16 comparison used 20-second frame
+windows and approximately 29-second independent CPU/counter windows. Position was
+fixed at `(15.850,20.925)` in section 1:
+
+| Entries | CPU ms / submission | Snapshot MB / submission | VI submissions/s | p99 interval |
+| --- | ---: | ---: | ---: | ---: |
+| 16 | 5.659 | 1.988 | 59.938 | 17.678 ms |
+| 128 | 5.537 | 0.000003 | 59.941 | 17.626 ms |
+| 16 again | 5.591 | 1.990 | 59.889 | 17.708 ms |
+
+Normal virtual gamepad input then reached the tower at `(70.512,24.245)`. A second
+16/128/16 comparison measured CPU costs of 12.416 / 16.314 / 19.048 ms per
+submission and VI rates of 54.985 / 43.926 / 36.115 per second. Snapshot demand
+fell from about 4.86 MB per submission to essentially zero with 128 entries, but
+the returning 16-entry baseline also deteriorated. This series is inconclusive
+for the cache policy's effect on CPU time and delivery.
+
+A shorter alternating 128/16/128/16 repeat measured CPU costs of
+18.939 / 19.193 / 19.636 / 20.371 ms per submission and VI rates of
+39.514 / 38.782 / 38.075 / 38.401 per second. It used six-second frame windows
+inside independent approximately 15-second CPU/counter windows. The temperature
+readout reached approximately 94 C; CPU0's cumulative core/package thermal-throttle
+counters increased from 576,903 / 945,719 to 581,236 / 952,827 between two reads
+during this repeat. Those counters confirm intervening thermal-limit events,
+but do not attribute each frame's delay. Neither series supports a stable-FPS
+claim or a clean before/after comparison against the published binary.
+
+Frame-window position and pipeline population stayed constant in the accepted
+comparisons, and no readbacks occurred. Initial runs using debugger-timed inputs
+ended with normal host-exit messages before the comparison and are excluded.
+The subsequent run used a Linux virtual gamepad for boot, maps, jumping, yarn
+actions and traversal, avoiding timed debugger interrupts. The exact cause of the
+earlier exits was not established.
+
+The 128-entry implementation and its executable remain local for further
+investigation; the existing 16-entry policy is restored in the source. Only the
+diagnostic counters and their regressions are retained. The launcher still uses
+the previously verified `d8f602b` runtime. The restored policy with counters passed
+440 Vulkan checks, 51 Python tests and 21 CTest targets; logs are
+`stage57-metrics-{gpu,python,ctest}.log`. Next profiling should revisit the
+broader native GX and translated-call costs rather than equating fewer copies
+with smoother gameplay.
+
+Evidence: `stage56-cache-comparison.json`, `stage56-tower-comparison.json`,
+`stage56-repeat-comparison.json`, `stage56-motion-frames.csv`,
+`stage56-forward-route.json`, scene captures and `stage56-candidate-hash.json`
+under ignored `build-logs/`. Experimental executable SHA-256:
+`88fd0133af7eeaa1d2bb81dfd91fd3bc51f86880c21f364a59d6969c32b43552`.
+The patch is local at `local/stage54-cache-candidate.patch`; no game-generated
+source, binaries or captures were added to Git. Owned test sessions were closed.
+
 ## Measurements
 
 Hardware: Acer Nitro AN515-55, Intel i5-10300H, NVIDIA RTX 3050 Laptop GPU, Bazzite,

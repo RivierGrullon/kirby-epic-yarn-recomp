@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Count texture-cache lookups, missing identities, evictions, retained-content
+  changes and snapshot bytes for diagnosing copy demand.
 - Share immutable RAM snapshots between deferred texture validation and completion
   checks; detach for partial CPU writeback and adopt completed readback buffers.
 - Reuse shader texture-usage analysis within synchronous GX batches, rechecking

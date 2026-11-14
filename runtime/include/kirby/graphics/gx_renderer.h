@@ -45,6 +45,10 @@ public:
     // CPU bytes copied for deferred-copy validation, excluding GPU readback payloads.
     uint64_t DeferredSnapshotBytes() const { return deferredSnapshotBytes_; }
     void SetDeferredSnapshotSharing(bool enabled) { deferredSnapshotSharing_=enabled; }
+    struct TextureCacheMetrics {
+        uint64_t lookups=0, keyMisses=0, evictions=0, contentChanges=0, snapshotBytes=0;
+    };
+    const TextureCacheMetrics& TextureCacheStats() const { return textureCacheMetrics_; }
 private:
     struct XfbState;
     struct TextureState;
@@ -90,5 +94,6 @@ private:
     bool shaderAnalysisReuse_ = true;
     uint64_t deferredSnapshotBytes_ = 0;
     bool deferredSnapshotSharing_ = true;
+    TextureCacheMetrics textureCacheMetrics_;
 };
 }
