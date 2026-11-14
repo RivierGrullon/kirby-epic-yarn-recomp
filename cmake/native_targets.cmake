@@ -143,6 +143,12 @@ foreach(source gx_fifo.cpp gx_stubs.cpp)
     endforeach()
 endforeach()
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/gx_bridge.cpp")
+target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/pos_matrix.cpp"
+    "${KIRBY_PROJECT_ROOT}/runtime/native-src/graphics/matrix.cpp"
+    "${KIRBY_PROJECT_ROOT}/tests/integration/pos_matrix_probe.cpp"
+    "${KIRBY_PROJECT_ROOT}/generated/functions/func_8068BD70.cpp")
+set_source_files_properties("${KIRBY_PROJECT_ROOT}/generated/functions/func_8068BD70.cpp" PROPERTIES
+    SKIP_PRECOMPILE_HEADERS ON COMPILE_OPTIONS "-O2;-fno-fast-math;-ffp-contract=off;-fno-slp-vectorize")
 foreach(target WiiCompiled kirby_interrupts_test kirby_exi_dma_test)
     target_sources(${target} PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/gx_fifo.cpp")
 endforeach()

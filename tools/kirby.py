@@ -13,6 +13,7 @@ from audits import scheduler as scheduler_audit
 from audits import wpad as wpad_audit
 from audits import audio as audio_audit
 from audits import cache as cache_audit
+from audits import matrix as matrix_audit
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_SHA1 = "f4280a2b0709bfde4132be22e9f7fa8ecfa2a130"
@@ -298,6 +299,7 @@ def prepare(path):
     wpad = wpad_audit.audit(dol, by_name, source_symbols)
     audio = audio_audit.audit(dol, by_name, source_symbols)
     cache = cache_audit.audit(dol, by_name)
+    matrix = matrix_audit.audit(dol, by_name)
     write_map(entries)
     generated = ROOT / "generated"
     generated.mkdir(exist_ok=True)
@@ -307,6 +309,7 @@ def prepare(path):
         f"inline constexpr uint32_t Entry = 0x{dol.entry:08X}u;\n"
         f"inline constexpr uint32_t InitRegisters = 0x{init:08X}u;\n"
         f"inline constexpr uint32_t ProtectedEnd = 0x{protected_end:08X}u;\n"
+        f"inline constexpr uint32_t GXLoadPosMtxImm = 0x{matrix['GXLoadPosMtxImm']:08X}u;\n"
         f"inline constexpr uint32_t AudioClockInit = 0x{by_name['__AIClockInit'][0]:08X}u;\n"
         f"inline constexpr uint32_t AudioSystemInit = 0x{audio_address:08X}u;\n"
         f"inline constexpr uint32_t DspInitCode = 0x{dsp_code:08X}u;\n"

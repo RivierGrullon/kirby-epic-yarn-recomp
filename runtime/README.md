@@ -17,11 +17,23 @@ their function; the `Kirby` namespace and verified revision profile identify the
 | `native-src/services/` | Audited IOS/interrupt callback boundaries |
 | `native-src/threading/` | Audited SDK scheduler and context-return boundaries |
 | `native-src/input/` | Audited WPAD bridge to native input |
+| `native-src/graphics/` | Audited SDK graphics upload boundaries |
 
 Only `native-src/` is indexed as native game overrides by WiiCompiled. Moving a
 replacement into that tree requires the same DOL/address/ABI audit as adding a new
 replacement. Original translated game functions belong in ignored `generated/`, not
 in the authored runtime source directories.
+
+`native-src/graphics/matrix.cpp` registers only RK5E01's verified
+`GXLoadPosMtxImm` entry. `src/graphics/pos_matrix.cpp` uploads through the existing
+32-byte FIFO transport, retaining the original header/load order and paired-single
+conversion rules. Nondefault quantization and noncontiguous fast memory ranges
+use the locally translated function. Preparation verifies the function's symbol,
+extent and body digest; the native probe compares FIFO bytes, callbacks, memory
+and CPU state against that original function. It does not replace Aurora's matrix
+rendering or change game timing. The native effect boundary remains conservative.
+After adding or changing indexed overrides, rerun the complete translation before
+compiling so generated callers and shard exclusions use the current native index.
 
 Build integration is in `../cmake/`; reversible changes to the pinned WiiCompiled
 snapshot are in `../patches/wiicompiled/`; Aurora adaptations are in

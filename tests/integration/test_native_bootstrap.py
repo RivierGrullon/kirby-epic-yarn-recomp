@@ -39,6 +39,15 @@ class NativeBootstrapTests(unittest.TestCase):
         self.assertIn("three original VI waits resumed through the original interrupt handler", result.stdout)
         self.assertIn("CPU state and SDK queues preserved", result.stdout)
 
+    def test_native_position_matrix_upload_matches_the_original_sdk(self):
+        executable = os.path.abspath(os.environ["KIRBY_NATIVE_TEST"])
+        data = os.path.abspath("disc/DATA")
+        with tempfile.TemporaryDirectory(prefix="kirby-matrix-") as directory:
+            result = subprocess.run([executable, "--probe-pos-matrix", "--volume", "0", "--game-data", data],
+                                    cwd=directory, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("position matrix: original SDK bytes, CPU state and FIFO ordering verified", result.stdout)
+
     def test_wpad_bridge_serializes_reports_and_defers_guest_callbacks(self):
         result = self.invoke("--probe-wpad")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

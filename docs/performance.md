@@ -540,6 +540,61 @@ and capacity comparisons; only variants within the same process are compared.
 The next investigation targets CPU work during draw bursts rather than assuming
 fewer copied bytes will resolve the remaining pauses.
 
+## Audited position-matrix upload
+
+The position-matrix upload at `0x8068BD70` is a bounded SDK operation identified
+by Swiftshine's RK5E01 symbols. Preparation checks its `0x50`-byte extent and
+SHA-256 before emitting the native hook address. It is not identified by an
+address copied from another game's port.
+
+The native path gathers the five-byte XF header before reading the matrix,
+then gathers its 48-byte payload through the existing FIFO. It retains partial
+32-byte bursts, source writeback ordering, volatile register effects and the
+pinned paired-single helpers' NaN/subnormal conversion rules. Nondefault GQR0
+or a source outside the contiguous fast-memory path uses the original locally
+translated function, compiled with the same strict floating-point options as
+translated shards. Caller synchronization remains conservative.
+
+Check the registered native entry against that original body without creating a
+window or initializing game audio:
+
+```bash
+KIRBY_NATIVE_TEST="$PWD/build/native/WiiCompiled" \
+  LD_LIBRARY_PATH="$PWD/local/host-libs" SDL_AUDIO_DRIVER=dummy \
+  python3 -m unittest \
+  tests.integration.test_native_bootstrap.NativeBootstrapTests.test_native_position_matrix_upload_matches_the_original_sdk -v
+```
+
+The probe exercises both direct and indirect registered calls. It compares complete
+CPU state at each FIFO callback and return, emitted bytes, ring memory, source
+memory and FIFO counters. Cases cover cached/uncached
+MEM1 and MEM2 aliases, page crossings, all 32 pending-byte counts, ring wrap,
+writeback modifying the source, index overflow, special float bit patterns and
+mixed load/store quantization. These checks establish equivalence to the pinned
+translation at this boundary, not correctness of every PowerPC instruction or
+whole-game graphics.
+
+The candidate passed 25,344 direct/indirect comparisons: 21,568 fast uploads and
+3,776 fallbacks. Its 74 Python checks, including native Vulkan startup and exit,
+passed; the unchanged C++ unit targets passed all 25 CTest checks, and the
+renderer passed 440 synthetic Vulkan XFB checks. These checks ran without audio
+output. Fountain Gardens comparison and audible synchronization remain pending;
+the candidate has not replaced the executable launched by the local frontend.
+
+`--benchmark-pos-matrix --volume 0 --game-data disc/DATA` also times repeated
+uploads into a minimal FIFO consumer, including the native registry dispatch and
+ABI guards. It excludes game-caller synchronization, renderer work and GPU
+submission. Its component timings must not be
+reported as a game FPS improvement.
+
+On the Acer/RTX 3050 host, an original/native/native/original sequence of 500,000
+uploads per phase took 75.537/31.026/31.215/77.987 ms of main-thread CPU time.
+Each phase consumed 855,261 complete bursts, including 16,384 warmup calls, with
+matching checksums. This establishes lower component cost in that microbenchmark;
+it does not measure the conservative context boundary at generated game callers.
+Local evidence: ignored `build-logs/stage69-final-matrix-benchmark.{log,json}`,
+`stage69-final-python-suite.log`, `stage69-ctest.log` and `stage69-gpu.log`.
+
 ## Fragmented FIFO packet lengths
 
 The stream decoder previously called the vertex-layout callback again whenever

@@ -15,6 +15,7 @@
 #include "kirby/graphics/gx_fifo.h"
 #include "kirby/graphics/gx_renderer.h"
 #include "kirby/graphics/cache.h"
+#include "kirby/graphics/pos_matrix.h"
 #include "kirby/app/events.h"
 #include "kirby/app/frame_log.h"
 #include "kirby/settings.h"
@@ -125,6 +126,7 @@ void DumpIpcRequest() {
 bool KirbyAcceptRuntimeRegistration(uint32_t address, const char* name) noexcept {
     for (const auto& [expected,label] : cacheHooks)
         if (address==expected && name && std::strcmp(name,label)==0) return true;
+    if (address==KirbyBootConfig::GXLoadPosMtxImm && name && std::strcmp(name,"KirbyGXLoadPosMtxImm")==0) return true;
     if (address == KirbyBootConfig::DspBootTask && name && std::strcmp(name, "KirbyDspBootTask") == 0) return true;
     if (Kirby::AcceptWpadRegistration(address, name)) return true;
     if (address == KirbyBootConfig::SelectThread && name && std::strcmp(name, "KirbySelectThread") == 0) return true;
@@ -171,7 +173,7 @@ int main(int argc, char** argv) {
         else if (argument == "--game-data" && i + 1 < argc && argv[i+1][0]) {
             dataRoot = argv[++i]; dataOverride = true;
         }
-        else if (argument == "--headless" || argument == "--video" || argument == "--video-hidden" || argument == "--probe-configured-controls" || argument == "--probe-ax-task" || argument == "--probe-thread-fault" || argument == "--probe-threads" || argument == "--probe-wpad" || argument == "--probe-sdl-controller" || argument == "--monitor-controller" || argument == "--probe-video-retrace" || argument == "--verify-bootstrap" || argument == "--probe-init" ||
+        else if (argument == "--headless" || argument == "--video" || argument == "--video-hidden" || argument == "--probe-pos-matrix" || argument == "--benchmark-pos-matrix" || argument == "--probe-configured-controls" || argument == "--probe-ax-task" || argument == "--probe-thread-fault" || argument == "--probe-threads" || argument == "--probe-wpad" || argument == "--probe-sdl-controller" || argument == "--monitor-controller" || argument == "--probe-video-retrace" || argument == "--verify-bootstrap" || argument == "--probe-init" ||
                  argument == "--probe-alarms" || argument == "--probe-interrupt-init" || argument == "--probe-exi-init" || argument == "--probe-si-init" ||
                  argument == "--probe-sram-init" || argument == "--probe-boot-memory" ||
                  argument == "--probe-audio-clock" || argument == "--probe-dsp-init" ||
@@ -238,6 +240,9 @@ int main(int argc, char** argv) {
                 FunctionKind::BaseTranslated, false, 0, UINT32_MAX);
         }
         TranslatedFunctionRegistry::Finalize();
+        const auto* matrixHook=TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::GXLoadPosMtxImm);
+        Require(matrixHook && matrixHook->kind==FunctionKind::Native && matrixHook->name=="KirbyGXLoadPosMtxImm",
+                "Audited position-matrix upload is missing from the native registry");
         for (const auto& [address,name] : cacheHooks) {
             const auto* hook=TranslatedFunctionRegistry::FindByAddressPtr(address);
             Require(hook && hook->kind==FunctionKind::Native && hook->name==name,
@@ -367,6 +372,11 @@ int main(int argc, char** argv) {
         Kirby::GraphicsFifo().Reset();
         Kirby::Pixels() = Kirby::PixelEngine{};
         Kirby::GraphicsFifo().Configure(ResolveDspMemory);
+        if (mode == "--probe-pos-matrix" || mode == "--benchmark-pos-matrix") {
+            Kirby::ProbePositionMatrix(cpu);
+            if (mode == "--benchmark-pos-matrix") Kirby::BenchmarkPositionMatrix(cpu);
+            return 0;
+        }
         Kirby::Ios().ConfigureNand("local/user/nand", bootLayout.titleId);
         Kirby::Ios().ConfigureDisc(dataRoot, KirbyBootConfig::DiscCapacity);
         Kirby::Ios().ConfigureDiscTitle(dataRoot, bootLayout.titleId);
