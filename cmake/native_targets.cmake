@@ -239,6 +239,24 @@ target_link_libraries(kirby_build_probe_test PRIVATE kirby_build_info SDL3::SDL3
 add_test(NAME kirby_build_probe COMMAND kirby_build_probe_test)
 set_tests_properties(kirby_build_probe PROPERTIES TIMEOUT 10)
 
+if(NOT EXISTS "${KIRBY_PROJECT_ROOT}/vendor/json/single_include/nlohmann/json.hpp")
+    message(FATAL_ERROR "Pinned JSON headers are missing; run python3 tools/bootstrap.py")
+endif()
+add_library(kirby_setup STATIC "${KIRBY_PROJECT_ROOT}/launcher/setup/protocol.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/setup/job.cpp")
+target_include_directories(kirby_setup PUBLIC "${KIRBY_PROJECT_ROOT}/launcher"
+    PRIVATE "${KIRBY_PROJECT_ROOT}/vendor/json/single_include")
+target_compile_features(kirby_setup PUBLIC cxx_std_20)
+target_compile_options(kirby_setup PRIVATE -Wall -Wextra -Werror)
+add_executable(kirby_setup_protocol_test "${KIRBY_PROJECT_ROOT}/tests/unit/setup_protocol_test.cpp")
+target_link_libraries(kirby_setup_protocol_test PRIVATE kirby_setup)
+add_test(NAME kirby_setup_protocol COMMAND kirby_setup_protocol_test)
+add_executable(kirby_setup_job_test "${KIRBY_PROJECT_ROOT}/tests/unit/setup_job_test.cpp")
+target_include_directories(kirby_setup_job_test PRIVATE "${KIRBY_PROJECT_ROOT}/vendor/json/single_include")
+target_link_libraries(kirby_setup_job_test PRIVATE kirby_setup)
+add_test(NAME kirby_setup_job COMMAND kirby_setup_job_test)
+set_tests_properties(kirby_setup_job PROPERTIES TIMEOUT 15)
+
 add_library(kirby_settings STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/app/settings.cpp")
 target_sources(kirby_settings PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/input/bindings.cpp")
 target_include_directories(kirby_settings PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/include"
@@ -300,5 +318,5 @@ target_sources(kirby-launcher PRIVATE
 target_include_directories(kirby-launcher PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
 target_compile_features(kirby-launcher PRIVATE cxx_std_20)
 target_compile_definitions(kirby-launcher PRIVATE SDL_MAIN_HANDLED)
-target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends SDL3::SDL3-static kirby_settings kirby_build_info)
+target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends SDL3::SDL3-static kirby_settings kirby_build_info kirby_setup)
 set_target_properties(kirby-launcher PROPERTIES BUILD_RPATH "\$ORIGIN/../../local/host-libs")

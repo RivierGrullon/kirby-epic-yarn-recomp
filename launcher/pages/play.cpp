@@ -10,9 +10,10 @@ Action DrawPlay(State& state) {
     std::error_code ec;
     const bool installed = std::filesystem::is_regular_file(state.executable, ec);
     ImGui::BeginDisabled(!state.dataVerified || !installed || state.gameRunning ||
-                         state.selfTest || !state.settingsError.empty());
+                         state.selfTest || !state.settingsError.empty() || state.setup.Busy() || state.choosingSource);
     if (ImGui::Button(state.gameRunning ? "Game running" : "Play", {200, 48})) action = Action::Play;
     ImGui::EndDisabled();
+    if (state.setup.Busy()) ImGui::TextWrapped("Import is in progress. Open Install to view progress or cancel.");
     if (!state.dataVerified || !installed) {
         ImGui::TextWrapped("%s", installed ? "Choose the extracted DATA folder from your own copy."
                                           : "The native executable is missing. See Install for the build guide.");

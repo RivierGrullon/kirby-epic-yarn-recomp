@@ -3,6 +3,7 @@
 #include "kirby/settings.h"
 #include "binding_capture.h"
 #include "kirby/app/build_info.h"
+#include "setup/job.h"
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -24,10 +25,14 @@ struct State {
     std::optional<Kirby::BuildInfo> runtimeBuild;
     bool checkingBuild = false;
     std::string buildStatus = "Native build has not been checked";
+    Setup::View setup;
+    bool choosingSource=false;
+    bool closing=false;
 };
 
 enum class Action {
     None, Play, ChooseData, VerifyData, SaveSettings, ReloadSettings,
     OpenLogs, OpenSaves, OpenSettings, BuildGuide, ShowInstall, RefreshBuildInfo,
+    ChooseImage, CancelSetup, OpenSetupLogs,
 };
 } // namespace Launcher

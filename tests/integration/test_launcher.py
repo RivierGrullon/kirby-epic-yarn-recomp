@@ -35,6 +35,17 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("Missing sys/main.dol", result.stdout)
 
+    def test_native_setup_client_inspects_the_actual_selected_data(self):
+        source=Path("disc/DATA").resolve()
+        result=self.invoke("--check-source",str(source))
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn("RK5E01 Rev 0 game data verified",result.stdout)
+        self.assertIn(str(source),result.stdout)
+        with tempfile.TemporaryDirectory(prefix="kirby's unrelated source ") as directory:
+            result=self.invoke("--check-source",directory)
+        self.assertEqual(result.returncode,1,result.stdout+result.stderr)
+        self.assertNotIn("game data verified",result.stdout)
+
     def test_frontend_renders_and_exits_without_showing_a_window(self):
         env = os.environ.copy()
         env.update(SDL_VIDEO_DRIVER="offscreen", SDL_RENDER_DRIVER="software")

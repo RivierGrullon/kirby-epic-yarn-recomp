@@ -5,6 +5,11 @@
     "license": "GPL-3.0",
     "submodules": {"aurora-main": "33067e34a17ca680eb961d9e0f3d48ddb22a7d7f"}
   },
+  "json": {
+    "url": "https://github.com/nlohmann/json.git",
+    "commit": "55f93686c01528224f448c19128836e7df245f72",
+    "license": "MIT"
+  },
   "key": {
     "url": "https://github.com/Swiftshine/key.git",
     "commit": "7f2a9ab9ad66d8e2f6eac52acc2c01dff0bd03a2",

@@ -86,11 +86,30 @@ the exported layout. Validation covers the exact DOL hash, Wii/revision and titl
 metadata, and every FST entry's path, file size and logical extent. It does not
 authenticate Nintendo signatures or all asset contents. Keep your dump intact.
 
+The launcher exposes this import under **Install → Choose disc image** or
+**Choose DATA folder**. It shows real byte progress while hashing and the current
+stage while unpacking, extracting or validating. **Cancel import** stops active
+work. Closing the launcher during import requests cancellation and waits for the
+worker to exit. Play and additional imports are disabled during the job.
+
+The selected DATA path changes only after a valid completion and successful
+worker exit. Failure, cancellation and picker dismissal keep the previous
+selection. **Verify selected folder** runs the same full layout check. Imported
+sources stay under `local/setup/`; saves and executable files are not moved.
+
 The worker emits JSON lines; external tool output stays in `local/setup/logs/`.
 Only one job can use a setup workspace at a time. SIGINT/SIGTERM cancel active
 work and remove its temporary export. See [the worker protocol](../tools/installer/README.md)
-for launcher integration. Import and compilation from the Install page remain
-under development; these commands currently provide source inspection only.
+for launcher integration. Translation, compilation, repair and executable
+selection from the Install page remain under development. A source import is not
+a newly compiled build.
+
+To test the launcher's actual process/protocol client without opening a window
+or changing the selected data or settings:
+
+```bash
+build/native/kirby-launcher --check-source "/path/to/own-disc.wbfs"
+```
 
 ## Translate and compile
 

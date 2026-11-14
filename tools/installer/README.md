@@ -9,6 +9,13 @@ poll the process exit status. It may keep stdin open until the worker exits.
 `--inspect PATH` starts the same operation without a stdin request;
 `--workspace PATH` changes the default `local/setup` workspace.
 
+The native launcher uses this worker from its Install page. Its asynchronous
+client lives in `launcher/setup/`: it validates event IDs, ordering, types and
+the supported revision, bounds line storage and per-frame reads, and accepts a
+result only after exit code 0 and a valid final event. Import failure/cancellation
+does not change the selected data. The native `--check-source PATH` command runs
+the same client without opening the launcher or saving settings.
+
 ```json
 {"version":1,"id":"example-1","operation":"inspect","source":"/path/to/own-disc.wbfs"}
 ```

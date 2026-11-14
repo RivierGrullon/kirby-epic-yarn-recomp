@@ -6,6 +6,7 @@
 #include "pages/pages.h"
 #include "input_focus.h"
 #include "build_probe.h"
+#include "setup/job.h"
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
@@ -31,14 +32,15 @@ extern char** environ;
 namespace fs = std::filesystem;
 namespace {
 constexpr char ExpectedSha1[] = "f4280a2b0709bfde4132be22e9f7fa8ecfa2a130";
-struct Selection { std::mutex mutex; std::string path; bool ready = false; };
-void FolderChosen(void* userdata, const char* const* files, int) {
+struct Selection { std::mutex mutex; std::string path,error; bool ready=false,pending=false; };
+void SourceChosen(void* userdata, const char* const* files, int) {
     std::unique_ptr<std::shared_ptr<Selection>> owner(static_cast<std::shared_ptr<Selection>*>(userdata));
-    if (files && files[0]) {
-        std::lock_guard lock((*owner)->mutex);
-        (*owner)->path = files[0]; (*owner)->ready = true;
-    }
+    std::lock_guard lock((*owner)->mutex);
+    (*owner)->path=files && files[0] ? files[0] : "";
+    (*owner)->error=files ? "" : SDL_GetError();
+    (*owner)->ready=true;(*owner)->pending=false;
 }
+volatile sig_atomic_t sourceCancelled=0;
 bool Verify(const fs::path& data, std::string& status) {
     for (const char* entry : {"sys/main.dol", "sys/boot.bin", "sys/fst.bin", "ticket.bin", "tmd.bin", "files"}) {
         if (!fs::exists(data / entry)) { status = std::string("Missing ") + entry; return false; }
@@ -97,8 +99,23 @@ int main(int argc, char** argv) {
         const bool valid = Verify(argv[2], status);
         std::puts(status.c_str()); return valid ? 0 : 1;
     }
+    if (argc==3 && std::string_view(argv[1])=="--check-source") {
+        const auto root=(fs::path(SDL_GetBasePath())/"WiiCompiled").parent_path().parent_path().parent_path();
+        Launcher::Setup::Job job;
+        std::signal(SIGINT,[](int) { sourceCancelled=1; });
+        std::signal(SIGTERM,[](int) { sourceCancelled=1; });
+        job.Start(root/"tools/install.py",argv[2],root/"local/setup");
+        while (job.Current().Busy()) {
+            if (sourceCancelled) job.Cancel();
+            job.Poll();SDL_Delay(1);
+        }
+        std::cout << job.Current().message << '\n';
+        if (job.Current().result) std::cout << job.Current().result->dataRoot.string() << '\n';
+        return job.Current().status==Launcher::Setup::Status::Ready ? 0 :
+            job.Current().status==Launcher::Setup::Status::Cancelled ? 2 : 1;
+    }
     const bool selfTest = argc == 2 && std::string_view(argv[1]) == "--self-test";
-    if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --print-settings TOML | --build-info | --check-native-build EXECUTABLE]\n"); return 2; }
+    if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --check-source SOURCE | --print-settings TOML | --build-info | --check-native-build EXECUTABLE]\n"); return 2; }
     const fs::path executable = fs::path(SDL_GetBasePath()) / "WiiCompiled";
     const fs::path root = executable.parent_path().parent_path().parent_path();
     if (!fs::exists(root / "tools/kirby.py")) {
@@ -156,6 +173,15 @@ int main(int argc, char** argv) {
     auto& status = state.dataStatus;
     if (!selfTest) valid = Verify(data, status);
     pid_t game = -1;
+    Launcher::Setup::Job setupJob;
+    bool setupApplied=false;
+    std::string setupSelectionError;
+    const auto startInspection=[&](const fs::path& source) {
+        if (game>0 || setupJob.Current().Busy() || state.closing) return;
+        setupApplied=false;setupSelectionError.clear();
+        setupJob.Start(root/"tools/install.py",source,root/"local/setup");
+        state.setup=setupJob.Current();
+    };
     Launcher::BuildProbe buildProbe;
     const auto refreshBuild=[&] {
         state.runtimeBuild.reset();
@@ -171,10 +197,35 @@ int main(int argc, char** argv) {
             const bool consumed = !selfTest && ownsInput && state.bindingCapture.Handle(event, config.controls, settingsDirty);
             if (!consumed) ImGui_ImplSDL3_ProcessEvent(&event);
             if (event.type == SDL_EVENT_QUIT ||
-                (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window))) running = false;
+                (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window))) {
+                state.closing=true;
+                if (setupJob.Current().Busy()) setupJob.Cancel();
+                else running=false;
+            }
         }
+        std::string selectedSource,selectionError;
         { std::lock_guard lock(selection->mutex);
-          if (selection->ready) { data = selection->path; selection->ready = false; settingsDirty = true; valid = Verify(data,status); } }
+          state.choosingSource=selection->pending;
+          if (selection->ready) { selectedSource=selection->path;selectionError=selection->error;selection->ready=false; } }
+        if (!selectionError.empty()) setupSelectionError="Could not open source chooser: "+selectionError;
+        if (!selectedSource.empty() && !selfTest) startInspection(selectedSource);
+        if (!selfTest) {
+            setupJob.Poll();state.setup=setupJob.Current();
+            if (state.setup.status==Launcher::Setup::Status::Ready && !setupApplied && !state.closing) {
+                setupApplied=true;
+                std::string selectedStatus;
+                const auto& selected=state.setup.result->dataRoot;
+                if (Verify(selected,selectedStatus)) {
+                    if (data!=selected) { data=selected;settingsDirty=true; }
+                    valid=true;status=std::move(selectedStatus);
+                } else setupSelectionError="Imported data changed before selection. Import again. "+selectedStatus;
+            }
+            if (!setupSelectionError.empty()) {
+                state.setup.status=Launcher::Setup::Status::Failed;
+                state.setup.message=setupSelectionError;state.setup.result.reset();
+            }
+            if (state.closing && !state.setup.Busy()) running=false;
+        }
         if (game > 0) {
             int result = 0;
             if (waitpid(game, &result, WNOHANG) == game) {
@@ -208,10 +259,13 @@ int main(int argc, char** argv) {
             if (frames == 0) SDL_SetWindowSize(window, 960, 680);
             if (frames == Launcher::PageNames.size() * 3) SDL_SetWindowSize(window, 640, 520);
         }
+        ImGui::BeginDisabled(state.closing);
         const auto action = Launcher::DrawLauncher(state, page);
-        if (!selfTest && focused) try {
+        ImGui::EndDisabled();
+        if (!selfTest && focused && !state.closing) try {
             switch (action) {
             case Launcher::Action::Play:
+                if (setupJob.Current().Busy() || state.choosingSource || game>0) break;
                 valid = Verify(data, status);
                 if (valid && fs::is_regular_file(executable) && saveSettings()) {
                     if (state.checkingBuild) {
@@ -238,9 +292,20 @@ int main(int argc, char** argv) {
                     ? "Could not save settings" : "Native executable missing. See the build guide.";
                 break;
             case Launcher::Action::ChooseData:
-                SDL_ShowOpenFolderDialog(FolderChosen, new std::shared_ptr<Selection>(selection), window, data.c_str(), false);
+            case Launcher::Action::ChooseImage:
+                if (setupJob.Current().Busy() || state.choosingSource || game>0) break;
+                { std::lock_guard lock(selection->mutex);selection->pending=true;state.choosingSource=true; }
+                if (action==Launcher::Action::ChooseData)
+                    SDL_ShowOpenFolderDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,data.c_str(),false);
+                else {
+                    static constexpr SDL_DialogFileFilter filters[]{{"Wii disc images and archives","wbfs;iso;rvz;7z"},{"All files","*"}};
+                    SDL_ShowOpenFileDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,filters,2,nullptr,false);
+                }
                 break;
-            case Launcher::Action::VerifyData: valid = Verify(data, status); break;
+            case Launcher::Action::VerifyData: if (!state.choosingSource) startInspection(data);break;
+            case Launcher::Action::CancelSetup: setupJob.Cancel();break;
+            case Launcher::Action::OpenSetupLogs:
+                OpenFolder(state.setup.logPath.empty() ? root/"local/setup/logs" : state.setup.logPath.parent_path());break;
             case Launcher::Action::SaveSettings: saveSettings(); break;
             case Launcher::Action::ReloadSettings:
                 try {

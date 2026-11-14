@@ -6,6 +6,9 @@ Changes apply on the next game launch and do not require recompilation.
 
 Find VSync and experimental performance mode under **Display**, master volume
 under **Audio**, and the extracted game-folder selection under **Install**.
+Install can import an image/archive or verify a DATA folder in the background.
+It changes the selected folder only after successful verification and worker exit;
+cancelling or failing an import keeps the previous selection.
 **Controls** lists connected gamepads and edits gamepad/keyboard bindings. **Saves** opens the
 existing save folder; **Diagnostics** provides logs, settings recovery and paths.
 The save action remains available on every page. Keyboard and SDL gamepad
