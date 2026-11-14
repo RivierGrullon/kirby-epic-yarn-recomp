@@ -14,6 +14,10 @@ The launcher accepts input only while its own window has focus. Gamepad polling
 in the background cannot change its settings or activate buttons while you play
 in another window. Losing focus also clears held input.
 
+The game opens in a 960×540 window and presents at 16:9, matching the default Wii
+widescreen setting. Resizing the window preserves that ratio with black bars as
+needed. This changes display sizing only; the internal game resolution is unchanged.
+
 Only implemented Kirby options are written:
 
 ```toml

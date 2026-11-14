@@ -13,6 +13,7 @@ Action DrawDisplay(State& state) {
     ImGui::EndDisabled();
     ImGui::Spacing();
     ImGui::SeparatorText("Resolution and frame rate");
+    ImGui::TextWrapped("16:9 widescreen. The game opens at 960 x 540 and keeps its widescreen proportions when resized, adding black bars as needed.");
     ImGui::TextWrapped("Rendering uses the original game resolution. Resolution scaling and a validated 30/60 FPS selector are not available yet.");
     return Action::None;
 }
