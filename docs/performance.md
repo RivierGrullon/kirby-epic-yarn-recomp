@@ -356,6 +356,54 @@ Local evidence: `stage51-motion-{input,analysis}.json`, `stage51-motion-frames.c
 the input scripts stay local. Longer play, other levels, physical controls, target
 hardware and validated 30/60 modes remain unfinished.
 
+## CPU scheduling and render-worker stall captures
+
+A further 60.002-second moving Fountain Gardens observation read the main OS
+thread's `schedstat`, state and wait channel alongside the presentation counter
+every approximately 2 ms. It used the same published executable, muted output,
+experimental copies, Mailbox presentation and a visible window. Virtual gamepad
+input traversed x=41.058–73.308, y=22.796–26.282 in section 1. There was no debugger
+or compilation during this observation.
+
+The observer saw 3,533 increments with none missed. Of 63 sampled intervals over
+25 ms, 53 consumed more than 20 ms of main-thread CPU; two also accumulated more
+than 5 ms waiting for CPU scheduling. The longest sampled interval was 45.660 ms:
+23.425 ms of CPU and 16.902 ms of run-queue delay. Another took 44.385 ms with
+38.078 ms of CPU and 0.531 ms of run-queue delay. Across valid intervals, mean
+CPU time was 9.487 ms and mean run-queue delay 0.097 ms.
+
+These are external counter observations, with polling overhead and boundary
+uncertainty. Scheduler accounting can lag while a thread runs. Subtracting the
+reported CPU and run-queue values from wall time does not provide an exact GPU
+wait. The results identify substantial CPU demand in most long intervals and
+occasional host scheduling interference; they do not identify one costly function.
+
+Separate intrusive probes stopped the owned process after its presentation
+counter had not advanced for 35 ms, then collected stacks and resumed execution.
+Their debugger pauses are excluded from the observation above. Three main-thread
+stacks reached `GxRenderer::PollVideo` waiting in
+`aurora::gfx::render_worker::synchronize`. Two further all-thread probes showed
+the render worker inside NVIDIA driver calls: one below Dawn's
+`FencedDeleter::UpdateCompletedSerialTo` during queue submission, the other below
+`SwapChain::GetCurrentTextureInternal` during surface-image acquisition. Pipeline
+workers were asleep in both snapshots. The preceding CPU demand in those two
+probes was 31.303 and 21.759 ms, respectively.
+
+A stopped stack records one instant; it does not establish how much of the
+preceding interval that call consumed. CPU work, resource retirement and surface
+acquisition therefore remain separate measured investigation targets. Removing
+the render-worker wait was already rejected by an earlier visible comparison.
+The next implementation investigation is bounded texture-cache churn and GPU
+texture lifetime, combining these stacks with the moving profile's repeated
+`CacheTextureBinding` copies before changing cache policy.
+
+Evidence under ignored `build-logs/`: `stage52-cpu-observe.json`,
+`stage52-summary.json`, `stage52-first-input.json`, `stage52-caught-stalls.json`,
+`stage52-stall-{0,1,2}.log`, `stage52-worker-caught.json` and
+`stage52-worker-stall-{0,1}.log`. The isolated game, virtual controller and owned
+audio sink were closed afterward. This diagnostic run changed no runtime code or
+launcher setting and establishes no performance improvement.
+
 ## Measurements
 
 Hardware: Acer Nitro AN515-55, Intel i5-10300H, NVIDIA RTX 3050 Laptop GPU, Bazzite,
