@@ -146,6 +146,7 @@ int main(int argc, char** argv) {
     std::filesystem::path configPath = "local/user/settings.toml";
     bool volumeOverride = false, dataOverride = false, vsyncOverride = false, copiesOverride = false;
     bool explicitConfig = false;
+    Kirby::ControlBindings controlBindings;
     std::filesystem::path frameLogPath;
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument = argv[i];
@@ -170,7 +171,7 @@ int main(int argc, char** argv) {
         else if (argument == "--game-data" && i + 1 < argc && argv[i+1][0]) {
             dataRoot = argv[++i]; dataOverride = true;
         }
-        else if (argument == "--headless" || argument == "--video" || argument == "--video-hidden" || argument == "--probe-ax-task" || argument == "--probe-thread-fault" || argument == "--probe-threads" || argument == "--probe-wpad" || argument == "--probe-sdl-controller" || argument == "--monitor-controller" || argument == "--probe-video-retrace" || argument == "--verify-bootstrap" || argument == "--probe-init" ||
+        else if (argument == "--headless" || argument == "--video" || argument == "--video-hidden" || argument == "--probe-configured-controls" || argument == "--probe-ax-task" || argument == "--probe-thread-fault" || argument == "--probe-threads" || argument == "--probe-wpad" || argument == "--probe-sdl-controller" || argument == "--monitor-controller" || argument == "--probe-video-retrace" || argument == "--verify-bootstrap" || argument == "--probe-init" ||
                  argument == "--probe-alarms" || argument == "--probe-interrupt-init" || argument == "--probe-exi-init" || argument == "--probe-si-init" ||
                  argument == "--probe-sram-init" || argument == "--probe-boot-memory" ||
                  argument == "--probe-audio-clock" || argument == "--probe-dsp-init" ||
@@ -184,6 +185,7 @@ int main(int argc, char** argv) {
     if (explicitConfig || mode == "--video" || mode == "--video-hidden") {
         try {
             const auto settings = Kirby::LoadSettings(configPath);
+            controlBindings = settings.controls;
             if (!volumeOverride) masterVolume = settings.masterVolume;
             if (!dataOverride) dataRoot = settings.gameData;
             if (!vsyncOverride) vsync = settings.vsync;
@@ -193,13 +195,19 @@ int main(int argc, char** argv) {
         }
     }
     if (mode == "--print-settings") {
-        std::cout << Kirby::FormatSettings({dataRoot, masterVolume, vsync, gpuResidentCopies});
+        std::cout << Kirby::FormatSettings({dataRoot, masterVolume, vsync, gpuResidentCopies, controlBindings});
         return 0;
     }
     if (!frameLogPath.empty() && mode != "--video" && mode != "--video-hidden") {
         std::cerr << "--frame-log requires --video or --video-hidden\n";
         return 2;
     }
+
+    if (mode == "--probe-configured-controls" && !explicitConfig) {
+        std::cerr << "--probe-configured-controls requires --config TOML\n"; return 2;
+    }
+    if (mode == "--video" || mode == "--video-hidden" || mode == "--probe-configured-controls")
+        Kirby::ConfigureControlBindings(controlBindings);
 
     KirbyInstallDiagnostics();
     AudioBackend::Instance().SetMasterVolume(masterVolume / 100);
@@ -374,6 +382,7 @@ int main(int argc, char** argv) {
         if (mode == "--probe-threads") { Kirby::ProbeThreads(cpu); return 0; }
         if (mode == "--probe-wpad") { Kirby::ProbeWpad(cpu); return 0; }
         if (mode == "--probe-sdl-controller") { Kirby::ProbeSdlController(cpu); return 0; }
+        if (mode == "--probe-configured-controls") { Kirby::ProbeSdlController(cpu, false, &controlBindings); return 0; }
         if (mode == "--monitor-controller") { Kirby::ProbeSdlController(cpu, true); return 0; }
         if (mode == "--probe-video-retrace") {
             InvokeIndirectCpu(KirbyBootConfig::InitRegisters, &cpu);

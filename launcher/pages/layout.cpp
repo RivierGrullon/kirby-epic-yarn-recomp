@@ -28,6 +28,7 @@ Action DrawLauncher(State& state, Page& selected) {
     ImGui::TextColored({1, 0.66f, 0.80f, 1}, "Kirby's Epic Yarn");
     ImGui::SameLine(); ImGui::TextDisabled("Native / Linux");
     ImGui::Separator();
+    ImGui::BeginDisabled(state.bindingCapture.Busy());
     if (io.DisplaySize.x < 760 && ImGui::BeginTabBar("Pages", ImGuiTabBarFlags_FittingPolicyScroll)) {
         // Let ImGui handle user tab selection. Only force a tab when a page was
         // requested elsewhere (for example, the settings-error action).
@@ -45,15 +46,18 @@ Action DrawLauncher(State& state, Page& selected) {
         lastCompactPage = selected;
         ImGui::EndTabBar();
     }
+    ImGui::EndDisabled();
     const float footerHeight = state.settingsError.empty() ? 88.f : 128.f;
     ImGui::BeginChild("Body", {0, -footerHeight});
     if (io.DisplaySize.x >= 760) {
         ImGui::BeginChild("Navigation", {164, 0});
+        ImGui::BeginDisabled(state.bindingCapture.Busy());
         for (size_t i = 0; i < PageNames.size(); ++i) {
             const auto page = static_cast<Page>(i);
             if (ImGui::Selectable(PageNames[i], selected == page, 0, {0, 40})) selected = page;
             if (selected == page) ImGui::SetItemDefaultFocus();
         }
+        ImGui::EndDisabled();
         ImGui::EndChild(); ImGui::SameLine();
     }
     ImGui::BeginChild("Content");
@@ -67,7 +71,7 @@ Action DrawLauncher(State& state, Page& selected) {
         ImGui::TextWrapped("Settings need attention. Open Diagnostics to fix them.");
         if (ImGui::SmallButton("Show Diagnostics")) selected = Page::Diagnostics;
     }
-    ImGui::BeginDisabled(state.selfTest || !state.settingsError.empty());
+    ImGui::BeginDisabled(state.selfTest || !state.settingsError.empty() || state.bindingCapture.Busy());
     if (ImGui::Button("Save settings")) action = Action::SaveSettings;
     ImGui::EndDisabled(); ImGui::SameLine();
     ImGui::TextDisabled("%s", state.settingsDirty ? "Unsaved changes" : "No unsaved changes");

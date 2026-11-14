@@ -3,6 +3,8 @@
 #include "abi_bridge.h"
 #include "generated/KirbyBootConfig.h"
 #include "kirby/input/wpad.h"
+#include "kirby/input/bindings.h"
+#include "controller_button_names.h"
 #include <aurora/wpad.h>
 #include <aurora/input.hpp>
 #include <aurora/pad.hpp>
@@ -20,9 +22,10 @@
 #include <stdexcept>
 #include <utility>
 #include <vector>
+#include <set>
 
 namespace Kirby {
-void ProbeSdlController(CpuContext& cpu, bool monitorPhysical) {
+void ProbeSdlController(CpuContext& cpu, bool monitorPhysical, const ControlBindings* configured) {
     // Run from a disposable working directory: Aurora persists port assignments.
     auto check = [](bool value, const char* reason) { if (!value) throw std::runtime_error(reason); };
     const auto userPath = std::filesystem::absolute("local/user/aurora").string();
@@ -157,6 +160,50 @@ void ProbeSdlController(CpuContext& cpu, bool monitorPhysical) {
             return Memory::Read16(output);
         };
         check(report() == 0, "SDL virtual controller did not start neutral");
+        if (configured) {
+            for (unsigned index = 0; index < SDL_GAMEPAD_BUTTON_COUNT; ++index) {
+                const auto button = static_cast<SDL_GamepadButton>(index);
+                check(SDL_SetJoystickVirtualButton(device.joystick, index, true), SDL_GetError());
+                const auto value = report();
+                std::cout << "[kirby:binding] " << profile.name << "|gamepad|"
+                          << ControllerNames::NativeButtonForValue(button).configName << '|' << std::dec << value << '\n';
+                check(SDL_SetJoystickVirtualButton(device.joystick, index, false), SDL_GetError());
+                // SDL intentionally keeps Guide pressed for at least 250 ms.
+                const auto deadline = SDL_GetTicks() + 500;
+                auto released = report();
+                while (released && SDL_GetTicks() < deadline) { SDL_Delay(5); released = report(); }
+                check(released == 0, "Configured gamepad binding did not release");
+            }
+            for (unsigned axis = 0; axis < SDL_GAMEPAD_AXIS_COUNT; ++axis) {
+                const bool trigger = axis >= SDL_GAMEPAD_AXIS_LEFT_TRIGGER;
+                for (const bool negative : {true, false}) {
+                    if (trigger && negative) continue;
+                    check(SDL_SetJoystickVirtualAxis(device.joystick, axis, negative ? -30000 : 30000), SDL_GetError());
+                    const auto value = report();
+                    std::cout << "[kirby:binding] " << profile.name << "|axis|"
+                              << ControllerNames::NativeButtonForValue(PADEncodeAxisButton(axis, negative)).configName
+                              << '|' << std::dec << value << '\n';
+                    // Virtual joystick triggers span -32768..32767; SDL's
+                    // gamepad layer exposes their resting value as zero.
+                    check(SDL_SetJoystickVirtualAxis(device.joystick, axis, trigger ? -32768 : 0), SDL_GetError());
+                    check(report() == 0, "Configured axis binding did not release");
+                }
+            }
+            std::set<std::string> keys{"Space", "J"};
+            for (const auto& key : configured->keyboard) if (key != "disabled") keys.insert(key);
+            for (const auto& key : keys) {
+                SDL_Event event{};
+                event.type = SDL_EVENT_KEY_DOWN;
+                event.key.scancode = SDL_GetScancodeFromName(key.c_str()); event.key.down = true;
+                check(SDL_PushEvent(&event), SDL_GetError());
+                const auto value = report();
+                std::cout << "[kirby:binding] " << profile.name << "|keyboard|" << key << '|' << std::dec << value << '\n';
+                event.type = SDL_EVENT_KEY_UP; event.key.down = false;
+                check(SDL_PushEvent(&event), SDL_GetError());
+                check(report() == 0, "Configured keyboard binding did not release");
+            }
+            continue;
+        }
         for (auto [button, remote] : {
                 std::pair{SDL_GAMEPAD_BUTTON_DPAD_LEFT, 0x0008},
                 {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, 0x0004},
@@ -318,6 +365,7 @@ void ProbeSdlController(CpuContext& cpu, bool monitorPhysical) {
         std::cout << "[kirby] SDL preset verified: " << profile.name << '\n';
     }
     aurora::gamepad::shutdown();
-    std::cout << "[kirby] SDL controller events: directions, face buttons, releases and disconnect verified\n";
+    std::cout << (configured ? "[kirby] configured controls sampled through guest WPAD reports\n" :
+                              "[kirby] SDL controller events: directions, face buttons, releases and disconnect verified\n");
 }
 }

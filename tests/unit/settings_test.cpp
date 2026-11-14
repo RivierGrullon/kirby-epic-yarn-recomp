@@ -50,6 +50,18 @@ int main() {
     Check(updated.find("answer = 42") != std::string::npos &&
           updated.find("Keep custom values") != std::string::npos, "Unrelated values/comments were lost");
     Check(std::abs(Kirby::LoadSettings(file).masterVolume - 19) < 0.0001f, "New volume not persisted");
+    const auto jump = static_cast<size_t>(Kirby::GameAction::Jump);
+    Check(Kirby::Rebind(settings.controls, jump, Kirby::BindingDevice::Gamepad, "right_shoulder").status ==
+          Kirby::RebindResult::Status::Applied, "Gamepad binding edit failed");
+    Check(Kirby::Rebind(settings.controls, jump, Kirby::BindingDevice::Keyboard, "J").status ==
+          Kirby::RebindResult::Status::Applied, "Keyboard binding edit failed");
+    Kirby::SaveSettings(file, settings);
+    Check(Kirby::LoadSettings(file).controls == settings.controls, "Bindings did not persist across reload");
+    const auto validBindings = Read(file);
+    auto invalidBindings = settings;
+    invalidBindings.controls.gamepad[jump] = "east";
+    Reject([&] { Kirby::SaveSettings(file, invalidBindings); });
+    Check(Read(file) == validBindings, "Rejected conflicting bindings damaged the saved configuration");
 
     for (const auto* invalid : {"[broken", "[kirby]\nschema_version = 99\n",
             "[kirby]\nschema_version = 1\n[audio]\nvolume = nan\n",

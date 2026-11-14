@@ -206,15 +206,25 @@ target_compile_features(kirby_cache_test PRIVATE cxx_std_20)
 add_test(NAME kirby_cache COMMAND kirby_cache_test)
 
 add_library(kirby_settings STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/app/settings.cpp")
+target_sources(kirby_settings PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/input/bindings.cpp")
 target_include_directories(kirby_settings PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/include"
-    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(kirby_settings PRIVATE mkw::toml11)
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${MKW_AURORA_DIR}/include")
+target_link_libraries(kirby_settings PRIVATE mkw::toml11 SDL3::SDL3-static)
 target_compile_features(kirby_settings PUBLIC cxx_std_20)
+target_compile_definitions(kirby_settings PRIVATE TARGET_PC=1)
 target_compile_options(kirby_settings PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(WiiCompiled PRIVATE kirby_settings)
 add_executable(kirby_settings_test "${KIRBY_PROJECT_ROOT}/tests/unit/settings_test.cpp")
 target_link_libraries(kirby_settings_test PRIVATE kirby_settings)
 add_test(NAME kirby_settings COMMAND kirby_settings_test)
+add_executable(kirby_bindings_test "${KIRBY_PROJECT_ROOT}/tests/unit/bindings_test.cpp")
+target_link_libraries(kirby_bindings_test PRIVATE kirby_settings)
+add_test(NAME kirby_bindings COMMAND kirby_bindings_test)
+add_executable(kirby_binding_capture_test "${KIRBY_PROJECT_ROOT}/tests/unit/binding_capture_test.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/binding_capture.cpp")
+target_include_directories(kirby_binding_capture_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
+target_link_libraries(kirby_binding_capture_test PRIVATE kirby_settings SDL3::SDL3-static)
+add_test(NAME kirby_binding_capture COMMAND kirby_binding_capture_test)
 
 add_executable(kirby_launcher_input_test "${KIRBY_PROJECT_ROOT}/tests/unit/launcher_input_test.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/input_focus.cpp")
@@ -240,6 +250,7 @@ add_custom_target(kirby_tests DEPENDS ${kirby_test_targets})
 
 add_executable(kirby-launcher "${KIRBY_PROJECT_ROOT}/launcher/main.cpp")
 target_sources(kirby-launcher PRIVATE
+    "${KIRBY_PROJECT_ROOT}/launcher/binding_capture.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/input_focus.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/pages/layout.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/pages/play.cpp"

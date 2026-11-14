@@ -119,6 +119,7 @@ extern "C" void KirbyWPADInit() {
     if (initialized) return;
     Kirby::ConfigureControllerDefaults();
     WPADInit();
+    Kirby::ApplyConfiguredControlBindings();
     for (int i = 0; i < 4; ++i) {
         aurora_wpad_set_device(i, WPAD_DEV_CORE);
         WPADSetConnectCallback(i, Connected);

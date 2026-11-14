@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
+#include "kirby/input/bindings.h"
 #include <filesystem>
 #include <iosfwd>
 #include <string>
@@ -10,6 +11,7 @@ struct Settings {
     float masterVolume = 100;
     bool vsync = true;
     bool gpuResidentCopies = false;
+    ControlBindings controls{};
 };
 
 // Errors throw without modifying the source file. Relative DATA paths are

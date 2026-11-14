@@ -3,11 +3,14 @@
 #include <cstdint>
 struct CpuContext;
 namespace Kirby {
+struct ControlBindings;
 bool AcceptWpadRegistration(uint32_t address, const char* name) noexcept;
 void VerifyWpadRegistrations();
 void PollWpad(CpuContext& cpu, bool force = false);
 void SetWpadWindowActive(bool active);
 void ConfigureControllerDefaults(); // Must precede Aurora's PADInit.
+void ConfigureControlBindings(const ControlBindings& bindings);
+void ApplyConfiguredControlBindings(); // After WPAD/PAD initialization.
 void ProbeWpad(CpuContext& cpu);
-void ProbeSdlController(CpuContext& cpu, bool monitorPhysical = false);
+void ProbeSdlController(CpuContext& cpu, bool monitorPhysical = false, const ControlBindings* configured = nullptr);
 }

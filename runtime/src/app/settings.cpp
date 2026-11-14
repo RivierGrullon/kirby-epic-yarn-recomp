@@ -16,6 +16,7 @@ void Validate(const Settings& settings) {
         throw std::runtime_error("paths.dvd_root must be a nonempty path");
     if (!std::isfinite(settings.masterVolume) || settings.masterVolume < 0 || settings.masterVolume > 100)
         throw std::runtime_error("audio.volume must be between 0 and 1");
+    ValidateControlBindings(settings.controls);
 }
 std::optional<std::string> Read(const fs::path& file) {
     if (!fs::exists(file)) return std::nullopt;
@@ -31,7 +32,7 @@ Settings Parse(const std::string& text, const fs::path& file, Settings defaults)
     std::istringstream input(text);
     const auto document = toml::parse(input, file.string());
     using namespace RuntimeConfigFile;
-    for (const char* section : {"kirby", "paths", "audio", "video"})
+    for (const char* section : {"kirby", "paths", "audio", "video", "controller", "keyboard"})
         if (document.contains(section) && !document.at(section).is_table())
             throw std::runtime_error(std::string(section) + " must be a table");
     if (FindConfigValue<int64_t>(document, "kirby", "schema_version") != 1)
@@ -59,6 +60,16 @@ Settings Parse(const std::string& text, const fs::path& file, Settings defaults)
     if (shared.audioVolume) defaults.masterVolume = *shared.audioVolume * 100;
     if (shared.vsync) defaults.vsync = *shared.vsync;
     if (gpuCopies) defaults.gpuResidentCopies = *gpuCopies;
+    for (size_t i = 0; i < GameActions.size(); ++i) {
+        for (const auto device : {BindingDevice::Gamepad, BindingDevice::Keyboard}) {
+            const char* section = device == BindingDevice::Gamepad ? "controller" : "keyboard";
+            if (!present(section, GameActions[i].key)) continue;
+            const auto value = FindConfigValue<std::string>(document, section, GameActions[i].key);
+            if (!value) throw std::runtime_error(std::string(section) + "." + GameActions[i].key + " must be a binding string");
+            auto& bindings = device == BindingDevice::Gamepad ? defaults.controls.gamepad : defaults.controls.keyboard;
+            bindings[i] = CanonicalBinding(device, *value);
+        }
+    }
     Validate(defaults);
     defaults.gameData = fs::absolute(defaults.gameData).lexically_normal();
     return defaults;
@@ -78,6 +89,10 @@ std::string Update(std::string text, const Settings& settings) {
     volume << std::setprecision(std::numeric_limits<float>::max_digits10) << settings.masterVolume / 100;
     set("audio", "volume", volume.str());
     set("video", "vsync", settings.vsync ? "true" : "false");
+    for (size_t i = 0; i < GameActions.size(); ++i) {
+        set("controller", GameActions[i].key, RuntimeConfigFile::FormatString(CanonicalBinding(BindingDevice::Gamepad, settings.controls.gamepad[i])));
+        set("keyboard", GameActions[i].key, RuntimeConfigFile::FormatString(CanonicalBinding(BindingDevice::Keyboard, settings.controls.keyboard[i])));
+    }
     return text;
 }
 void WriteAtomically(const fs::path& file, const std::string& text) {

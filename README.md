@@ -57,6 +57,8 @@ The launcher can currently:
 - Select and verify an extracted DATA folder.
 - Start the native game in a visible window.
 - Set master volume and VSync for the next launch.
+- Rebind gamepad buttons, stick/trigger directions and keyboard keys, with
+  conflict detection, swapping and reset.
 - Enable **Experimental performance mode** to reduce GPU copy waits and repeated
   texture validation.
 - Display detected controllers and open saves, logs and the build guide.
@@ -73,8 +75,8 @@ preferences migrate automatically while retaining the original file. See the
 [settings guide](docs/settings.md) for the format and recovery instructions.
 Archive import, toolchain
 setup, translation and compilation are currently command-line steps. Resolution
-scaling, full input remapping and a validated 30/60 FPS selector are not available
-in the launcher yet.
+scaling, per-device input profiles, motion configuration and a validated 30/60 FPS
+selector are not available in the launcher yet.
 
 ## Controls
 
@@ -88,10 +90,17 @@ Current default gamepad mappings:
 | Start / Options | Plus: menu |
 | Back / Share | Minus: map or controls |
 
+Default keyboard controls are arrow keys for movement, Space for jump/confirm,
+Left Ctrl for yarn/cancel, Escape for Plus, Tab for Minus, X/Z for Wii A/B and F1
+for Home. Open **Controls** to change these mappings. Gamepad bindings apply to
+all players; keyboard bindings apply to player 1. See the
+[settings guide](docs/settings.md#control-bindings) for capture and conflict handling.
+
 Automated virtual SDL tests cover standard, PS5, Xbox 360 and Xbox One presets,
 release and unplug behavior. Physical DualSense input and directional reports
 still need resolution. These mappings are not a claim that every controller has
-been tested. General keyboard/gamepad rebinding remains future work.
+been tested. Per-device profiles, motion, player assignment and physical
+reconnection/cooperative play still need implementation or validation.
 
 ## Known limitations
 

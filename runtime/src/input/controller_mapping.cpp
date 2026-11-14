@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "kirby/input/wpad.h"
+#include "kirby/input/bindings.h"
+#include "controller_button_names.h"
+#include <aurora/pad.hpp>
 #include <dolphin/pad.h>
 #include <SDL3/SDL_gamepad.h>
+#include <SDL3/SDL_keyboard.h>
+#include <algorithm>
+#include <iostream>
+#include <optional>
 
 // Default axis/button layout adapted from Aurora's lib/dolphin/pad/pad.cpp.
 // The MIT License
@@ -26,9 +33,60 @@
 // SOFTWARE.
 
 namespace Kirby {
+namespace {
+std::optional<ControlBindings> configuredBindings;
+}
+void ConfigureControlBindings(const ControlBindings& bindings) {
+    ValidateControlBindings(bindings);
+    configuredBindings = bindings;
+}
+void ApplyConfiguredControlBindings() {
+    if (!configuredBindings) return;
+    using namespace aurora::binding;
+    const auto& controls = aurora::pad::controls();
+    const std::vector<ControlId> targets{
+        controls.up, controls.down, controls.left, controls.right,
+        controls.a, controls.b, controls.y, controls.x, controls.start,
+        aurora::pad::control_for_ext_button(PAD_BUTTON_BACK),
+        aurora::pad::control_for_ext_button(PAD_BUTTON_GUIDE)};
+    for (uint32_t port = 0; port < PAD_CHANMAX; ++port) {
+        std::vector<Binding> bindings;
+        for (size_t i = 0; i < GameActions.size(); ++i) {
+            const auto& token = configuredBindings->gamepad[i];
+            if (token != "disabled") {
+                const auto native = ControllerNames::FindNativeButton(token)->nativeButton;
+                Binding binding;
+                binding.target = targets[i];
+                if (PADIsAxisButton(native)) {
+                    using Direction = PhysicalInput::GamepadAxis::Direction;
+                    binding.input.control = PhysicalInput::GamepadAxis{
+                        static_cast<SDL_GamepadAxis>(PADAxisButtonAxis(native)),
+                        PADAxisButtonNegative(native) ? Direction::Negative : Direction::Positive};
+                    binding.threshold = PADAxisButtonThreshold(native) / 100.f;
+                } else binding.input.control = PhysicalInput::GamepadButton{static_cast<SDL_GamepadButton>(native)};
+                bindings.push_back(std::move(binding));
+            }
+            const auto& key = configuredBindings->keyboard[i];
+            if (port == 0 && key != "disabled") {
+                Binding binding;
+                binding.target = targets[i];
+                binding.input.control = PhysicalInput::Key{SDL_GetScancodeFromName(key.c_str())};
+                bindings.push_back(std::move(binding));
+            }
+        }
+        // The shared TOML schema owns bindings. Do not select Aurora's separate
+        // exclusive keyboard mode, which would hide the assigned controller.
+        PADSetKeyboardActive(port, FALSE);
+        const bool keyboard = port == 0 && std::ranges::any_of(configuredBindings->keyboard,
+            [](const auto& value) { return value != "disabled"; });
+        aurora::pad::set_action_bindings(port, std::move(bindings), targets, keyboard);
+    }
+    std::cout << "[kirby] configured gamepad/keyboard bindings applied\n";
+}
 void ConfigureControllerDefaults() {
     // Kirby uses positional face buttons, unlike Aurora's GameCube Xbox preset.
-    // Apply before PADInit; Aurora still loads each user's saved mappings later.
+    // Apply before PADInit. Video launches replace button controls from the
+    // shared settings afterward; isolated SDK probes keep these defaults.
     const PADDefaultMapping mapping{
         {{SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
          {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},

@@ -139,7 +139,9 @@ int main(int argc, char** argv) {
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL3_ProcessEvent(&event);
+            const bool ownsInput = SDL_GetKeyboardFocus() == window && !(SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED);
+            const bool consumed = !selfTest && ownsInput && state.bindingCapture.Handle(event, config.controls, settingsDirty);
+            if (!consumed) ImGui_ImplSDL3_ProcessEvent(&event);
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window))) running = false;
         }
@@ -152,9 +154,13 @@ int main(int argc, char** argv) {
                 state.gameStatus = WIFEXITED(result) && WEXITSTATUS(result) == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
             }
         }
-        ImGui_ImplSDLRenderer3_NewFrame(); ImGui_ImplSDL3_NewFrame();
         const bool focused = SDL_GetKeyboardFocus() == window &&
             !(SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED);
+        state.bindingCapture.Tick(SDL_GetTicks(), focused);
+        io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard);
+        if (!state.bindingCapture.Blocks(Kirby::BindingDevice::Gamepad)) io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+        if (!state.bindingCapture.Blocks(Kirby::BindingDevice::Keyboard)) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        ImGui_ImplSDLRenderer3_NewFrame(); ImGui_ImplSDL3_NewFrame();
         Launcher::SynchronizeInputFocus(focused);
         ImGui::NewFrame();
         state.gameRunning = game > 0;

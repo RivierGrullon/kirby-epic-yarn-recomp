@@ -6,7 +6,7 @@ Changes apply on the next game launch and do not require recompilation.
 
 Find VSync and experimental performance mode under **Display**, master volume
 under **Audio**, and the extracted game-folder selection under **Install**.
-**Controls** lists connected gamepads and default bindings. **Saves** opens the
+**Controls** lists connected gamepads and edits gamepad/keyboard bindings. **Saves** opens the
 existing save folder; **Diagnostics** provides logs, settings recovery and paths.
 The save action remains available on every page. Keyboard and SDL gamepad
 navigation use Dear ImGui's standard controls.
@@ -34,13 +34,85 @@ vsync = true
 `audio.volume` is the master gain from 0.0 to 1.0. The launcher displays it as a
 percentage. `gpu_resident_copies` controls **Experimental performance mode**; its
 compatibility and frame pacing remain under investigation. Separate stable 30/60
-FPS modes, display scaling, individual audio groups and remapping remain pending.
+FPS modes, display scaling, individual audio groups, per-device input profiles and
+motion configuration remain pending.
 Unimplemented upstream settings are not presented as supported Kirby options.
 
 Relative `dvd_root` paths resolve against the TOML file's directory. The launcher
 writes an absolute path. A missing settings file uses defaults without creating a
 file during direct game launch or inspection. Saves keep their existing location;
 changing a DATA folder does not move or replace them.
+
+## Control bindings
+
+Open **Controls**, select an action's gamepad or keyboard slot, then press the new
+input. Gamepad capture accepts buttons and signed stick/trigger directions. Center
+a stick before moving it; release the captured input before continuing. Initially
+held inputs and keyboard repeats are ignored. Escape or **Cancel capture** cancels
+without changing a pending binding. Keyboard capture has a **Use Escape** button
+for assigning Escape itself. Losing focus, disconnecting the captured controller,
+or waiting 15 seconds for an input cancels capture.
+
+If an input already belongs to another action, the launcher leaves both bindings
+unchanged and offers **Swap bindings** or cancellation. **Clear** removes one
+binding; movement, jump, yarn, Plus and Minus must retain at least one gamepad or
+keyboard binding. **Reset bindings** restores defaults. Use **Save settings** to
+persist changes; they apply on the next game launch. Launcher navigation uses its
+own standard controls and is unaffected by gameplay remapping.
+
+Gamepad mappings currently apply to every player, while keyboard input is shared
+with player 1's controller. Per-device profiles, player assignment, motion,
+adjustable deadzones and rumble options are not implemented here. Physical
+controllers, reconnect behavior during gameplay and cooperative play still need
+validation; automated virtual-device tests do not certify them.
+
+The optional `[controller]` and `[keyboard]` tables use these keys and defaults:
+
+| Key | Action | Gamepad token | Keyboard scancode name |
+| --- | --- | --- | --- |
+| `up` | Move up | `dpad_up` | `Up` |
+| `down` | Move down | `dpad_down` | `Down` |
+| `left` | Move left | `dpad_left` | `Left` |
+| `right` | Move right | `dpad_right` | `Right` |
+| `a` | Jump / Confirm (Wii 2) | `south` | `Space` |
+| `b` | Yarn / Cancel (Wii 1) | `east` | `Left Ctrl` |
+| `y` | Wii A | `north` | `X` |
+| `x` | Wii B | `west` | `Z` |
+| `start` | Pause / Plus | `start` | `Escape` |
+| `back` | Map / Minus | `back` | `Tab` |
+| `guide` | Home | `guide` | `F1` |
+
+Gamepad tokens use the pinned runtime's positional `ControllerNames` vocabulary.
+Keyboard values identify physical SDL scancodes, not typed characters; `disabled`
+explicitly removes either kind. Old settings files without these tables use the
+defaults. Unknown tokens, duplicate bindings within a device kind and required
+actions with both inputs disabled produce a settings error. Saving preserves
+unrelated keys and writes canonical binding names.
+
+For example, bind jump to the right shoulder and physical J key:
+
+```toml
+[controller]
+a = "right_shoulder"
+
+[keyboard]
+a = "J"
+```
+
+The configured-input diagnostic exercises these settings through the native
+WPAD bridge using virtual SDL devices; it does not boot a playable level. Run it
+from a disposable directory because Aurora persists its test port assignments:
+
+```bash
+project_root="$PWD"
+probe_dir="$(mktemp -d)"
+(
+  cd "$probe_dir" &&
+  "$project_root/build/native/WiiCompiled" --probe-configured-controls \
+    --config "$project_root/local/user/settings.toml" \
+    --game-data "$project_root/disc/DATA"
+)
+```
 
 ## Existing launcher preferences
 

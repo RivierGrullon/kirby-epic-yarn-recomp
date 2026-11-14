@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 #include "kirby/settings.h"
+#include "binding_capture.h"
 #include <filesystem>
 #include <string>
 
@@ -16,6 +17,7 @@ struct State {
     std::string dataStatus = "Select your extracted DATA folder";
     std::string gameStatus;
     std::string settingsError;
+    BindingCapture bindingCapture;
 };
 
 enum class Action {

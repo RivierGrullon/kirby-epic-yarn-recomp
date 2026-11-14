@@ -86,7 +86,8 @@ loaded the updated File 1 into Quilty Square with the unlocked house. The
 Aurora and the guest WPAD serializer, including release and unplug while held.
 The same checks cover standard, PS5, Xbox 360 and Xbox One presets. Kirby sets
 positional Xbox face-button defaults before PAD initialization, preserving the
-existing axis layout and leaving saved mappings to Aurora's normal loader.
+existing axis layout. Video launches apply the shared settings after PAD
+initialization; isolated SDK probes retain their existing defaults.
 
 `patches/aurora/controller-binding-overrides.patch` adds a binding overload that
 replaces selected physical controls rather than appending alternatives. It keeps
@@ -95,9 +96,19 @@ An explicit shared-keyboard option enables keyboard actions alongside a controll
 without changing the existing exclusive-keyboard mode. The SDL probe checks
 jump/yarn and plus/minus swaps, simultaneous keyboard/controller input, blocking,
 reset and reconnect with a new SDL instance across four virtual device presets.
-The settings schema and launcher remapping UI have not yet adopted this API;
-normal launches retain their existing mappings.
-It uses a virtual SDL device and its own input configuration; physical input and the
+`include/kirby/input/bindings.h` defines the common action/default model;
+`src/input/bindings.cpp` reuses `ControllerNames` positional tokens and SDL physical
+scancode names. The shared TOML schema validates conflicts and required actions.
+`src/input/controller_mapping.cpp` transforms the model into Aurora bindings,
+replacing only the selected physical controls while preserving routing and the
+existing sideways guest WPAD serializer. Keyboard bindings share player 1's port.
+The launcher capture model lives in `../launcher/binding_capture.{h,cpp}`; its
+Controls page offers capture, conflict/swap, clear and reset. See the
+[settings guide](../docs/settings.md#control-bindings) for scope and defaults.
+`--probe-configured-controls --config TOML` checks saved profiles through the guest
+WPAD reports across four virtual device presets, including obsolete binding
+removal, keyboard/controller sharing and release. These probes use virtual SDL
+devices and their own input configuration; physical input and the
 window's focus/capture behavior still require verification.
 Its `--monitor-controller` mode reads physical devices for 30 seconds without a
 virtual device or game window and logs changes at the SDL/PAD/guest boundaries.
