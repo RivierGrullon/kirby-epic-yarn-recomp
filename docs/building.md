@@ -16,6 +16,10 @@ dependencies. It does not install packages on Bazzite's host filesystem. Network
 access and several GB of free space are required. The base image is pinned by
 digest; the distribution package repositories are not snapshotted.
 
+Build commands use the host network namespace so the container can reach the
+host's DNS resolver on Bazzite. The container still receives no display sockets,
+audio sockets or GPU devices. Compilation does not start the game.
+
 ## Fetch sources and build tools
 
 ```bash

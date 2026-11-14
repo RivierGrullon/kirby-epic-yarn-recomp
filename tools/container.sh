@@ -9,6 +9,7 @@ if ! podman image exists "$image"; then
     echo 'Toolchain image missing. Run: bash tools/container.sh --build' >&2
     exit 1
 fi
-exec podman run --rm --userns=keep-id --security-opt label=disable \
+# Use the host resolver: rootless networking cannot always reach Bazzite's DNS stub.
+exec podman run --rm --network=host --userns=keep-id --security-opt label=disable \
     -e HOME=/tmp/kirby-build-home -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 \
     -v "$root:/workspace:rw" -w /workspace "$image" "$@"
