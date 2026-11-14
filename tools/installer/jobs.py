@@ -23,6 +23,7 @@ class Job:
         self.identifier = identifier
         self.emit = emit
         self.cancel = threading.Event()
+        self.committed = False
         self.lock_fd = None
         self.log = None
         self.log_path = self.workspace / "logs" / f"{identifier}.log"
@@ -57,7 +58,7 @@ class Job:
             self.lock_fd = None
 
     def check_cancel(self):
-        if self.cancel.is_set():
+        if self.cancel.is_set() and not self.committed:
             raise Cancelled("Setup cancelled; installed game and saves were left untouched")
 
     def write_log(self, data):
@@ -67,17 +68,28 @@ class Job:
         self.log.flush()
 
 
-def run_process(job, command, *, capture_limit=0,timeout=None,cancellable=True,log_output=True):
+def run_process(job, command, *, capture_limit=0,timeout=None,cancellable=True,log_output=True,
+                env=None,cwd=None,on_output=None,stop_when=None):
     """Log a tool's merged output; terminate its owned process group on failure."""
     started=time.monotonic()
+    process=None
+    stopping=None
     def check():
+        nonlocal stopping
         if cancellable:
             job.check_cancel()
         if timeout is not None and time.monotonic()-started>=timeout:
             raise TimeoutError(f"{Path(command[0]).name} timed out after {timeout} seconds")
+        if process is not None and stop_when is not None:
+            if stopping is None and stop_when():
+                stopping=time.monotonic()
+                try:os.killpg(process.pid,signal.SIGTERM)
+                except ProcessLookupError:pass
+            if stopping is not None and time.monotonic()-stopping>5 and process.poll() is None:
+                raise TimeoutError('Native startup probe did not stop after verification')
     check()
     process = subprocess.Popen([os.fspath(arg) for arg in command], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, start_new_session=True)
+                               stderr=subprocess.STDOUT, start_new_session=True,env=env,cwd=cwd)
     captured = bytearray()
     try:
         os.set_blocking(process.stdout.fileno(), False)
@@ -92,6 +104,8 @@ def run_process(job, command, *, capture_limit=0,timeout=None,cancellable=True,l
                         continue
                     if log_output:
                         job.write_log(data)
+                    if on_output is not None:
+                        on_output(data)
                     if capture_limit:
                         if len(captured) + len(data) > capture_limit:
                             raise ValueError("Setup tool output limit exceeded")

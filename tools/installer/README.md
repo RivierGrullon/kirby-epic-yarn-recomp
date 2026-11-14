@@ -4,9 +4,9 @@
 only JSON-lines events to stdout. Run it on the host, with Dolphin's CLI or the
 Dolphin Flatpak and 7z installed. Python uses only its standard library.
 
-One worker handles one inspection. The launcher must keep draining stdout and
+One worker handles one inspection or installation. The launcher must keep draining stdout and
 poll the process exit status. It may keep stdin open until the worker exits.
-`--inspect PATH` starts the same operation without a stdin request;
+`--inspect PATH` or `--install PATH` starts the corresponding operation without a stdin request;
 `--workspace PATH` changes the default `local/setup` workspace.
 
 The native launcher uses this worker from its Install page. Its asynchronous
@@ -27,13 +27,15 @@ Cancellation uses the same job ID on the worker's open stdin:
 ```
 
 IDs contain 1–80 ASCII letters, digits, underscores or hyphens. Requests are
-limited to 64 KiB per line. Unsupported operations, including `install`,
-`rebuild` and `repair`, fail explicitly. Inspection alone is not an installed
+limited to 64 KiB per line. `install` accepts the same source field as `inspect`.
+Other operations, including `rebuild` and `repair`, fail explicitly. Inspection alone is not an installed
 or successfully compiled game.
 
 Events include `version`, `job_id`, a monotonically increasing `sequence`,
 `stage` and `state`. Stages are `inspect`, `hash`, `unpack`, `extract`,
-`validate` and `request`. The final `inspect` event has `complete`, `failed` or
+`validate` and `request`; installation additionally uses `prepare`, `translate`,
+`compile`, `verify`, `publish` and `select`. The final event uses the requested
+operation as its stage and has `complete`, `failed` or
 `cancelled` state. The process exits with 0, 1 or 2 respectively. Active control
 requests other than cancellation are rejected without starting another job.
 
@@ -43,7 +45,7 @@ the log contains external tool output, bounded to 64 MiB. Paths and errors are
 JSON strings, not shell commands. Invoke the worker and tools with argument
 arrays. Tools receive no control-channel stdin and run in owned process groups.
 
-A successful result contains:
+A successful inspection result contains:
 
 | Field | Meaning |
 | --- | --- |
@@ -70,8 +72,45 @@ install stages must revalidate or copy their selected data before publishing.
 The workspace lock prevents concurrent setup jobs. Failed or cancelled work
 removes only its temporary directory; existing caches, `disc/`, executables,
 settings and saves remain intact. Raw game data and logs stay local and ignored
-by Git. This worker currently runs extraction tools only; translation/build
-operations and atomic executable selection are still being integrated.
+by Git. An installation may retain compiler caches after failure or cancellation.
+It never overwrites `build/native`, user settings or saves.
+
+## Native installation
+
+Prepare the pinned dependencies and local toolchain image as described in
+[Building](../../docs/building.md), then run on the host:
+
+```bash
+python3 tools/install.py --install "/path/to/extracted/DATA"
+```
+
+The worker inspects the selected source, checks pinned dependencies, resolves
+the toolchain image to an immutable ID, copies and rechecks the DOL, translates,
+and builds in an owned cache under `local/setup/builds/cache-SHA256/`. Compile
+parallelism is bounded by available RAM and CPUs, up to four jobs. Translation
+receipts hash their generated files; native receipts hash the executable and
+required DSP coefficient resource. Changed or damaged inputs invalidate reuse.
+
+Verification runs on an independent copy: Linux x86-64 ELF and build provenance,
+bootstrap, SDK initialization, disc access, ES metadata, and a hidden first-frame
+probe with initialized controller/audio services. Probes use dummy audio, zero
+volume and temporary user data. They do not certify visible smoothness, audible
+sync, Fountain Gardens gameplay or whole-game compatibility.
+
+Only a verified bundle is copied to `local/setup/installations/SHA256/`, with a
+manifest identifying the source, checkout, toolchain and artifact hashes. The
+worker then atomically replaces `local/user/installation.json`, retaining the
+previous ID for rollback. Mutable compiler outputs are never the selected copy.
+Cancellation before selection preserves the old pointer. Once selection commits,
+the terminal result reports `committed: true` even if a cancellation arrives late.
+The install result also includes `installation_id`, `executable`, `data_root`,
+`translation_reused` and `build_reused`.
+
+The current launcher still offers inspection/import only and runs its sibling
+developer executable. It does not yet consume the installation pointer. Native
+Install/repair/rollback controls and Play/build locking remain to be integrated.
+The worker requires an existing toolchain image; automatic toolchain preparation
+is pending. Repeating `--install` reuses matching caches and rebuilds damaged ones.
 
 ## Managed build containers
 
@@ -96,5 +135,4 @@ receipt metadata is rejected without touching other containers.
 
 The shell interface `container.sh --managed CIDFILE JOB TOKEN IMAGE_ID -- COMMAND`
 is internal to this runner. Ordinary `container.sh COMMAND` and `--build` retain
-their behavior. The runner does not add build buttons to the frontend by itself;
-build manifests, verification and selection remain the next integration.
+their behavior. The runner does not add build buttons to the frontend by itself.

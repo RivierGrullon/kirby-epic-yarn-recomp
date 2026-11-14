@@ -132,3 +132,12 @@ class ContainerJobsTests(unittest.TestCase):
                 run_process(job,[sys.executable,'-c','import time;time.sleep(30)'],
                             timeout=0.1,cancellable=False,log_output=False,capture_limit=1024)
             self.assertLess(time.monotonic()-started,3)
+
+    def test_native_probe_can_finish_gracefully_after_observed_output(self):
+        output=bytearray()
+        script="import signal,sys,time;signal.signal(signal.SIGTERM,lambda *_:sys.exit(0));print('ready',flush=True);time.sleep(30)"
+        with self.job() as job:
+            result=run_process(job,[sys.executable,'-c',script],timeout=5,capture_limit=1024,
+                               on_output=output.extend,stop_when=lambda:b'ready' in output,
+                               cwd=self.root,env=dict(os.environ,SDL_AUDIO_DRIVER='dummy'))
+        self.assertEqual(result,b'ready\n')

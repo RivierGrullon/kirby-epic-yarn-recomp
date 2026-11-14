@@ -159,7 +159,20 @@ The staged native game is `"$stage_root/build/WiiCompiled"`. Run bootstrap check
 with an explicit `--game-data DATA` and keep diagnostic user data separate.
 Staging alone does not install or select the new executable. The normal launcher
 stays at `build/native/kirby-launcher`; build coordination, native verification,
-installation manifests and atomic executable selection are still being integrated.
+installation manifests and atomic executable selection are available through the
+host-side worker:
+
+```bash
+python3 tools/install.py --install "/path/to/extracted/DATA"
+```
+
+This requires the pinned dependencies and existing toolchain image prepared
+above. It builds in a cache, verifies a separate native copy with silent hidden
+startup probes, and writes a verified bundle and atomic selection pointer under
+`local/`. It preserves the developer executable and user settings/saves.
+The current launcher does not yet read that pointer or offer compilation,
+repair and rollback buttons. See [Native installation](../tools/installer/README.md#native-installation)
+for result fields, cache behavior and remaining integration limits.
 
 ## Run on the host
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""JSON-lines own-disc setup worker. Currently supports inspect and cancel."""
+"""JSON-lines own-disc inspection and verified native installation worker."""
 import argparse
 import json
 import os
@@ -14,6 +14,7 @@ import uuid
 from kirby import ROOT
 from installer.jobs import Cancelled, Job
 from installer.sources import inspect_source
+from installer.pipeline import execute_install
 
 LIMIT = 64 * 1024
 
@@ -53,10 +54,13 @@ class RequestReader:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, default=ROOT / "local/setup")
-    parser.add_argument("--inspect", type=Path, help="Inspect a selected source without a stdin request")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--inspect", type=Path, help="Inspect a selected source without a stdin request")
+    selection.add_argument("--install", type=Path, help="Build, verify and select a native copy from this source")
     args = parser.parse_args()
     sequence = 0
     identifier = None
+    operation = "inspect"
     output_lock = threading.Lock()
 
     def emit(event):
@@ -67,13 +71,16 @@ def main():
 
     try:
         reader = RequestReader(sys.stdin.fileno())
-        request = (dict(id=uuid.uuid4().hex, operation="inspect", source=str(args.inspect))
-                   if args.inspect is not None else reader.read())
+        direct = args.inspect is not None or args.install is not None
+        request = (dict(id=uuid.uuid4().hex, operation="install" if args.install is not None else "inspect",
+                        source=str(args.install if args.install is not None else args.inspect))
+                   if direct else reader.read())
         identifier = request.get("id")
         # Validate the ID before it can become a filename; entering acquires the job lock.
         job = Job(args.workspace, identifier, emit)
-        if request.get("operation") != "inspect":
-            raise ValueError("Supported setup operations are inspect and cancellation of an active inspect")
+        operation = request.get("operation")
+        if operation not in ("inspect", "install"):
+            raise ValueError("Supported setup operations are inspect, install and cancellation of an active job")
         selected = request.get("source")
         if not isinstance(selected, str) or not selected or "\0" in selected:
             raise ValueError("A nonempty source path is required")
@@ -96,27 +103,29 @@ def main():
                         return
                     emit(dict(stage="request", state="rejected", error="Only cancellation of the active job is accepted"))
 
-            control_thread = threading.Thread(target=read_control) if args.inspect is None else None
+            control_thread = threading.Thread(target=read_control) if not direct else None
             try:
                 if control_thread is not None:
                     control_thread.start()
                 emit(dict(stage="inspect", state="started", log_path=str(job.log_path)))
                 result = inspect_source(selected, job)
+                if operation == "install":
+                    result = execute_install(job, ROOT, result)
                 finished.set()
                 if control_thread is not None:
                     control_thread.join()
                 job.check_cancel()
-                emit(dict(stage="inspect", state="complete", result=result))
+                emit(dict(stage=operation, state="complete", result=result))
             finally:
                 finished.set()
                 if control_thread is not None:
                     control_thread.join()
         return 0
     except Cancelled as error:
-        emit(dict(stage="inspect", state="cancelled", error=str(error)))
+        emit(dict(stage=operation, state="cancelled", error=str(error)))
         return 2
     except (EOFError, OSError, ValueError, UnicodeError) as error:
-        emit(dict(stage="inspect", state="failed", error=str(error)))
+        emit(dict(stage=operation, state="failed", error=str(error)))
         return 1
 
 

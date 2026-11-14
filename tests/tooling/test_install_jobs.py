@@ -65,10 +65,20 @@ class SetupJobsTests(unittest.TestCase):
             timer.join()
             self.assertLess(time.monotonic() - started, 5)
         pid = int(child_pid.read_text())
-        # A reparented child may briefly be a zombie; it must not remain running.
+        # SIGKILL delivery is asynchronous when the host is busy compiling.
+        # Allow the scheduler to deliver it; a reparented zombie is acceptable.
         status = Path(f"/proc/{pid}/stat")
-        if status.exists():
-            self.assertEqual(status.read_text().split(") ", 1)[1][0], "Z")
+        deadline = time.monotonic() + 1
+        while status.exists():
+            try:
+                state = status.read_text().split(") ", 1)[1][0]
+            except FileNotFoundError:
+                break
+            if state == "Z":
+                break
+            if time.monotonic() >= deadline:
+                self.fail(f"Owned child {pid} is still running after cancellation: {state}")
+            time.sleep(0.01)
 
     def test_image_cache_is_bound_to_selected_bytes_and_revalidated(self):
         data = self.root / "fixture/DATA"
@@ -124,7 +134,7 @@ class SetupJobsTests(unittest.TestCase):
 
     def test_worker_rejects_unsupported_operations_and_malformed_requests(self):
         for request in ('{', json.dumps(dict(id="../unsafe", operation="inspect", source="x")),
-                        json.dumps(dict(id="job", operation="install", source="x"))):
+                        json.dumps(dict(id="job", operation="unsupported", source="x"))):
             result = subprocess.run([sys.executable, str(ROOT / "tools/install.py"), "--workspace", str(self.root / "setup")],
                                     input=request + "\n", capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 1)
