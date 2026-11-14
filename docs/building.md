@@ -47,8 +47,10 @@ bash tools/container.sh python3 tools/kirby.py prepare
 
 The helper also accepts `.iso`, `.rvz`, or a `.7z` containing exactly one WBFS.
 It extracts the full DATA partition under `disc/DATA` and verifies the revision.
-It reuses a completed, verified extraction and refuses to overwrite an incomplete
-nonempty `disc/` directory. Move a partial extraction aside before retrying.
+It refuses to overwrite a nonempty `disc/` directory, including one with an old
+completion marker. That marker does not identify a newly selected image. Move
+the directory aside only when you want a fresh export; existing play data can
+remain where it is.
 
 For a folder already extracted with Dolphin, place the complete DATA contents at
 `disc/DATA/`, including `sys/`, `files/`, `ticket.bin` and `tmd.bin`, and run
@@ -64,6 +66,31 @@ f4280a2b0709bfde4132be22e9f7fa8ecfa2a130
 Preparation checks this against Swiftshine/key, validates executable sections and
 function ranges, and derives the startup registers from the DOL. Expected values
 are entry `0x80004050`, r2 `0x808EE8E0` and r13 `0x808E73E0`.
+
+### Inspect another source without replacing the current game
+
+```bash
+python3 tools/install.py --inspect "/path/to/your-game.7z"
+python3 tools/install.py --inspect "/path/to/extracted/DATA"
+```
+
+The setup worker accepts DATA folders, Dolphin export parents, WBFS, ISO, RVZ
+and a 7z containing exactly one WBFS. Image inspection exports the full DATA
+partition into a temporary directory, verifies it, then selects a cache under
+`local/setup/sources/`. It can take as long as extraction. The completed event's
+`result.data_root` is the verified folder. It does not replace `disc/`, change
+the launcher's selected data, translate, compile, or start the game.
+
+Reusing an image cache requires hashing the selected image again and rechecking
+the exported layout. Validation covers the exact DOL hash, Wii/revision and title
+metadata, and every FST entry's path, file size and logical extent. It does not
+authenticate Nintendo signatures or all asset contents. Keep your dump intact.
+
+The worker emits JSON lines; external tool output stays in `local/setup/logs/`.
+Only one job can use a setup workspace at a time. SIGINT/SIGTERM cancel active
+work and remove its temporary export. See [the worker protocol](../tools/installer/README.md)
+for launcher integration. Import and compilation from the Install page remain
+under development; these commands currently provide source inspection only.
 
 ## Translate and compile
 

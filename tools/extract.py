@@ -18,11 +18,10 @@ def main():
         if not source.is_file():
             raise ValueError(f"Input not found: {source}")
         dol = ROOT / "disc/DATA/sys/main.dol"
-        if dol.is_file():
-            verify_hash(dol.read_bytes(), EXPECTED_SHA1)
-            if (ROOT / "disc/.extraction-complete").is_file():
-                print("Verified extraction already exists in disc/DATA; left untouched")
-                return 0
+        output = ROOT / "disc"
+        if output.exists() and any(output.iterdir()):
+            raise ValueError("disc/ is nonempty; left untouched. Use tools/install.py --inspect SOURCE "
+                             "to verify a selected source separately, or move disc/ aside for a fresh export")
         if source.suffix.lower() == ".7z":
             sevenzip = shutil.which("7z") or shutil.which("7zz")
             if not sevenzip:
@@ -39,6 +38,9 @@ def main():
             # Existing members are tested against the archive before reuse.
             target = destination / members[0]
             if target.exists():
+                # Test the selected archive payload too; matching an old extracted
+                # member's CRC cannot establish that this archive is readable.
+                subprocess.run([sevenzip, "t", "-spd", "--", str(source), members[0]], check=True)
                 import zlib
                 metadata = next(block for block in listing.split("\n\n") if f"Path = {members[0]}\n" in block)
                 expected_crc = next(line[6:] for line in metadata.splitlines() if line.startswith("CRC = "))
@@ -49,13 +51,10 @@ def main():
                 if f"{crc:08X}" != expected_crc.upper():
                     raise ValueError(f"Existing WBFS failed archive CRC: {target}; left untouched")
             else:
-                subprocess.run([sevenzip, "x", "-y", f"-o{destination}", str(source), members[0]], check=True)
+                subprocess.run([sevenzip, "x", "-y", "-spd", f"-o{destination}", "--", str(source), members[0]], check=True)
             source = target
         if source.suffix.lower() not in (".wbfs", ".iso", ".rvz"):
             raise ValueError("Supply .wbfs, .iso, .rvz, or a .7z containing one WBFS")
-        output = ROOT / "disc"
-        if output.exists() and any(output.iterdir()):
-            raise ValueError("disc/ is nonempty without a completion marker; move the partial extraction before retrying")
         output.mkdir(exist_ok=True)
         if shutil.which("dolphin-tool"):
             command = ["dolphin-tool"]
