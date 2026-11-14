@@ -476,6 +476,70 @@ under ignored `build-logs/`. Experimental executable SHA-256:
 The patch is local at `local/stage54-cache-candidate.patch`; no game-generated
 source, binaries or captures were added to Git. Owned test sessions were closed.
 
+## Cache capacity recheck and variable draw workload
+
+A new moving Fountain Gardens profile of the published `d491b04` runtime
+collected 6,004 main-thread user-space samples over 30 seconds. Kirby traversed
+x=39.561–77.598 and y=22.466–27.621 in section 1. Memory moves accounted for
+10.16% of samples and byte comparisons for 3.78%; 277 samples (4.61% of the total)
+were memory moves with `CacheTextureBinding` as their first native renderer caller.
+Sampling overhead means this is a workload investigation, not an uninstrumented
+performance comparison.
+
+An independent presentation-counter observer saw 1,795 complete intervals with
+no missed increments and four intervals over 25 ms. Mean reported main-thread
+CPU time was 8.349 ms per interval. The longest observed counter interval took
+46.782 ms, including 32.079 ms of reported CPU time and 4.861 ms of run-queue delay.
+CPU package readings ranged from 87 to 97 C and thermal-limit counters increased.
+The stopped-stack and sampling evidence still does not identify one function
+responsible for every long interval.
+
+The frame log also shows substantial changes in draw workload: the median was
+443 GX draw commands between samples; one long interval contained 4,103 draws, two VI fields
+and no GPU readback. Other intervals with more than 3,000 draws still completed
+near 16.7 ms. Draw count alone therefore does not explain each pause.
+`tools/frame_stats.py` now includes draw-count and validation-byte deltas in each
+reported longest interval, alongside its existing waits and readbacks. These are
+cumulative-counter differences between samples, not GPU timestamps or logic steps.
+
+A further cache experiment preserved allocated snapshot storage on identity reuse
+and counted retained vector capacity against a 128 MiB CPU snapshot budget.
+It passed 456 Vulkan checks, including repeated traversal of more than 16 sources,
+byte-pressure retirement, large allocations retained by small replacements and
+exact pixels after texture/palette identity reuse. The budget excludes GPU-decoded
+textures, cache metadata and allocator overhead.
+
+Same-process comparisons then measured hardware user-space instructions and CPU
+time at fixed positions, with visible Vulkan, experimental copies and VSync off.
+The entrance series used 16/64/128/64/16/128/16 entries and twelve seconds per phase;
+the tower series used 16/128/128/16 entries and ten seconds per phase. Both used two
+seconds of settling. Position stayed fixed within each series, and queued/created
+pipeline counts stayed `(0,302)`. Hardware counters were not multiplexed.
+The comparisons used muted game output and changed no system volume.
+
+| Scene / entries | Mean CPU ms / submission | Mean million instructions / submission | p99 interval range |
+| --- | ---: | ---: | ---: |
+| Entrance, 16 | 5.070 | 25.292 | 17.667–17.713 ms |
+| Entrance, 64 | 5.041 | 25.390 | 17.697–17.700 ms |
+| Entrance, 128 | 4.866 | 24.548 | 17.647–17.668 ms |
+| Tower, 16 | 8.264 | 46.256 | 17.631–17.669 ms |
+| Tower, 128 | 8.306 | 45.496 | 17.723–17.741 ms |
+
+All phases remained near 59.94 VI submissions/s. Increasing capacity to 128 nearly
+eliminated copied snapshots and reduced instructions by about 2.9% at the entrance
+and 1.6% at the tower. It did not establish a consistent CPU-time or pacing benefit
+in the more demanding scene. Frequencies and thermal-limit events still varied;
+the counter measurements do not turn these short stationary tests into a
+whole-game or Legion Go result.
+
+The experimental cache change was **not retained**. The production 16-entry
+policy and previously verified executable remain in use. Its patch, executable
+and raw evidence stay local under `local/experiments/stage68-cache/` and ignored
+`build-logs/stage66-*` / `stage68-*`. The host rebooted between the moving profile
+and capacity comparisons; only variants within the same process are compared.
+The next investigation targets CPU work during draw bursts rather than assuming
+fewer copied bytes will resolve the remaining pauses.
+
 ## Fragmented FIFO packet lengths
 
 The stream decoder previously called the vertex-layout callback again whenever

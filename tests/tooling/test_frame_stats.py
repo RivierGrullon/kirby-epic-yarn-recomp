@@ -50,6 +50,11 @@ class FrameStatsTests(unittest.TestCase):
         self.assertEqual(longest["between_submissions_ms"], 21)
         self.assertEqual(longest["vi_fields"], 2)
         self.assertEqual(longest["readbacks_since_previous_sample"], 1)
+        self.assertEqual(longest["draws_since_previous_sample"], 4)
+        self.assertEqual(longest["validation_bytes_since_previous_sample"], 30)
+        shorter = report["longest_intervals"][1]
+        self.assertEqual(shorter["draws_since_previous_sample"], 3)
+        self.assertEqual(shorter["validation_bytes_since_previous_sample"], 20)
 
     def test_time_window_excludes_transitions_before_and_after_it(self):
         report = frame_stats.summarize(load(fixture()), start=1.02, end=1.07)

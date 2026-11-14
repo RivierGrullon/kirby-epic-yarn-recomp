@@ -81,6 +81,8 @@ def summarize(samples, *, start=0, end=None, threshold_ms=25):
             "between_submissions_ms": (row["start_ns"] - previous["finish_ns"]) / 1e6,
             "vi_fields": row["vi_field"] - previous["vi_field"],
             "readbacks_since_previous_sample": row["readbacks"] - previous["readbacks"],
+            "draws_since_previous_sample": row["draws"] - previous["draws"],
+            "validation_bytes_since_previous_sample": row["validation_bytes"] - previous["validation_bytes"],
         })
     first, last = rows[0], rows[-1]
     seconds = (last["start_ns"] - first["start_ns"]) / 1e9
