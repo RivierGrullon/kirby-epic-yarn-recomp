@@ -70,6 +70,31 @@ install stages must revalidate or copy their selected data before publishing.
 The workspace lock prevents concurrent setup jobs. Failed or cancelled work
 removes only its temporary directory; existing caches, `disc/`, executables,
 settings and saves remain intact. Raw game data and logs stay local and ignored
-by Git. This worker currently runs extraction tools only: owning container build
-lifetimes, translation/build manifests and atomic executable selection remain
-part of the subsequent installation stages.
+by Git. This worker currently runs extraction tools only; translation/build
+operations and atomic executable selection are still being integrated.
+
+## Managed build containers
+
+`installer.container.run_container` runs build tools through the same container
+wrapper as developer commands. It resolves the local toolchain tag to an
+immutable image ID, records ownership before starting, and applies both a job
+label and a unique per-run token. Commands remain argument arrays.
+
+Stopping the Podman client alone is insufficient to prove that its container
+and compiler children stopped. After success, failure or cancellation, the
+runner force-removes only containers matching both ownership labels and queries
+the engine again to verify absence. Cleanup ignores the cancellation flag and
+has its own deadlines and bounded output. CID files provide runtime information;
+they are not trusted as removal targets.
+
+If cleanup cannot be verified, `CleanupError` retains the private ownership
+receipt under `staging/container-*/ownership.json`. The result is a failure,
+not successful cancellation or installation. After acquiring the workspace
+lock, a subsequent coordinator can call `recover_containers(job)` to validate
+receipts and recheck/remove those exact engine objects. Invalid or linked
+receipt metadata is rejected without touching other containers.
+
+The shell interface `container.sh --managed CIDFILE JOB TOKEN IMAGE_ID -- COMMAND`
+is internal to this runner. Ordinary `container.sh COMMAND` and `--build` retain
+their behavior. The runner does not add build buttons to the frontend by itself;
+build manifests, verification and selection remain the next integration.

@@ -8,6 +8,7 @@ import selectors
 import signal
 import subprocess
 import threading
+import time
 
 
 class Cancelled(Exception):
@@ -66,9 +67,15 @@ class Job:
         self.log.flush()
 
 
-def run_process(job, command, *, capture_limit=0):
+def run_process(job, command, *, capture_limit=0,timeout=None,cancellable=True,log_output=True):
     """Log a tool's merged output; terminate its owned process group on failure."""
-    job.check_cancel()
+    started=time.monotonic()
+    def check():
+        if cancellable:
+            job.check_cancel()
+        if timeout is not None and time.monotonic()-started>=timeout:
+            raise TimeoutError(f"{Path(command[0]).name} timed out after {timeout} seconds")
+    check()
     process = subprocess.Popen([os.fspath(arg) for arg in command], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, start_new_session=True)
     captured = bytearray()
@@ -77,21 +84,22 @@ def run_process(job, command, *, capture_limit=0):
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
             while selector.get_map():
-                job.check_cancel()
+                check()
                 for key, _ in selector.select(0.1):
                     data = os.read(key.fd, 64 * 1024)
                     if not data:
                         selector.unregister(key.fileobj)
                         continue
-                    job.write_log(data)
+                    if log_output:
+                        job.write_log(data)
                     if capture_limit:
                         if len(captured) + len(data) > capture_limit:
                             raise ValueError("Setup tool output limit exceeded")
                         captured.extend(data)
             while process.poll() is None:
-                job.check_cancel()
-                job.cancel.wait(0.05)
-        job.check_cancel()
+                check()
+                time.sleep(0.05)
+        check()
         if process.returncode:
             raise ValueError(f"{Path(command[0]).name} exited with code {process.returncode}; see {job.log_path}")
         return bytes(captured)
