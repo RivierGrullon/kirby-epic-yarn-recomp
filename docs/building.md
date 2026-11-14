@@ -93,6 +93,13 @@ build/native/WiiCompiled --video --game-data disc/DATA
 The build container intentionally has no display sockets or GPU devices mounted;
 run visible graphics on the host. This is not yet a portable packaged build.
 
+For a silent, unmapped Vulkan diagnostic, launch on the host with
+`SDL_AUDIO_DRIVER=dummy` and `--video-hidden --volume 0`. A virtual test gamepad
+can deliver background events when `SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1` is
+set for that process. This does not change normal launcher input behavior.
+Keep diagnostic saves separate from normal play; hidden results do not certify
+visible pacing or audible synchronization. See [performance results](performance.md#hidden-native-gameplay-and-ten-minute-movement-check).
+
 The launcher and game share [versioned settings](settings.md), including the DATA
 path, master volume, VSync and experimental copy mode. Settings changes do not
 require a build. Existing `launcher.cfg` preferences migrate on launcher startup.

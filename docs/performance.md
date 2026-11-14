@@ -578,8 +578,8 @@ The candidate passed 25,344 direct/indirect comparisons: 21,568 fast uploads and
 3,776 fallbacks. Its 74 Python checks, including native Vulkan startup and exit,
 passed; the unchanged C++ unit targets passed all 25 CTest checks, and the
 renderer passed 440 synthetic Vulkan XFB checks. These checks ran without audio
-output. Fountain Gardens comparison and audible synchronization remain pending;
-the candidate has not replaced the executable launched by the local frontend.
+output. The subsequent hidden gameplay checks below passed; visible pacing and
+audible synchronization remain pending.
 
 `--benchmark-pos-matrix --volume 0 --game-data disc/DATA` also times repeated
 uploads into a minimal FIFO consumer, including the native registry dispatch and
@@ -594,6 +594,68 @@ matching checksums. This establishes lower component cost in that microbenchmark
 it does not measure the conservative context boundary at generated game callers.
 Local evidence: ignored `build-logs/stage69-final-matrix-benchmark.{log,json}`,
 `stage69-final-python-suite.log`, `stage69-ctest.log` and `stage69-gpu.log`.
+
+### Hidden native gameplay and ten-minute movement check
+
+Both the previous executable and the candidate reached Quilty Square, Grass Land
+and Fountain Gardens using ordinary Linux virtual-gamepad events through SDL.
+Right/left movement, jumping and yarn input were exercised. The diagnostic used
+`--video-hidden --gpu-resident-copies --no-vsync --volume 0`,
+`SDL_AUDIO_DRIVER=dummy` and `SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1`.
+The last hint permits gamepad input to the unmapped test window; no desktop focus,
+unlock operation or system-volume change was needed. Each run used its own save
+copy. These were native Vulkan runs, not Dolphin or prerecorded video.
+
+Separate thirty-second stationary windows on the Acer/RTX 3050 host measured:
+
+| Scene / executable | Main CPU ms / submission | GX draws / submission | p99 interval | Maximum |
+| --- | ---: | ---: | ---: | ---: |
+| Entrance, previous | 4.787 | 296.4 | 17.744 ms | 17.909 ms |
+| Entrance, candidate | 4.662 | 287.5 | 17.711 ms | 17.937 ms |
+| Tower, previous | 7.939 | 1887.1 | 17.731 ms | 17.897 ms |
+| Tower, candidate | 7.905 | 1931.6 | 17.789 ms | 33.602 ms |
+
+Positions were close rather than identical: entrance x=16.101/16.141 and tower
+x=70.330/70.245. Animation phases and draw demand differed; sampled temperatures
+reached 83 C in the previous tower run and 94 C in the candidate run. These
+short windows do not establish a causal FPS or tail-latency improvement. The
+candidate performed about 78/102 fast matrix uploads per submission at the
+entrance/tower, with no fallback uploads. Multiplying the isolated component
+saving by those counts suggests only about 0.01 ms per submission before other
+costs; it cannot explain or resolve large frame stalls by itself.
+
+A subsequent 600.001-second candidate run continuously moved, jumped and used
+yarn in Fountain Gardens section 1. The 11,967 read-only position samples covered
+x=39.832–77.239 and y=22.539–27.862. There were no debugger stops or concurrent
+compilation inside that interval. Analysis of 35,961 complete CSV intervals gave
+59.940 native VI submissions/s, p95 17.502 ms, p99 17.704 ms and maximum 19.452 ms,
+with no interval over 25 ms. Mean main-thread CPU time was 6.615 ms per counted
+submission. The CSV counted 35,961 successful surface-present calls and 3,295
+readbacks. Surface-present calls still do not establish compositor scanout.
+
+The interval produced 2,400,003 audio DMA blocks, approximately 32,000 stereo
+frames per host second. It added zero expired-fetch drops and the host sink
+reported no queue-overflow drop. Earlier debugger setup had already increased
+the cumulative DMA-drop counter; the reported zero is the measured interval's
+delta. Output gain remained zero with SDL's dummy audio driver. These counters
+do not measure waveform continuity, underruns, musical tempo or audible A/V sync.
+Created pipelines increased from 302 to 303; empty queues at sample boundaries
+do not exclude compilation between them.
+
+GPU XFB captures before the long interval were inspected for obvious geometry
+regressions. They retain normal animation differences and are not an exact-pixel
+comparison. The test does not complete the level, certify visible 60 FPS or
+validate physical controllers, co-op, Legion Go/AMD or whole-game compatibility.
+The owned session later stopped at its time limit. Local evidence is under
+ignored `build-logs/stage70-*`, including the comparison JSON files, native GPU
+captures, `stage70-long-motion-{states,summary}.json` and the complete frame log.
+
+The tested runtime is selected by the existing local launcher at
+`build/native/WiiCompiled`; its SHA-256 is
+`68271cc2770f5830a7bd96f7943e65b71071d41183c0c13001d28feb4f379e0e`.
+The previous executable and unchanged launcher are preserved under
+`local/verified-builds/before-stage70/`. This is a local development update,
+not a release or a claim that the remaining visible pacing problem is fixed.
 
 ## Fragmented FIFO packet lengths
 
