@@ -188,7 +188,8 @@ add_test(NAME kirby_xfb COMMAND kirby_xfb_test)
 
 # WPAD uses Aurora's native input backend; guest reports/callbacks stay in Kirby's bridge.
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/native-src/input/wpad.cpp"
-    "${KIRBY_PROJECT_ROOT}/runtime/src/input/controller_mapping.cpp")
+    "${KIRBY_PROJECT_ROOT}/runtime/src/input/controller_mapping.cpp"
+    "${KIRBY_PROJECT_ROOT}/runtime/src/input/controller_motion.cpp")
 target_link_libraries(WiiCompiled PRIVATE aurora::wpad absl::flat_hash_map)
 
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/threading/continuations.cpp"
@@ -207,6 +208,7 @@ add_test(NAME kirby_cache COMMAND kirby_cache_test)
 
 add_library(kirby_settings STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/app/settings.cpp")
 target_sources(kirby_settings PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/input/bindings.cpp")
+target_sources(kirby_settings PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/input/motion_device.cpp")
 target_include_directories(kirby_settings PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/include"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${MKW_AURORA_DIR}/include")
 target_link_libraries(kirby_settings PRIVATE mkw::toml11 ${AURORA_SDL3_TARGET})
@@ -220,6 +222,9 @@ add_test(NAME kirby_settings COMMAND kirby_settings_test)
 add_executable(kirby_bindings_test "${KIRBY_PROJECT_ROOT}/tests/unit/bindings_test.cpp")
 target_link_libraries(kirby_bindings_test PRIVATE kirby_settings)
 add_test(NAME kirby_bindings COMMAND kirby_bindings_test)
+add_executable(kirby_motion_test "${KIRBY_PROJECT_ROOT}/tests/unit/motion_test.cpp")
+target_link_libraries(kirby_motion_test PRIVATE kirby_settings ${AURORA_SDL3_TARGET})
+add_test(NAME kirby_motion COMMAND kirby_motion_test)
 add_executable(kirby_binding_capture_test "${KIRBY_PROJECT_ROOT}/tests/unit/binding_capture_test.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/binding_capture.cpp")
 target_include_directories(kirby_binding_capture_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")

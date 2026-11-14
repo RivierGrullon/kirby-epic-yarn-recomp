@@ -63,6 +63,14 @@ int main() {
     Kirby::SaveSettings(file, settings);
     Check(Kirby::LoadSettings(file).controls == settings.controls, "Bindings did not persist across reload");
     const auto validBindings = Read(file);
+    settings.motion.tilt = false; settings.motion.invertX = true;
+    settings.motion.pointer = Kirby::PointerSource::RightStick;
+    settings.motion.sensitivity = 2.25f; settings.motion.tiltGain = 1.75f;
+    settings.motion.calibrationDevice = "00112233445566778899aabbccddeeff";
+    settings.motion.bias = {.01f, -.02f, .03f};
+    Kirby::SaveSettings(file, settings);
+    Check(Kirby::LoadSettings(file).motion == settings.motion, "Motion settings/calibration did not round-trip");
+    Write(file, validBindings);
     auto invalidBindings = settings;
     invalidBindings.controls.gamepad[jump] = "east";
     Reject([&] { Kirby::SaveSettings(file, invalidBindings); });
@@ -70,7 +78,13 @@ int main() {
 
     for (const auto* invalid : {"[broken", "[kirby]\nschema_version = 99\n",
             "[kirby]\nschema_version = 1\n[audio]\nvolume = nan\n",
-            "[kirby]\nschema_version = 1\n[paths]\ndvd_root = false\n"}) {
+            "[kirby]\nschema_version = 1\n[paths]\ndvd_root = false\n",
+            "[kirby]\nschema_version = 1\nmotion = 1\n[motion]\ntilt = 1\n",
+            "[kirby]\nschema_version = 1\n[motion]\npointer = \"invalid\"\n",
+            "[kirby]\nschema_version = 1\n[motion]\nsensitivity = nan\n",
+            "[kirby]\nschema_version = 1\n[motion]\ntilt_gain = 99\n",
+            "[kirby]\nschema_version = 1\n[motion]\ndeadzone = -1\n",
+            "[kirby]\nschema_version = 1\n[motion]\ncalibration_device = \"invalid\"\n"}) {
         Write(file, invalid);
         Reject([&] { Kirby::LoadSettings(file); });
         Reject([&] { Kirby::SaveSettings(file, settings); });

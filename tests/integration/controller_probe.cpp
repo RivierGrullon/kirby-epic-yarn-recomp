@@ -4,6 +4,7 @@
 #include "generated/KirbyBootConfig.h"
 #include "kirby/input/wpad.h"
 #include "kirby/input/bindings.h"
+#include "kirby/input/motion_device.h"
 #include "controller_button_names.h"
 #include <aurora/wpad.h>
 #include <aurora/input.hpp>
@@ -117,6 +118,7 @@ void ProbeSdlController(CpuContext& cpu, bool monitorPhysical, const ControlBind
             Profile{"Kirby Xbox 360 probe", 0x045e, 0x028e, SDL_GAMEPAD_TYPE_XBOX360},
             Profile{"Kirby Xbox One probe", 0x045e, 0x02d1, SDL_GAMEPAD_TYPE_XBOXONE}}) {
         SDL_VirtualJoystickDesc descriptor{};
+        SDL_VirtualJoystickSensorDesc sensors[]{{SDL_SENSOR_GYRO, 200}, {SDL_SENSOR_ACCEL, 200}};
         SDL_INIT_INTERFACE(&descriptor);
         descriptor.type = SDL_JOYSTICK_TYPE_GAMEPAD;
         descriptor.naxes = SDL_GAMEPAD_AXIS_COUNT;
@@ -126,6 +128,7 @@ void ProbeSdlController(CpuContext& cpu, bool monitorPhysical, const ControlBind
         descriptor.name = profile.name;
         descriptor.vendor_id = profile.vendor;
         descriptor.product_id = profile.product;
+        descriptor.nsensors = 2; descriptor.sensors = sensors;
         struct Device {
             SDL_JoystickID id = 0;
             SDL_Joystick* joystick = nullptr;
@@ -160,6 +163,32 @@ void ProbeSdlController(CpuContext& cpu, bool monitorPhysical, const ControlBind
             return Memory::Read16(output);
         };
         check(report() == 0, "SDL virtual controller did not start neutral");
+        // Exercise the same per-port motion adapter and guest serializer used by
+        // video launches with deterministic probe settings.
+        MotionSettings motionSettings;
+        ConfigureMotion(motionSettings);
+        check(WPADSetDataFormat(0, WPAD_FMT_CORE_ACC_DPD) == WPAD_ERR_NONE, "Motion report format rejected");
+        check(WPADControlDpd(0, 1, nullptr) == WPAD_ERR_NONE, "Pointer enable rejected");
+        pump();
+        const float gyro[]{0, -.5f, 0}, gravity[]{9.80665f, 0, 0};
+        for (int sample = 0; sample < 45; ++sample) {
+            check(SDL_SendJoystickVirtualSensorData(device.joystick, SDL_SENSOR_GYRO, SDL_GetTicksNS(), gyro, 3), SDL_GetError());
+            check(SDL_SendJoystickVirtualSensorData(device.joystick, SDL_SENSOR_ACCEL, SDL_GetTicksNS(), gravity, 3), SDL_GetError());
+            SDL_Delay(5); report();
+        }
+        check(int16_t(Memory::Read16(output+4)) < -240 && std::abs(int16_t(Memory::Read16(output+6))) < 20,
+              "Sideways tilt did not reach guest acceleration");
+        check(Memory::Read8(output+14) == 0 && Memory::Read16(output+8) < 475,
+              "Gyro pointer did not reach guest IR objects");
+        PADBlockInput(true); report();
+        check(Memory::Read16(output+4) == 0 && Memory::Read16(output+6) == 256 && Memory::Read8(output+14) == 255,
+              "Blocked motion leaked into guest reports");
+        PADBlockInput(false);
+        motionSettings.tilt = false; motionSettings.pointer = PointerSource::Disabled;
+        ConfigureMotion(motionSettings); report();
+        check(Memory::Read16(output+4) == 0 && Memory::Read16(output+6) == 256 && Memory::Read8(output+14) == 255,
+              "Disabled motion leaked into guest reports");
+        std::cout << "[kirby] SDL motion through guest WPAD verified: " << profile.name << '\n';
         if (configured) {
             for (unsigned index = 0; index < SDL_GAMEPAD_BUTTON_COUNT; ++index) {
                 const auto button = static_cast<SDL_GamepadButton>(index);

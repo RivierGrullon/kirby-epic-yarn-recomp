@@ -2,6 +2,7 @@
 #pragma once
 #include "kirby/settings.h"
 #include "binding_capture.h"
+#include "motion_preview.h"
 #include <filesystem>
 #include <string>
 
@@ -18,6 +19,7 @@ struct State {
     std::string gameStatus;
     std::string settingsError;
     BindingCapture bindingCapture;
+    MotionPreview motionPreview;
 };
 
 enum class Action {

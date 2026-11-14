@@ -110,6 +110,17 @@ WPAD reports across four virtual device presets, including obsolete binding
 removal, keyboard/controller sharing and release. These probes use virtual SDL
 devices and their own input configuration; physical input and the
 window's focus/capture behavior still require verification.
+
+`input/motion.h` defines motion settings, gravity conversion and gyro integration.
+`motion_device.cpp` samples borrowed SDL
+handles, converts gravity to sideways KPAD axes and integrates gyro rates with
+stationary bias calibration. `controller_motion.cpp` resolves Aurora's assigned
+gamepad per port and supplies its existing acceleration/pointer overrides before
+host sampling. The launcher uses the same sampler for previews and stores motion
+settings and controller-GUID calibration in the shared TOML file. It owns and
+closes only its preview handle; no F1 settings overlay or second binding system
+is introduced. `kirby_motion` covers synthetic sensor math and SDL lifecycle;
+the SDL controller probe also checks motion through guest WPAD reports.
 Its `--monitor-controller` mode reads physical devices for 30 seconds without a
 virtual device or game window and logs changes at the SDL/PAD/guest boundaries.
 Use the isolated command in the project README to preserve existing preferences.

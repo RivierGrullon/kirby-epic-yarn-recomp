@@ -186,6 +186,8 @@ int main(int argc, char** argv) {
         }
         const bool focused = SDL_GetKeyboardFocus() == window &&
             !(SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED);
+        if (!focused || page != Launcher::Page::Controls || state.bindingCapture.Busy())
+            state.motionPreview.Close();
         state.bindingCapture.Tick(SDL_GetTicks(), focused);
         io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard);
         if (!state.bindingCapture.Blocks(Kirby::BindingDevice::Gamepad)) io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
@@ -275,6 +277,7 @@ int main(int argc, char** argv) {
         SDL_Delay(5);
     }
     if (settingsDirty && !saveSettings()) std::fprintf(stderr,"Settings: %s\n",settingsError.c_str());
+    state.motionPreview.Close();
     ImGui_ImplSDLRenderer3_Shutdown(); ImGui_ImplSDL3_Shutdown(); ImGui::DestroyContext();
     SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
 #ifdef _WIN32

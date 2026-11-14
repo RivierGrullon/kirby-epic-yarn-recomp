@@ -38,8 +38,8 @@ vsync = true
 `audio.volume` is the master gain from 0.0 to 1.0. The launcher displays it as a
 percentage. `gpu_resident_copies` controls **Experimental performance mode**; its
 compatibility and frame pacing remain under investigation. Separate stable 30/60
-FPS modes, display scaling, individual audio groups, per-device input profiles and
-motion configuration remain pending.
+FPS modes, display scaling, individual audio groups and per-device input profiles
+remain pending.
 Unimplemented upstream settings are not presented as supported Kirby options.
 
 Relative `dvd_root` paths resolve against the TOML file's directory. The launcher
@@ -65,8 +65,8 @@ persist changes; they apply on the next game launch. Launcher navigation uses it
 own standard controls and is unaffected by gameplay remapping.
 
 Gamepad mappings currently apply to every player, while keyboard input is shared
-with player 1's controller. Per-device profiles, player assignment, motion,
-adjustable deadzones and rumble options are not implemented here. Physical
+with player 1's controller. Per-device profiles, player assignment, movement-stick
+deadzones and rumble options are not implemented here. Physical
 controllers, reconnect behavior during gameplay and cooperative play still need
 validation; automated virtual-device tests do not certify them.
 
@@ -117,6 +117,61 @@ probe_dir="$(mktemp -d)"
     --game-data "$project_root/disc/DATA"
 )
 ```
+
+## Motion controls
+
+The **Gyroscope & gravity / tilt** area in **Controls** contains all motion
+configuration; no F1 settings overlay is added. F1 retains its existing Home
+binding. Hold a conventional gamepad normally; its gravity vector is converted
+to a sideways Wii Remote with the D-pad at the left.
+
+- Enable **Use controller tilt** for gravity-based steering, with sensitivity and
+  reversal. Devices without an accelerometer stay neutral.
+- **Pointer source** selects mouse, gyroscope, right stick or disabled. Gyroscope
+  is the default and falls back to the mouse on player 1 when sensors are absent.
+  Gyro/stick sensitivity and X/Y inversion apply to their respective pointer;
+  their deadzones are independent of movement bindings.
+- Click the right stick to recenter the pointer in game. **Keyboard motion** adds
+  Q/E tilt and R recenter for player 1. These fixed helper keys can be disabled if
+  they overlap custom button bindings. The right-stick click may also activate a
+  button action if explicitly assigned in the binding table.
+- Select a **Preview controller** to inspect live sensor availability, tilt and
+  pointer position. This selection does not reassign game players.
+- Select **Calibrate gyro**, then hold still for two seconds. Movement restarts
+  the measurement. Save settings after completion. One controller model's SDL
+  GUID and bias are saved; calibration is applied only to matching GUIDs. A new
+  calibration replaces the previous one. Identical models share the calibration.
+
+Configuration applies to all controller ports and takes effect on the next game
+launch. Motion is suppressed while input is blocked or captured. Reconnecting
+resets the pointer/filter and reloads matching calibration. Launcher previews stop
+on focus loss, leaving Controls or binding capture; interrupted calibration is
+discarded. Game input never depends on the launcher preview remaining open.
+
+Optional `[motion]` defaults (older files need no migration):
+
+```toml
+[motion]
+tilt = true
+invert_tilt = false
+tilt_gain = 1.0          # 0.25 .. 3
+pointer = "gyro"        # mouse, gyro, right_stick, disabled
+sensitivity = 1.5       # 0.1 .. 5
+invert_x = false
+invert_y = false
+deadzone = 0.008        # gyro rad/s, 0 .. 0.1
+stick_deadzone = 0.2    # pointer stick only, 0 .. 0.9
+keyboard = true
+calibration_device = "" # populated by launcher calibration
+bias_x = 0.0
+bias_y = 0.0
+bias_z = 0.0
+```
+
+SDL must expose the physical controller's sensors. Xbox-emulation software may
+hide them. Virtual sensor tests verify conversion, calibration, disconnection
+and guest WPAD acceleration/IR reports; they do not certify physical-controller
+directions, drift or gameplay behavior.
 
 ## Existing launcher preferences
 

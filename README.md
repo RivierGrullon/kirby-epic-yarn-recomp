@@ -83,7 +83,7 @@ preferences migrate automatically while retaining the original file. See the
 [settings guide](docs/settings.md) for the format and recovery instructions.
 Archive import, toolchain
 setup, translation and compilation are currently command-line steps. Resolution
-scaling, per-device input profiles, motion configuration and a validated 30/60 FPS
+scaling, per-device input profiles and a validated 30/60 FPS
 selector are not available in the launcher yet.
 
 ## Controls
@@ -107,8 +107,16 @@ all players; keyboard bindings apply to player 1. See the
 Automated virtual SDL tests cover standard, PS5, Xbox 360 and Xbox One presets,
 release and unplug behavior. Physical DualSense input and directional reports
 still need resolution. These mappings are not a claim that every controller has
-been tested. Per-device profiles, motion, player assignment and physical
+been tested. Per-device profiles, player assignment and physical
 reconnection/cooperative play still need implementation or validation.
+
+**Controls > Gyroscope & gravity / tilt** configures controller tilt, gyro or
+right-stick aiming, sensitivity, inversion, deadzones and gyro calibration, with
+a live sensor preview. There is no in-game settings overlay. Click the right
+stick to recenter; optional keyboard motion uses Q/E to tilt and R to recenter.
+Gyro mode falls back to the mouse when no gyro data is available. Physical motion
+accuracy still needs testing on a supported controller; virtual sensors cover the
+math and guest report path. See [motion settings](docs/settings.md#motion-controls).
 
 ## Known limitations
 

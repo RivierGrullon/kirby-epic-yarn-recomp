@@ -21,6 +21,7 @@ void Validate(const Settings& settings) {
     if (!std::isfinite(settings.masterVolume) || settings.masterVolume < 0 || settings.masterVolume > 100)
         throw std::runtime_error("audio.volume must be between 0 and 1");
     ValidateControlBindings(settings.controls);
+    ValidateMotionSettings(settings.motion);
 }
 std::optional<std::string> Read(const fs::path& file) {
     if (!fs::exists(file)) return std::nullopt;
@@ -36,7 +37,7 @@ Settings Parse(const std::string& text, const fs::path& file, Settings defaults)
     std::istringstream input(text);
     const auto document = toml::parse(input, file.string());
     using namespace RuntimeConfigFile;
-    for (const char* section : {"kirby", "paths", "audio", "video", "controller", "keyboard"})
+    for (const char* section : {"kirby", "paths", "audio", "video", "controller", "keyboard", "motion"})
         if (document.contains(section) && !document.at(section).is_table())
             throw std::runtime_error(std::string(section) + " must be a table");
     if (FindConfigValue<int64_t>(document, "kirby", "schema_version") != 1)
@@ -74,6 +75,39 @@ Settings Parse(const std::string& text, const fs::path& file, Settings defaults)
             bindings[i] = CanonicalBinding(device, *value);
         }
     }
+    auto& motion = defaults.motion;
+    const auto boolean = [&](const char* key, bool& target) {
+        if (!present("motion", key)) return;
+        const auto value = FindConfigValue<bool>(document, "motion", key);
+        if (!value) throw std::runtime_error(std::string("motion.") + key + " must be a boolean");
+        target = *value;
+    };
+    const auto number = [&](const char* key, float& target) {
+        if (!present("motion", key)) return;
+        auto value = FindConfigValue<double>(document, "motion", key);
+        if (!value) if (const auto integer = FindConfigValue<int64_t>(document, "motion", key)) value = double(*integer);
+        if (!value || !std::isfinite(*value)) throw std::runtime_error(std::string("motion.") + key + " must be a finite number");
+        target = static_cast<float>(*value);
+    };
+    boolean("tilt", motion.tilt); boolean("invert_tilt", motion.invertTilt);
+    boolean("invert_x", motion.invertX); boolean("invert_y", motion.invertY);
+    boolean("keyboard", motion.keyboard);
+    number("sensitivity", motion.sensitivity); number("tilt_gain", motion.tiltGain);
+    number("deadzone", motion.deadzone); number("stick_deadzone", motion.stickDeadzone);
+    number("bias_x", motion.bias[0]); number("bias_y", motion.bias[1]); number("bias_z", motion.bias[2]);
+    if (present("motion", "pointer")) {
+        const auto value = FindConfigValue<std::string>(document, "motion", "pointer");
+        if (value == "mouse") motion.pointer = PointerSource::Mouse;
+        else if (value == "gyro") motion.pointer = PointerSource::Gyro;
+        else if (value == "right_stick") motion.pointer = PointerSource::RightStick;
+        else if (value == "disabled") motion.pointer = PointerSource::Disabled;
+        else throw std::runtime_error("motion.pointer must be mouse, gyro, right_stick or disabled");
+    }
+    if (present("motion", "calibration_device")) {
+        const auto value = FindConfigValue<std::string>(document, "motion", "calibration_device");
+        if (!value) throw std::runtime_error("motion.calibration_device must be a string");
+        motion.calibrationDevice = *value;
+    }
     Validate(defaults);
     defaults.gameData = fs::absolute(defaults.gameData).lexically_normal();
     return defaults;
@@ -93,6 +127,22 @@ std::string Update(std::string text, const Settings& settings) {
     volume << std::setprecision(std::numeric_limits<float>::max_digits10) << settings.masterVolume / 100;
     set("audio", "volume", volume.str());
     set("video", "vsync", settings.vsync ? "true" : "false");
+    const auto& motion = settings.motion;
+    const auto boolean = [&](const char* key, bool value) { set("motion", key, value ? "true" : "false"); };
+    const auto number = [&](const char* key, float value) {
+        std::ostringstream formatted;
+        formatted << std::setprecision(std::numeric_limits<float>::max_digits10) << value;
+        set("motion", key, formatted.str());
+    };
+    boolean("tilt", motion.tilt); boolean("invert_tilt", motion.invertTilt);
+    boolean("invert_x", motion.invertX); boolean("invert_y", motion.invertY);
+    boolean("keyboard", motion.keyboard);
+    number("sensitivity", motion.sensitivity); number("tilt_gain", motion.tiltGain);
+    number("deadzone", motion.deadzone); number("stick_deadzone", motion.stickDeadzone);
+    constexpr const char* pointers[]{"mouse", "gyro", "right_stick", "disabled"};
+    set("motion", "pointer", RuntimeConfigFile::FormatString(pointers[static_cast<int>(motion.pointer)]));
+    set("motion", "calibration_device", RuntimeConfigFile::FormatString(motion.calibrationDevice));
+    number("bias_x", motion.bias[0]); number("bias_y", motion.bias[1]); number("bias_z", motion.bias[2]);
     for (size_t i = 0; i < GameActions.size(); ++i) {
         set("controller", GameActions[i].key, RuntimeConfigFile::FormatString(CanonicalBinding(BindingDevice::Gamepad, settings.controls.gamepad[i])));
         set("keyboard", GameActions[i].key, RuntimeConfigFile::FormatString(CanonicalBinding(BindingDevice::Keyboard, settings.controls.keyboard[i])));
