@@ -119,3 +119,10 @@ Folder/revision checks precede launch, which passes the shared TOML path using
 configuration adapter; see `../docs/settings.md` for its schema and migration.
 The launcher's hidden `--self-test` renders every page at desktop and compact
 sizes without dispatching file or process actions.
+
+`../launcher/input_focus.cpp` clears queued and held ImGui input when the launcher
+does not have keyboard focus or is minimized. This is required because the SDL
+backend polls global controller state. Actions are also checked against current
+window focus before dispatch. The ImGui input regression covers initial absence
+of focus, repeated background polling, focus loss/regain, interrupted clicks and
+fresh foreground input; it does not certify physical controller mappings.

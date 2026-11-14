@@ -216,6 +216,13 @@ add_executable(kirby_settings_test "${KIRBY_PROJECT_ROOT}/tests/unit/settings_te
 target_link_libraries(kirby_settings_test PRIVATE kirby_settings)
 add_test(NAME kirby_settings COMMAND kirby_settings_test)
 
+add_executable(kirby_launcher_input_test "${KIRBY_PROJECT_ROOT}/tests/unit/launcher_input_test.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/input_focus.cpp")
+target_include_directories(kirby_launcher_input_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
+target_link_libraries(kirby_launcher_input_test PRIVATE imgui)
+target_compile_features(kirby_launcher_input_test PRIVATE cxx_std_20)
+add_test(NAME kirby_launcher_input COMMAND kirby_launcher_input_test)
+
 # Only owned targets and the patched upstream runtime need these headers.
 # Generated translation targets keep their existing include paths.
 get_property(kirby_build_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
@@ -233,6 +240,7 @@ add_custom_target(kirby_tests DEPENDS ${kirby_test_targets})
 
 add_executable(kirby-launcher "${KIRBY_PROJECT_ROOT}/launcher/main.cpp")
 target_sources(kirby-launcher PRIVATE
+    "${KIRBY_PROJECT_ROOT}/launcher/input_focus.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/pages/layout.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/pages/play.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/pages/install.cpp"

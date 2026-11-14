@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include "kirby/settings.h"
 #include "pages/pages.h"
+#include "input_focus.h"
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
@@ -151,7 +152,11 @@ int main(int argc, char** argv) {
                 state.gameStatus = WIFEXITED(result) && WEXITSTATUS(result) == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
             }
         }
-        ImGui_ImplSDLRenderer3_NewFrame(); ImGui_ImplSDL3_NewFrame(); ImGui::NewFrame();
+        ImGui_ImplSDLRenderer3_NewFrame(); ImGui_ImplSDL3_NewFrame();
+        const bool focused = SDL_GetKeyboardFocus() == window &&
+            !(SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED);
+        Launcher::SynchronizeInputFocus(focused);
+        ImGui::NewFrame();
         state.gameRunning = game > 0;
         if (selfTest) {
             // Exercise every page at both layout sizes without file/process actions.
@@ -160,7 +165,7 @@ int main(int argc, char** argv) {
             if (frames == Launcher::PageNames.size() * 3) SDL_SetWindowSize(window, 640, 520);
         }
         const auto action = Launcher::DrawLauncher(state, page);
-        if (!selfTest) try {
+        if (!selfTest && focused) try {
             switch (action) {
             case Launcher::Action::Play:
                 valid = Verify(data, status);

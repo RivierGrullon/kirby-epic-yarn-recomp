@@ -10,6 +10,9 @@ under **Audio**, and the extracted game-folder selection under **Install**.
 existing save folder; **Diagnostics** provides logs, settings recovery and paths.
 The save action remains available on every page. Keyboard and SDL gamepad
 navigation use Dear ImGui's standard controls.
+The launcher accepts input only while its own window has focus. Gamepad polling
+in the background cannot change its settings or activate buttons while you play
+in another window. Losing focus also clears held input.
 
 Only implemented Kirby options are written:
 
