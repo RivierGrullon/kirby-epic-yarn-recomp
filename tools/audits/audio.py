@@ -2,10 +2,11 @@
 """RK5E01 DSP task boundary and AX microcode identity; no game bytes embedded."""
 import hashlib
 import re
+from . import axfx
 
 
 def audit(dol, symbols, source_symbols):
-    result = {}
+    result = axfx.audit(dol, symbols)
     functions = {
         "DspBootTask": (0x80684770, 0x18C, "1401b03b5afe90748823effa38e330588fd2551ab411d77c6204164e6724e3e3"),
         "AxOutInitDsp": (0x8067FAE0, 0xEC, "a6069f770b85bb40e69f88d60f01650bbc2446018fb166735a430b5bfed1a45f"),

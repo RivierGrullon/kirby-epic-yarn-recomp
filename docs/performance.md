@@ -543,6 +543,36 @@ the tested candidate. SHA-256:
 `4a0edf9591acea2c44c1dcc72c356d70c87fda88310ffcba96c86abc726c01be`.
 The previous published executable remains under `local/verified-builds/before-stage58/`.
 
+## Audited SDK reuse boundaries
+
+The moving-gameplay CPU profile attributed 3.26% of main-thread user samples to
+`fn_80681680`. Its three-channel, 96-sample loop and structure accesses match
+`AXFXReverbHiExpCallback`, rather than a GX submission routine. The fields include
+`lpfCoef` at `0x108`, `active` at `0x10C`, the input/output buses at `0x138/0x13C`,
+and gains at `0x140/0x144`, as defined in Swiftshine's
+`src/revolution/AXFX/AXFXReverbHiExp.h`. The four-byte wrapper at `0x80681250`
+tail-branches to this callback, matching the recovered `AXFXReverbHiCallback`.
+
+`tools/audits/axfx.py`, called by `python3 tools/kirby.py prepare`, checks the
+RK5E01 function extents, SHA-256 digests, relative branch target, field accesses,
+channel count and sample count before emitting their addresses. Synthetic tests
+exercise rejected identities, branches and layouts without embedding disc bytes.
+No native audio replacement is enabled. Replacing this routine requires comparing
+PCM, effect state, ring-buffer updates and floating-point behavior with the
+translated routine; identifying its name alone does not establish equivalence.
+
+The existing upstream `GXBegin` wrapper is also unsuitable as a direct Kirby hook.
+Kirby's `GXBegin` at `0x806881B0` reads its guest GXData pointer through `r2-7440`,
+checks dirty state at `GXData+0x5FC`, calls `0x80687F30` when required, and can emit
+a dummy primitive before the requested draw. Upstream's Mario Kart wrapper uses
+its own `g_hleGxState`, deferred frontend and vertex-expansion state. Adapting only
+that wrapper would bypass Kirby's state and FIFO ordering. The current raw FIFO
+transport remains in use; no foreign hook address is accepted.
+
+These conclusions come from the locally verified DOL, translation and pinned SDK
+sources. Ghidra was unavailable in this environment. This audit introduces no
+runtime replacement and establishes no additional frame-rate improvement.
+
 ## Measurements
 
 Hardware: Acer Nitro AN515-55, Intel i5-10300H, NVIDIA RTX 3050 Laptop GPU, Bazzite,
