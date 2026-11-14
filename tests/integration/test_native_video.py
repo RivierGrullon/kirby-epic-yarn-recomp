@@ -1,6 +1,7 @@
 """Opt-in native Vulkan checks; require game data and a host graphics session."""
 import os
 import csv
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -11,17 +12,24 @@ import unittest
 @unittest.skipUnless(os.environ.get("KIRBY_NATIVE_VIDEO_TEST"),
                      "Set KIRBY_NATIVE_VIDEO_TEST to test the native Vulkan executable")
 class NativeVideoTests(unittest.TestCase):
-    def check_startup_and_exit(self, *arguments, frame_log=False):
+    def check_startup_and_exit(self, *arguments, frame_log=False, settings_file=False):
         executable = Path(os.environ["KIRBY_NATIVE_VIDEO_TEST"]).resolve()
         data = Path("disc/DATA").resolve()
         with tempfile.TemporaryDirectory(prefix="kirby-native-video-") as directory:
             log_path = Path(directory) / "native.log"
             metrics_path = Path(directory) / "frames.csv"
+            launch_options = ["--volume", "0", "--game-data", str(data)]
+            if settings_file:
+                config_path = Path(directory) / "settings.toml"
+                config_path.write_text('[kirby]\nschema_version = 1\ngpu_resident_copies = true\n'
+                                       '[paths]\ndvd_root = ' + json.dumps(str(data)) + '\n'
+                                       '[audio]\nvolume = 0.0\n[video]\nvsync = false\n')
+                launch_options = ["--config", str(config_path)]
             if frame_log:
                 arguments=(*arguments,"--frame-log",str(metrics_path))
             with log_path.open("wb") as log:
                 process = subprocess.Popen(
-                    [str(executable), "--video-hidden", "--volume", "0", "--game-data", str(data), *arguments],
+                    [str(executable), "--video-hidden", *launch_options, *arguments],
                     cwd=directory, stdout=log, stderr=subprocess.STDOUT)
                 try:
                     deadline = time.monotonic() + 30
@@ -52,7 +60,7 @@ class NativeVideoTests(unittest.TestCase):
             self.assertEqual(result, 0, output)
             self.assertIn("host exit requested; shutting down native runtime", output)
             self.assertNotIn("[kirby] blocked:", output)
-            if "--gpu-resident-copies" in arguments:
+            if settings_file or "--gpu-resident-copies" in arguments:
                 self.assertIn("experimental GPU-resident texture and display copies enabled", output)
             if frame_log:
                 with metrics_path.open() as metrics:
@@ -79,3 +87,6 @@ class NativeVideoTests(unittest.TestCase):
 
     def test_frame_log_records_actual_native_presentations(self):
         self.check_startup_and_exit("--gpu-resident-copies","--no-vsync",frame_log=True)
+
+    def test_saved_configuration_drives_native_video_startup(self):
+        self.check_startup_and_exit(settings_file=True)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Linux desktop frontend using the project's existing SDL3 and Dear ImGui libraries.
 #include <SDL3/SDL.h>
+#include "kirby/settings.h"
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
@@ -11,6 +12,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <fcntl.h>
 #include <memory>
 #include <mutex>
@@ -71,33 +73,37 @@ void OpenFolder(const fs::path& path) {
 }
 
 int main(int argc, char** argv) {
+    if (argc == 3 && std::string_view(argv[1]) == "--print-settings")
+        return Kirby::InspectSettings(argv[2], std::cout, std::cerr);
     if (argc == 3 && std::string_view(argv[1]) == "--check-data") {
         std::string status;
         const bool valid = Verify(argv[2], status);
         std::puts(status.c_str()); return valid ? 0 : 1;
     }
     const bool selfTest = argc == 2 && std::string_view(argv[1]) == "--self-test";
-    if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA]\n"); return 2; }
+    if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --print-settings TOML]\n"); return 2; }
     const fs::path executable = fs::path(SDL_GetBasePath()) / "WiiCompiled";
     const fs::path root = executable.parent_path().parent_path().parent_path();
     if (!fs::exists(root / "tools/kirby.py")) {
         std::fprintf(stderr,"Keep the launcher in this project's build/native folder\n"); return 2;
     }
-    fs::path data = root / "disc/DATA";
-    const auto settings = root / "local/user/launcher.cfg";
-    float volume = 100;
-    bool vsync = true;
-    bool performanceMode = false;
+    const auto settings = root / "local/user/settings.toml";
+    Kirby::Settings config{root / "disc/DATA"};
+    std::string settingsError;
+    bool settingsDirty = false;
     if (!selfTest) {
-        std::ifstream input(settings); std::string saved;
-        if (std::getline(input, saved) && !saved.empty()) data = saved;
-        float savedVolume;
-        if (input >> savedVolume && savedVolume >= 0 && savedVolume <= 100) volume = savedVolume;
-        int savedVsync;
-        if (input >> savedVsync) vsync = savedVsync != 0;
-        int savedPerformance;
-        if (input >> savedPerformance) performanceMode = savedPerformance == 1;
+        try { config = Kirby::LoadOrMigrateSettings(settings, root / "local/user/launcher.cfg", root, config); }
+        catch (const std::exception& error) { settingsError = error.what(); }
     }
+    auto& data = config.gameData;
+    auto& volume = config.masterVolume;
+    auto& vsync = config.vsync;
+    auto& performanceMode = config.gpuResidentCopies;
+    const auto saveSettings = [&] {
+        if (selfTest || !settingsError.empty()) return false;
+        try { Kirby::SaveSettings(settings, config); settingsDirty = false; return true; }
+        catch (const std::exception& error) { settingsError = error.what(); return false; }
+    };
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) { std::fprintf(stderr,"%s\n",SDL_GetError()); return 1; }
     SDL_Window* window = SDL_CreateWindow("Kirby - native launcher", 960, 680,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | (selfTest ? SDL_WINDOW_HIDDEN : 0));
@@ -131,7 +137,7 @@ int main(int argc, char** argv) {
                 (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window))) running = false;
         }
         { std::lock_guard lock(selection->mutex);
-          if (selection->ready) { data = selection->path; selection->ready = false; valid = Verify(data,status); } }
+          if (selection->ready) { data = selection->path; selection->ready = false; settingsDirty = true; valid = Verify(data,status); } }
         if (game > 0) {
             int result = 0;
             if (waitpid(game, &result, WNOHANG) == game) {
@@ -146,20 +152,16 @@ int main(int argc, char** argv) {
         ImGui::TextUnformatted("Kirby's Epic Yarn"); ImGui::Separator();
         ImGui::BeginChild("play", {0,155}, ImGuiChildFlags_Borders);
         ImGui::TextUnformatted("Play your own copy"); ImGui::TextWrapped("%s",status.c_str());
-        ImGui::BeginDisabled(!valid || game > 0 || selfTest);
+        ImGui::BeginDisabled(!valid || game > 0 || selfTest || !settingsError.empty());
         if (ImGui::Button("Play", {170,42})) {
-            fs::create_directories(settings.parent_path());
-            std::ofstream output(settings); output << data.string() << '\n' << volume << '\n' << vsync << '\n' << performanceMode << '\n';
             valid = Verify(data,status);
-            if (valid && fs::exists(executable)) {
+            if (valid && fs::exists(executable) && saveSettings()) {
                 const auto libs = (root / "local/host-libs").string();
                 const char* previous = std::getenv("LD_LIBRARY_PATH");
                 const std::string libraryPath = libs + (previous ? std::string(":") + previous : "");
                 setenv("LD_LIBRARY_PATH", libraryPath.c_str(), 1);
-                std::string exe = executable.string(), dataArg = data.string(), gain = std::to_string(volume);
-                std::vector<char*> args{exe.data(),const_cast<char*>("--video"),const_cast<char*>("--game-data"),dataArg.data(),const_cast<char*>("--volume"),gain.data()};
-                if (!vsync) args.push_back(const_cast<char*>("--no-vsync"));
-                if (performanceMode) args.push_back(const_cast<char*>("--gpu-resident-copies"));
+                std::string exe = executable.string(), configArg = settings.string();
+                std::vector<char*> args{exe.data(),const_cast<char*>("--video"),const_cast<char*>("--config"),configArg.data()};
                 args.push_back(nullptr);
                 fs::create_directories(root / "build-logs");
                 posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
@@ -171,7 +173,7 @@ int main(int argc, char** argv) {
                 posix_spawn_file_actions_destroy(&actions);
                 if (error) { game = -1; status = "Could not start the native executable"; }
                 else { status = "Game running"; SDL_MinimizeWindow(window); }
-            } else if (valid) status = "Native executable missing. See the build guide.";
+            } else if (valid) status = fs::exists(executable) ? "Could not save settings" : "Native executable missing. See the build guide.";
         }
         ImGui::EndDisabled(); ImGui::SameLine();
         if (ImGui::Button("Choose DATA folder", {200,42}))
@@ -179,12 +181,28 @@ int main(int argc, char** argv) {
         ImGui::EndChild();
         ImGui::TextDisabled("Game data"); ImGui::TextWrapped("%s",data.c_str());
         ImGui::Separator();
-        ImGui::SliderFloat("Master volume", &volume, 0, 100, "%.0f%%");
+        ImGui::BeginDisabled(!settingsError.empty() || selfTest);
+        settingsDirty |= ImGui::SliderFloat("Master volume", &volume, 0, 100, "%.0f%%");
         ImGui::TextDisabled("Applied next launch. In-game audio is still under investigation.");
-        ImGui::Checkbox("VSync", &vsync);
+        settingsDirty |= ImGui::Checkbox("VSync", &vsync);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Off can reduce presentation stalls; driver behavior varies.");
-        ImGui::Checkbox("Experimental performance mode", &performanceMode);
+        settingsDirty |= ImGui::Checkbox("Experimental performance mode", &performanceMode);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reduces GPU copy waits and repeated texture processing. Compatibility testing is ongoing. Applied next launch.");
+        if (ImGui::Button("Save settings")) saveSettings();
+        ImGui::SameLine(); ImGui::TextDisabled("%s",settingsDirty ? "Unsaved changes" : "Settings saved on Play or close");
+        ImGui::EndDisabled();
+        if (!settingsError.empty()) {
+            ImGui::TextWrapped("Settings error: %s. Original file preserved.",settingsError.c_str());
+            if (ImGui::Button("Open Settings Folder")) OpenFolder(settings.parent_path());
+            ImGui::SameLine();
+            if (ImGui::Button("Reload settings")) {
+                try {
+                    config = Kirby::LoadOrMigrateSettings(settings, root / "local/user/launcher.cfg", root,
+                                                        Kirby::Settings{root / "disc/DATA"});
+                    settingsError.clear(); settingsDirty = false; valid = Verify(data,status);
+                } catch (const std::exception& error) { settingsError = error.what(); }
+            }
+        }
         ImGui::TextWrapped("Display: native resolution. Stable 30 / 60 FPS modes are not validated yet.");
         ImGui::TextWrapped("Controls: D-pad to move, south / cross to jump, east / circle for yarn, Start for +.");
         int count = 0; SDL_JoystickID* controllers = SDL_GetGamepads(&count);
@@ -202,6 +220,7 @@ int main(int argc, char** argv) {
         if (selfTest && ++frames == 5) running = false;
         SDL_Delay(5);
     }
+    if (settingsDirty && !saveSettings()) std::fprintf(stderr,"Settings: %s\n",settingsError.c_str());
     ImGui_ImplSDLRenderer3_Shutdown(); ImGui_ImplSDL3_Shutdown(); ImGui::DestroyContext();
     SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
     return 0;

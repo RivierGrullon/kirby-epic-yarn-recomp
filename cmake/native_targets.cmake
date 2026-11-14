@@ -205,6 +205,17 @@ target_include_directories(kirby_cache_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 target_compile_features(kirby_cache_test PRIVATE cxx_std_20)
 add_test(NAME kirby_cache COMMAND kirby_cache_test)
 
+add_library(kirby_settings STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/app/settings.cpp")
+target_include_directories(kirby_settings PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/include"
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(kirby_settings PRIVATE mkw::toml11)
+target_compile_features(kirby_settings PUBLIC cxx_std_20)
+target_compile_options(kirby_settings PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(WiiCompiled PRIVATE kirby_settings)
+add_executable(kirby_settings_test "${KIRBY_PROJECT_ROOT}/tests/unit/settings_test.cpp")
+target_link_libraries(kirby_settings_test PRIVATE kirby_settings)
+add_test(NAME kirby_settings COMMAND kirby_settings_test)
+
 # Only owned targets and the patched upstream runtime need these headers.
 # Generated translation targets keep their existing include paths.
 get_property(kirby_build_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
@@ -223,5 +234,5 @@ add_custom_target(kirby_tests DEPENDS ${kirby_test_targets})
 add_executable(kirby-launcher "${KIRBY_PROJECT_ROOT}/launcher/main.cpp")
 target_compile_features(kirby-launcher PRIVATE cxx_std_20)
 target_compile_definitions(kirby-launcher PRIVATE SDL_MAIN_HANDLED)
-target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends SDL3::SDL3-static)
+target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends SDL3::SDL3-static kirby_settings)
 set_target_properties(kirby-launcher PROPERTIES BUILD_RPATH "\$ORIGIN/../../local/host-libs")

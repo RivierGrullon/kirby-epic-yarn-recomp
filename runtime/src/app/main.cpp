@@ -17,6 +17,7 @@
 #include "kirby/graphics/cache.h"
 #include "kirby/app/events.h"
 #include "kirby/app/frame_log.h"
+#include "kirby/settings.h"
 #include "audio_backend.h"
 #include <memory>
 #include "timebase_contract.h"
@@ -142,20 +143,33 @@ int main(int argc, char** argv) {
     float masterVolume = 100;
     bool vsync = true;
     bool gpuResidentCopies = false;
+    std::filesystem::path configPath = "local/user/settings.toml";
+    bool volumeOverride = false, dataOverride = false, vsyncOverride = false, copiesOverride = false;
+    bool explicitConfig = false;
     std::filesystem::path frameLogPath;
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument = argv[i];
-        if (argument == "--volume" && i + 1 < argc) {
+        if (argument == "--print-settings" && i + 1 < argc && argv[i+1][0]) {
+            mode = argument; configPath = argv[++i]; explicitConfig = true;
+        } else if (argument == "--config" && i + 1 < argc && argv[i+1][0]) {
+            configPath = argv[++i]; explicitConfig = true;
+        } else if (argument == "--volume" && i + 1 < argc) {
+            volumeOverride = true;
             char* end = nullptr;
             masterVolume = std::strtof(argv[++i], &end);
             if (!end || end == argv[i] || *end || !std::isfinite(masterVolume) || masterVolume < 0 || masterVolume > 100) {
                 std::cerr << "--volume requires a number from 0 to 100\n";
                 return 2;
             }
-        } else if (argument == "--no-vsync") vsync = false;
-        else if (argument == "--gpu-resident-copies") gpuResidentCopies = true;
+        } else if (argument == "--no-vsync" || argument == "--vsync") {
+            vsync = argument == "--vsync"; vsyncOverride = true;
+        } else if (argument == "--gpu-resident-copies" || argument == "--ram-copies") {
+            gpuResidentCopies = argument == "--gpu-resident-copies"; copiesOverride = true;
+        }
         else if (argument == "--frame-log" && i + 1 < argc && argv[i+1][0]) frameLogPath=argv[++i];
-        else if (argument == "--game-data" && i + 1 < argc) dataRoot = argv[++i];
+        else if (argument == "--game-data" && i + 1 < argc && argv[i+1][0]) {
+            dataRoot = argv[++i]; dataOverride = true;
+        }
         else if (argument == "--headless" || argument == "--video" || argument == "--video-hidden" || argument == "--probe-ax-task" || argument == "--probe-thread-fault" || argument == "--probe-threads" || argument == "--probe-wpad" || argument == "--probe-sdl-controller" || argument == "--monitor-controller" || argument == "--probe-video-retrace" || argument == "--verify-bootstrap" || argument == "--probe-init" ||
                  argument == "--probe-alarms" || argument == "--probe-interrupt-init" || argument == "--probe-exi-init" || argument == "--probe-si-init" ||
                  argument == "--probe-sram-init" || argument == "--probe-boot-memory" ||
@@ -163,8 +177,24 @@ int main(int argc, char** argv) {
                  argument == "--probe-ipc-client" || argument == "--probe-stm-init" || argument == "--probe-system-config" || argument == "--probe-disc" || argument == "--probe-es-metadata" || argument == "--probe-ave") mode = argument;
         else {
             std::cerr << "Usage: WiiCompiled [--headless|--video|--video-hidden|--probe-alarms|--probe-ax-task|--probe-thread-fault|--probe-threads|--probe-wpad|--probe-sdl-controller|--monitor-controller|--probe-video-retrace|--verify-bootstrap|--probe-init|--probe-interrupt-init|--probe-exi-init|--probe-si-init|--probe-sram-init|--probe-boot-memory|--probe-audio-clock|--probe-dsp-init|--probe-ipc-client|--probe-stm-init|--probe-system-config|--probe-disc|--probe-es-metadata|--probe-ave] [--game-data DATA] [--volume 0..100] [--no-vsync] [--gpu-resident-copies] [--frame-log CSV]\n";
+            std::cerr << "Settings: [--config TOML] or --print-settings TOML; CLI values override saved settings.\n";
             return 2;
         }
+    }
+    if (explicitConfig || mode == "--video" || mode == "--video-hidden") {
+        try {
+            const auto settings = Kirby::LoadSettings(configPath);
+            if (!volumeOverride) masterVolume = settings.masterVolume;
+            if (!dataOverride) dataRoot = settings.gameData;
+            if (!vsyncOverride) vsync = settings.vsync;
+            if (!copiesOverride) gpuResidentCopies = settings.gpuResidentCopies;
+        } catch (const std::exception& error) {
+            std::cerr << "Settings: " << error.what() << '\n'; return 2;
+        }
+    }
+    if (mode == "--print-settings") {
+        std::cout << Kirby::FormatSettings({dataRoot, masterVolume, vsync, gpuResidentCopies});
+        return 0;
     }
     if (!frameLogPath.empty() && mode != "--video" && mode != "--video-hidden") {
         std::cerr << "--frame-log requires --video or --video-hidden\n";

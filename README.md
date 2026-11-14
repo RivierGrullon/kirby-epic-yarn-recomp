@@ -61,7 +61,11 @@ The launcher can currently:
   texture validation.
 - Display detected controllers and open saves, logs and the build guide.
 
-Settings are saved and applied on the next launch. Archive import, toolchain
+Settings are shared with the native game and saved on **Save settings**, **Play**,
+or closing the launcher. Changes apply on the next game launch. Existing launcher
+preferences migrate automatically while retaining the original file. See the
+[settings guide](docs/settings.md) for the format and recovery instructions.
+Archive import, toolchain
 setup, translation and compilation are currently command-line steps. Resolution
 scaling, full input remapping and a validated 30/60 FPS selector are not available
 in the launcher yet.
@@ -106,7 +110,8 @@ When launched from the repository root:
 | Data | Location |
 | --- | --- |
 | Game save | `local/user/nand/title/00010000/524b3545/data/` |
-| Launcher settings | `local/user/launcher.cfg` |
+| Shared launcher/game settings | `local/user/settings.toml` |
+| Previous launcher settings (retained after migration) | `local/user/launcher.cfg` |
 | Shader cache | `local/user/aurora/` |
 | Launcher game log | `build-logs/launcher-game.log` |
 

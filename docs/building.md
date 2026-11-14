@@ -89,6 +89,10 @@ build/native/WiiCompiled --video --game-data disc/DATA
 The build container intentionally has no display sockets or GPU devices mounted;
 run visible graphics on the host. This is not yet a portable packaged build.
 
+The launcher and game share [versioned settings](settings.md), including the DATA
+path, master volume, VSync and experimental copy mode. Settings changes do not
+require a build. Existing `launcher.cfg` preferences migrate on launcher startup.
+
 If the dynamic loader reports a missing library, inspect `ldd build/native/WiiCompiled`
 and `ldd build/native/kirby-launcher`. On the tested Bazzite host the missing
 `libbz2.so.1.0` was a soname difference. If `/usr/lib64/libbz2.so.1` exists, a local
