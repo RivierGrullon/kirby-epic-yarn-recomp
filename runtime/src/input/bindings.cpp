@@ -2,7 +2,9 @@
 #include "kirby/input/bindings.h"
 #include "controller_button_names.h"
 #include <SDL3/SDL_keyboard.h>
+#include <cmath>
 #include <stdexcept>
+#include <utility>
 namespace Kirby {
 std::string CanonicalBinding(BindingDevice device, std::string_view token) {
     if (token == "disabled") return "disabled";
@@ -31,6 +33,12 @@ std::string GamepadAxisBinding(int axis, bool negative) {
     return ControllerNames::NativeButtonForValue(PADEncodeAxisButton(static_cast<uint32_t>(axis), negative)).configName;
 }
 void ValidateControlBindings(const ControlBindings& bindings) {
+    for (const auto& [name, value] : std::array{
+            std::pair{"stick_activation", bindings.stickActivation},
+            std::pair{"trigger_activation", bindings.triggerActivation}}) {
+        if (!std::isfinite(value) || value < 0.05f || value > 0.95f)
+            throw std::runtime_error(std::string("controller.") + name + " must be between 0.05 and 0.95");
+    }
     std::array<std::string, GameActions.size()> gamepad, keyboard;
     for (size_t i = 0; i < GameActions.size(); ++i) {
         gamepad[i] = CanonicalBinding(BindingDevice::Gamepad, bindings.gamepad[i]);

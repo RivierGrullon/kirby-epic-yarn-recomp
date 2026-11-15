@@ -59,9 +59,35 @@ or waiting 15 seconds for an input cancels capture.
 If an input already belongs to another action, the launcher leaves both bindings
 unchanged and offers **Swap bindings** or cancellation. **Clear** removes one
 binding; movement, jump, yarn, Plus and Minus must retain at least one gamepad or
-keyboard binding. **Reset bindings** restores defaults. Use **Save settings** to
+keyboard binding. **Reset controls** restores default bindings and axis activation
+levels. Use **Save settings** to
 persist changes; they apply on the next game launch. Launcher navigation uses its
 own standard controls and is unaffected by gameplay remapping.
+
+**Stick activation** and **Trigger activation** choose how far an axis assigned
+to an action must move before that action becomes pressed. Both default to 50%
+and accept 5-95%. Lower values activate earlier; higher values require more
+travel. The settings apply to all players' gamepad bindings and take effect on
+the next game launch. D-pad buttons and keyboard bindings retain their existing
+behavior. Continuous analog deadzones remain pending.
+
+The optional `[controller]` values are `stick_activation` and
+`trigger_activation`, expressed as fractions from `0.05` to `0.95`:
+
+```toml
+[controller]
+a = "right_stick_right"
+b = "right_trigger"
+stick_activation = 0.25
+trigger_activation = 0.75
+```
+
+In this example, moving the right stick past 25% to the right presses Jump;
+pulling the right trigger past 75% presses Yarn. Configurations without these
+keys keep the previous 50% threshold. Invalid values are reported while leaving
+the settings file untouched. Virtual-device tests check partial travel on both
+sticks and triggers through the original guest WPAD reports for standard, PS5,
+Xbox 360 and Xbox One presets. Physical-device validation remains pending.
 
 Gamepad mappings currently apply to every player, while keyboard input is shared
 with player 1's controller. Per-device profiles, player assignment, motion,

@@ -189,6 +189,25 @@ void ProbeSdlController(CpuContext& cpu, bool monitorPhysical, const ControlBind
                     check(report() == 0, "Configured axis binding did not release");
                 }
             }
+            // Partial axis travel must reach the real guest report. Testing
+            // only full deflection cannot detect ignored activation settings.
+            for (const auto& token : configured->gamepad) {
+                if (token == "disabled") continue;
+                const auto native = ControllerNames::FindNativeButton(token)->nativeButton;
+                if (!PADIsAxisButton(native)) continue;
+                const auto axis = PADAxisButtonAxis(native);
+                const bool trigger = axis >= SDL_GAMEPAD_AXIS_LEFT_TRIGGER;
+                for (const int percent : {10, 40, 60, 90}) {
+                    const int signedValue = trigger ? percent * 65535 / 100 - 32768
+                        : (PADAxisButtonNegative(native) ? -1 : 1) * (percent * 32767 / 100);
+                    check(SDL_SetJoystickVirtualAxis(device.joystick, axis, static_cast<Sint16>(signedValue)), SDL_GetError());
+                    const auto value = report();
+                    std::cout << "[kirby:activation] " << profile.name << '|' << token
+                              << '|' << percent << '|' << value << '\n';
+                    check(SDL_SetJoystickVirtualAxis(device.joystick, axis, trigger ? -32768 : 0), SDL_GetError());
+                    check(report() == 0, "Partial axis binding did not release");
+                }
+            }
             std::set<std::string> keys{"Space", "J"};
             for (const auto& key : configured->keyboard) if (key != "disabled") keys.insert(key);
             for (const auto& key : keys) {

@@ -78,6 +78,26 @@ int main() {
     Reject([&] { Kirby::SaveSettings(file, invalidBindings); });
     Check(Read(file) == validBindings, "Rejected conflicting bindings damaged the saved configuration");
 
+    settings.controls.stickActivation = 0.25f;
+    settings.controls.triggerActivation = 0.75f;
+    Kirby::SaveSettings(file, settings);
+    Check(Kirby::LoadSettings(file).controls == settings.controls,
+          "Axis activation settings did not survive save/reload");
+    const auto validActivation = Read(file);
+    for (const float invalid : {0.f, 1.f, -0.1f, std::nanf(""), INFINITY}) {
+        for (const bool trigger : {false, true}) {
+            auto candidate = settings;
+            (trigger ? candidate.controls.triggerActivation : candidate.controls.stickActivation) = invalid;
+            Reject([&] { Kirby::SaveSettings(file, candidate); });
+            Check(Read(file) == validActivation, "Invalid activation settings damaged the saved configuration");
+        }
+    }
+    settings.controls.stickActivation = 0.05f;
+    settings.controls.triggerActivation = 0.95f;
+    Kirby::SaveSettings(file, settings);
+    Check(Kirby::LoadSettings(file).controls == settings.controls,
+          "Activation endpoints did not survive numeric serialization");
+
     for (const auto* invalid : {"[broken", "[kirby]\nschema_version = 99\n",
             "[kirby]\nschema_version = 1\n[audio]\nvolume = nan\n",
             "[kirby]\nschema_version = 1\n[paths]\ndvd_root = false\n"}) {

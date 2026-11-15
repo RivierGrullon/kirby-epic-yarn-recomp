@@ -15,6 +15,53 @@ class SharedSettingsTests(unittest.TestCase):
                                capture_output=True, text=True, encoding="utf-8", timeout=15)
                 for key in ("KIRBY_NATIVE_TEST", "KIRBY_LAUNCHER_TEST")]
 
+    def test_axis_activation_settings_are_shared_and_invalid_values_are_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'settings.toml'
+            header = '[kirby]\nschema_version = 1\n[controller]\n'
+            path.write_text(header+'stick_activation = 0.25\ntrigger_activation = 0.75\n')
+            for result in self.invoke_both(path):
+                self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+                values = tomllib.loads(result.stdout)['controller']
+                self.assertEqual(values['stick_activation'], 0.25)
+                self.assertEqual(values['trigger_activation'], 0.75)
+            for key in ('stick_activation', 'trigger_activation'):
+                for value in ('0.0', '1.0', '-0.1', 'nan', 'inf', 'true', '"0.5"'):
+                    with self.subTest(key=key, value=value):
+                        text = header+f'{key} = {value}\n';path.write_text(text)
+                        for result in self.invoke_both(path):
+                            self.assertEqual(result.returncode, 2, result.stdout+result.stderr)
+                            self.assertIn(key, result.stderr)
+                        self.assertEqual(path.read_text(), text)
+
+    def test_axis_activation_changes_actual_guest_reports_for_virtual_controllers(self):
+        data = Path('disc/DATA').resolve()
+        for stick, trigger, direction in ((0.25, 0.75, 'right_stick_right'), (0.75, 0.25, 'right_stick_left')):
+            with self.subTest(stick=stick, trigger=trigger), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory)/'settings.toml'
+                path.write_text('[kirby]\nschema_version = 1\n[controller]\n'
+                                f'a = "{direction}"\nb = "right_trigger"\n'
+                                'up = "left_stick_up"\nstart = "left_trigger"\n'
+                                f'stick_activation = {stick}\ntrigger_activation = {trigger}\n')
+                result = subprocess.run([os.environ['KIRBY_NATIVE_TEST'], '--probe-configured-controls',
+                                         '--config', str(path), '--game-data', str(data), '--volume', '0'],
+                                        cwd=directory, capture_output=True, text=True, timeout=30,
+                                        env=dict(os.environ, SDL_AUDIO_DRIVER='dummy'))
+                self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+                samples = {}
+                for line in result.stdout.splitlines():
+                    if not line.startswith('[kirby:activation] '):continue
+                    profile, token, level, mask = line.removeprefix('[kirby:activation] ').split('|')
+                    samples[profile, token, int(level)] = int(mask)
+                self.assertEqual(len(samples), 64, result.stdout)
+                self.assertEqual(len({key[0] for key in samples}), 4)
+                for (profile, token, level), mask in samples.items():
+                    threshold = trigger if token.endswith('trigger') else stick
+                    pressed = {'right_stick_right': 0x0100, 'right_stick_left': 0x0100,
+                               'left_stick_up': 0x0002, 'right_trigger': 0x0200, 'left_trigger': 0x0010}[token]
+                    self.assertEqual(mask, pressed if level/100 > threshold else 0,
+                                     (profile, token, level, stick, trigger))
+
     def test_both_programs_read_the_same_settings_without_booting(self):
         with tempfile.TemporaryDirectory(prefix="kirby's settings ") as directory:
             path = Path(directory) / "settings.toml"
@@ -77,6 +124,8 @@ vsync = false
                 self.assertEqual(settings["audio"]["volume"], 1.0)
                 self.assertTrue(settings["video"]["vsync"])
                 self.assertFalse(settings["kirby"]["gpu_resident_copies"])
+                self.assertEqual(settings['controller']['stick_activation'], 0.5)
+                self.assertEqual(settings['controller']['trigger_activation'], 0.5)
             self.assertFalse(path.parent.exists())
 
     def test_native_cli_values_override_saved_settings(self):

@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
+#include <utility>
 #ifdef _WIN32
 #include "kirby/platform/windows_file.h"
 #include <atomic>
@@ -65,6 +66,15 @@ Settings Parse(const std::string& text, const fs::path& file, Settings defaults)
     if (shared.audioVolume) defaults.masterVolume = *shared.audioVolume * 100;
     if (shared.vsync) defaults.vsync = *shared.vsync;
     if (gpuCopies) defaults.gpuResidentCopies = *gpuCopies;
+    for (const auto& [key, destination] : std::array{
+            std::pair{"stick_activation", &defaults.controls.stickActivation},
+            std::pair{"trigger_activation", &defaults.controls.triggerActivation}}) {
+        if (!present("controller", key)) continue;
+        const auto value = FindConfigValue<double>(document, "controller", key);
+        if (!value || !std::isfinite(*value) || *value < 0.05 || *value > 0.95)
+            throw std::runtime_error(std::string("controller.") + key + " must be between 0.05 and 0.95");
+        *destination = static_cast<float>(*value);
+    }
     for (size_t i = 0; i < GameActions.size(); ++i) {
         for (const auto device : {BindingDevice::Gamepad, BindingDevice::Keyboard}) {
             const char* section = device == BindingDevice::Gamepad ? "controller" : "keyboard";
@@ -94,6 +104,13 @@ std::string Update(std::string text, const Settings& settings) {
     volume << std::setprecision(std::numeric_limits<float>::max_digits10) << settings.masterVolume / 100;
     set("audio", "volume", volume.str());
     set("video", "vsync", settings.vsync ? "true" : "false");
+    for (const auto& [key, value] : std::array{
+            std::pair{"stick_activation", settings.controls.stickActivation},
+            std::pair{"trigger_activation", settings.controls.triggerActivation}}) {
+        std::ostringstream number;
+        number << std::setprecision(std::numeric_limits<float>::max_digits10) << value;
+        set("controller", key, number.str());
+    }
     for (size_t i = 0; i < GameActions.size(); ++i) {
         set("controller", GameActions[i].key, RuntimeConfigFile::FormatString(CanonicalBinding(BindingDevice::Gamepad, settings.controls.gamepad[i])));
         set("keyboard", GameActions[i].key, RuntimeConfigFile::FormatString(CanonicalBinding(BindingDevice::Keyboard, settings.controls.keyboard[i])));

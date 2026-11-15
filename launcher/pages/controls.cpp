@@ -18,6 +18,19 @@ Action DrawControls(State& state) {
     ImGui::Spacing();
     ImGui::TextWrapped("Select a binding, then press the new input. Gamepad bindings apply to all players; keyboard bindings apply to player 1. Launcher navigation stays unchanged.");
     auto& capture = state.bindingCapture;
+    ImGui::BeginDisabled(state.selfTest || !state.settingsError.empty() || capture.Busy());
+    float stickActivation = state.config.controls.stickActivation * 100.f;
+    float triggerActivation = state.config.controls.triggerActivation * 100.f;
+    if (ImGui::SliderFloat("Stick activation", &stickActivation, 5.f, 95.f, "%.0f%%")) {
+        state.config.controls.stickActivation = stickActivation / 100.f;
+        state.settingsDirty = true;
+    }
+    if (ImGui::SliderFloat("Trigger activation", &triggerActivation, 5.f, 95.f, "%.0f%%")) {
+        state.config.controls.triggerActivation = triggerActivation / 100.f;
+        state.settingsDirty = true;
+    }
+    ImGui::EndDisabled();
+    ImGui::TextWrapped("For actions assigned to an axis, choose how far to move the stick or trigger before the action activates.");
     if (capture.Busy()) {
         ImGui::SeparatorText(Kirby::GameActions[capture.action].label);
         if (capture.WaitingForRelease()) ImGui::TextWrapped("Release the captured input to continue.");
@@ -73,8 +86,8 @@ Action DrawControls(State& state) {
     }
     ImGui::Spacing();
     ImGui::BeginDisabled(state.selfTest || !state.settingsError.empty() || capture.Busy());
-    if (ImGui::Button("Reset bindings")) {
-        state.config.controls = {}; state.settingsDirty = true; capture.message = "Default bindings restored";
+    if (ImGui::Button("Reset controls")) {
+        state.config.controls = {}; state.settingsDirty = true; capture.message = "Default bindings and activation levels restored";
     }
     ImGui::EndDisabled();
     ImGui::TextWrapped("Per-device profiles, motion configuration and player assignment are not available yet.");

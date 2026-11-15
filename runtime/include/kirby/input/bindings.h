@@ -30,6 +30,9 @@ inline constexpr std::array<ActionInfo, static_cast<size_t>(GameAction::Count)> 
 }};
 struct ControlBindings {
     std::array<std::string, GameActions.size()> gamepad, keyboard;
+    // Digital actions bound to a signed axis activate beyond this fraction.
+    float stickActivation = 0.5f;
+    float triggerActivation = 0.5f;
     ControlBindings() {
         for (size_t i = 0; i < GameActions.size(); ++i) {
             gamepad[i] = GameActions[i].defaultGamepad;
