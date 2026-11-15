@@ -15,6 +15,7 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_events.h>
+#include <tracy/TracyC.h>
 
 namespace {
 unsigned checks;
@@ -31,7 +32,12 @@ void Bp(Kirby::GxRenderer& renderer, uint32_t value) {
     const uint8_t packet[]{0x61,uint8_t(value >> 24),uint8_t(value >> 16),uint8_t(value >> 8),uint8_t(value)};
     renderer.Feed(packet);
 }
-void GpuXfb(bool startHidden = false) {
+void GpuXfb(bool startHidden = false, bool waitForTrace = false) {
+    if (waitForTrace) {
+#ifndef TRACY_ENABLE
+        throw std::runtime_error("GPU trace test requires TRACY_ENABLE=ON");
+#endif
+    }
     // Readback-only format: guest GX texture format numbers are unchanged.
     const auto xfbFormat = aurora::gfx::readback::format_info(0x100);
     Check(xfbFormat.has_value() && xfbFormat->tileWidth == 2 && xfbFormat->tileHeight == 1 &&
@@ -48,6 +54,14 @@ void GpuXfb(bool startHidden = false) {
         std::memcpy(memory.data() + address, bytes.data(), bytes.size()); ++writes;
     });
     renderer.OpenWindow(startHidden);
+    if (waitForTrace) {
+#ifdef TRACY_ENABLE
+        std::cout << "Waiting for the local Tracy collector\n" << std::flush;
+        const auto deadline = SDL_GetTicks() + 10000;
+        while (!TracyCIsConnected && SDL_GetTicks() < deadline) SDL_Delay(10);
+        Check(TracyCIsConnected, "Tracy collector connects before GPU readbacks");
+#endif
+    }
     renderer.SetTextureSnapshotReuse(true);
     if (startHidden) {
         int count = 0;
@@ -652,6 +666,7 @@ int main(int argc, char** argv) {
     try {
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb") { GpuXfb(); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb-hidden") { GpuXfb(true); return 0; }
+        if (argc == 2 && std::string_view(argv[1]) == "--gpu-trace-hidden") { GpuXfb(true, true); return 0; }
         if (argc != 1) throw std::runtime_error("Unknown renderer test option");
         using namespace aurora::gx;
         std::vector<uint8_t> memory(0x1800000);

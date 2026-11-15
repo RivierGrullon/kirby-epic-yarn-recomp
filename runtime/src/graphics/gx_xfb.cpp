@@ -12,6 +12,7 @@
 #include "gfx/recording.hpp"
 #include "gfx/readback/readback.hpp"
 #include "gfx/readback/copy_layout.hpp"
+#include "webgpu/gpu_prof.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <SDL3/SDL_timer.h>
@@ -86,8 +87,10 @@ struct GxRenderer::XfbState {
         // chooses which RAM buffer becomes visible.
         gfx::end_frame([](wgpu::CommandEncoder& encoder, std::vector<gfx::AfterSubmitCallback> callbacks,
                           const gfx::InterpolationReplay&) {
+            webgpu::gpu_prof::frame_end(encoder);
             const auto commands = encoder.Finish();
             gfx::queue().Submit(1, &commands);
+            webgpu::gpu_prof::after_submit();
             for (auto& callback : callbacks) callback();
         });
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);

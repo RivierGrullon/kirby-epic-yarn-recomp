@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep GPU profiling active across texture and display readback submissions, with
+  an opt-in real Vulkan/Tracy regression check. This does not change the FPS mode.
 - Add a first-installation command with prerequisite checks, Docker/Podman
   selection, toolchain preparation and verified launcher/game installation.
 - Add native Windows x86-64 build support with pinned LLVM-MinGW, DLL bundles,

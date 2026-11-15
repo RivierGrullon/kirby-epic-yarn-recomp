@@ -88,6 +88,36 @@ the private source WAV under ignored `build-logs/`.
 
 ## Per-frame diagnostics
 
+### GPU profiling across readbacks
+
+Tracy-enabled builds reuse Aurora's GPU timestamp profiler. Kirby's synchronous
+texture and display readbacks submit command buffers without presenting a VI
+frame. These submissions must finish the profiler frame before finishing the
+encoder and notify the profiler after queue submission, just like Aurora's
+normal submission path. Otherwise its recording slot remains occupied and later
+GPU timings disappear, even though rendering and readback continue successfully.
+
+The regression test runs real hidden Vulkan copies and exports the resulting
+Tracy capture. It requires multiple GPU frame and readback-transfer timings;
+successful pixels or a profiler-enabled log alone do not satisfy the test. It
+failed with zero GPU rows before the repair. This is a diagnostic correction,
+not evidence of improved gameplay frame pacing. Default builds keep Tracy off.
+
+Use a renderer test built with `TRACY_ENABLE=ON`, `TRACY_ON_DEMAND=ON`,
+`TRACY_ONLY_LOCALHOST=ON` and `TRACY_NO_BROADCAST=ON`, together with capture and
+CSV-export tools built from the same fetched Tracy version:
+
+```bash
+KIRBY_GPU_TRACE_TEST=/absolute/path/to/kirby_gx_renderer_test \
+KIRBY_TRACY_CAPTURE=/absolute/path/to/tracy-capture \
+KIRBY_TRACY_EXPORT=/absolute/path/to/tracy-csvexport \
+SDL_AUDIO_DRIVER=dummy \
+python3 -m unittest tests.integration.test_gpu_trace -v
+```
+
+This synthetic check requires a working Vulkan session, creates no visible game
+window and needs no disc data. It does not measure displayed FPS or audible audio.
+
 ### Experimental Wayland presentation feedback
 
 `--presentation-log FILE.csv` requests `wp_presentation` feedback for the game's
