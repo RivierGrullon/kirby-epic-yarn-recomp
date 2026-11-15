@@ -26,13 +26,15 @@ target_compile_features(kirby_command_line_test PRIVATE cxx_std_20)
 target_include_directories(kirby_command_line_test PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/include")
 add_test(NAME kirby_command_line COMMAND kirby_command_line_test)
 if(WIN32)
-    target_link_libraries(WiiCompiled PRIVATE shell32)
+    target_link_libraries(WiiCompiled PRIVATE shell32 bcrypt)
     target_link_libraries(kirby_command_line_test PRIVATE shell32)
     # Kirby exposes master volume, not the upstream Mario Kart media-session
     # ducking feature. Keep that optional integration out of this build so it
     # does not require generated C++/WinRT SDK headers inside the toolchain.
-    set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/music_attenuation.cpp"
-        APPEND PROPERTY COMPILE_DEFINITIONS MKW_DISABLE_EXTERNAL_MEDIA_MONITOR)
+    if(CMAKE_CROSSCOMPILING)
+        set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/music_attenuation.cpp"
+            APPEND PROPERTY COMPILE_DEFINITIONS MKW_DISABLE_EXTERNAL_MEDIA_MONITOR)
+    endif()
 endif()
 add_library(kirby_pcm_trace STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/audio/pcm_trace.cpp")
 target_include_directories(kirby_pcm_trace PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/src/audio")
@@ -268,7 +270,8 @@ add_test(NAME kirby_xfb COMMAND kirby_xfb_test)
 
 # WPAD uses Aurora's native input backend; guest reports/callbacks stay in Kirby's bridge.
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/native-src/input/wpad.cpp"
-    "${KIRBY_PROJECT_ROOT}/runtime/src/input/controller_mapping.cpp")
+    "${KIRBY_PROJECT_ROOT}/runtime/src/input/controller_mapping.cpp"
+    "${KIRBY_PROJECT_ROOT}/runtime/src/input/controller_motion.cpp")
 target_link_libraries(WiiCompiled PRIVATE aurora::wpad absl::flat_hash_map)
 
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/threading/continuations.cpp"
@@ -348,6 +351,7 @@ add_test(NAME kirby_setup_installation COMMAND kirby_setup_installation_test)
 
 add_library(kirby_settings STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/app/settings.cpp")
 target_sources(kirby_settings PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/input/bindings.cpp")
+target_sources(kirby_settings PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/input/motion_device.cpp")
 target_include_directories(kirby_settings PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/include"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${MKW_AURORA_DIR}/include")
 target_link_libraries(kirby_settings PRIVATE mkw::toml11 ${AURORA_SDL3_TARGET})
@@ -361,6 +365,9 @@ add_test(NAME kirby_settings COMMAND kirby_settings_test)
 add_executable(kirby_bindings_test "${KIRBY_PROJECT_ROOT}/tests/unit/bindings_test.cpp")
 target_link_libraries(kirby_bindings_test PRIVATE kirby_settings)
 add_test(NAME kirby_bindings COMMAND kirby_bindings_test)
+add_executable(kirby_motion_test "${KIRBY_PROJECT_ROOT}/tests/unit/motion_test.cpp")
+target_link_libraries(kirby_motion_test PRIVATE kirby_settings ${AURORA_SDL3_TARGET})
+add_test(NAME kirby_motion COMMAND kirby_motion_test)
 add_executable(kirby_binding_capture_test "${KIRBY_PROJECT_ROOT}/tests/unit/binding_capture_test.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/binding_capture.cpp")
 target_include_directories(kirby_binding_capture_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
@@ -410,5 +417,6 @@ target_compile_definitions(kirby-launcher PRIVATE SDL_MAIN_HANDLED)
 target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends ${AURORA_SDL3_TARGET} kirby_settings kirby_build_info kirby_setup mkw::cryptopp)
 set_target_properties(kirby-launcher PROPERTIES BUILD_RPATH "\$ORIGIN/../../local/host-libs")
 if(WIN32)
-    target_link_libraries(kirby-launcher PRIVATE shell32)
+    target_link_libraries(kirby-launcher PRIVATE shell32 bcrypt)
+    aurora_copy_runtime_dlls(kirby-launcher)
 endif()

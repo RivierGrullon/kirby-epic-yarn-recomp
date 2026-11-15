@@ -32,7 +32,8 @@ not stable frame pacing or full-game compatibility.*
 - Linux x86-64 or Windows x86-64 with a desktop session and working graphics drivers.
   Windows support is under development; see the build guide for validation limits.
 - Your own complete RK5E01 Rev 0 dump, including the extracted `files/` tree.
-- Git, Python 3.11+ and **Docker or Podman** for the build environment.
+- Linux: Git, Python 3.11+ and **Docker or Podman** for the build environment.
+- Windows: the [native LLVM-MinGW toolchain](docs/building.md#windows-x64) used by celeron633, including Python 3.12+, .NET 8, CMake, Ninja and Windows SDK headers.
 - Dolphin's `dolphin-tool` / `DolphinTool.exe` for image extraction; 7-Zip only for `.7z` inputs.
   Neither is required for an already extracted DATA folder.
 - Several GB of storage and enough memory to compile the generated C++.
@@ -43,6 +44,9 @@ Expected `sys/main.dol` SHA-1:
 The target handheld is a **Lenovo Legion Go with Bazzite**. Current graphics and
 performance measurements were taken on an **Acer Nitro AN515-55 with an RTX 3050
 Laptop GPU**. Legion Go performance has not yet been measured.
+celeron633 exercised the Windows port on a Ryzen 5 9600X and RTX 3060. Startup and save
+creation were observed, and the local tester reported that it works; level
+completion, save reload and sustained Windows performance remain unverified.
 
 ## Build and play
 
@@ -53,7 +57,8 @@ command from the checkout with the actual path to your own disc or DATA folder:
 python3 tools/setup.py "/actual/path/to/Kirby.wbfs"
 ```
 
-On Windows PowerShell, use `py -3 tools/setup.py "C:\Games\Kirby.wbfs"`.
+On Windows, follow [celeron633's native build steps](docs/building.md#windows-x64).
+They build directly with LLVM-MinGW and do not require Docker or Podman.
 If `disc/DATA` is already extracted, omit the path. Use `--engine docker` or
 `--engine podman` to choose explicitly, or `--check` to check prerequisites first.
 Setup prepares tools, translates, compiles and verifies the game and launcher.
@@ -91,7 +96,7 @@ preferences migrate automatically while retaining the original file. See the
 [settings guide](docs/settings.md) for the format and recovery instructions.
 The first installation uses the setup command; later imports and builds can use
 the launcher. Resolution
-scaling, per-device input profiles, motion configuration and a validated 30/60 FPS
+scaling, per-device input profiles and a validated 30/60 FPS
 selector are not available in the launcher yet.
 
 ## Controls
@@ -115,8 +120,16 @@ all players; keyboard bindings apply to player 1. See the
 Automated virtual SDL tests cover standard, PS5, Xbox 360 and Xbox One presets,
 release and unplug behavior. Physical DualSense input and directional reports
 still need resolution. These mappings are not a claim that every controller has
-been tested. Per-device profiles, motion, player assignment and physical
+been tested. Per-device profiles, player assignment and physical
 reconnection/cooperative play still need implementation or validation.
+
+**Controls > Gyroscope & gravity / tilt** configures controller tilt, gyro or
+right-stick aiming, sensitivity, inversion, deadzones and gyro calibration, with
+a live sensor preview. There is no in-game settings overlay. Click the right
+stick to recenter; optional keyboard motion uses Q/E to tilt and R to recenter.
+Gyro mode falls back to the mouse when no gyro data is available. Physical motion
+accuracy still needs testing on a supported controller; virtual sensors cover the
+math and guest report path. See [motion settings](docs/settings.md#motion-controls).
 
 ## Known limitations
 
@@ -127,7 +140,7 @@ reconnection/cooperative play still need implementation or validation.
 | Audio | Music tempo verified in a three-minute Fountain Gardens clip; long-session quality and broader synchronization remain unverified |
 | Input | Virtual mappings tested; physical controllers and Legion Go controls need validation |
 | Graphics | Native GX/VI rendering through Aurora; some formats and display modes remain unsupported |
-| Saves | Creation and independent reload verified; broad compatibility testing pending |
+| Saves | Creation/reload verified on Linux; Windows creation verified, reload pending |
 | Distribution | Source-tree build and launcher; no portable installer or public binary release |
 
 The window's FPS counter measures Aurora presentations. It does not establish
@@ -148,6 +161,9 @@ When launched from the repository root:
 
 Back up saves before testing development changes. Launching the executable from a
 different working directory uses a different local user directory.
+Windows NAND attributes use NTFS named streams. Save backups must preserve those
+streams; ordinary file contents alone do not retain Wii permission metadata.
+Filesystems without named-stream support have not been validated.
 
 ## Documentation
 
@@ -160,6 +176,7 @@ different working directory uses a different local user directory.
 
 ## Credits and license
 
+- **[celeron633](https://github.com/celeron633)** — Windows runtime contributions, widescreen presentation and controller motion support.
 - **Swiftshine/key** — community decompilation, revision information and symbols.
 - **WiiCompiled** — PowerPC translation and shared native runtime.
 - **Aurora** — graphics and host integration.

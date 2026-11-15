@@ -9,7 +9,9 @@
 #include "kirby/threading/scheduler.h"
 #include "kirby/threading/continuations.h"
 #include "kirby/input/wpad.h"
+#include "kirby/input/motion_device.h"
 #include "kirby/boot/boot_memory.h"
+#include "kirby/boot/validate_input.h"
 #include "kirby/boot/clock.h"
 #include "kirby/services/ios_bridge.h"
 #include "kirby/graphics/gx_fifo.h"
@@ -160,6 +162,7 @@ int main(int argc, char** argv) {
     bool volumeOverride = false, dataOverride = false, vsyncOverride = false, copiesOverride = false;
     bool explicitConfig = false;
     Kirby::ControlBindings controlBindings;
+    Kirby::MotionSettings motionSettings;
     std::filesystem::path frameLogPath;
     std::filesystem::path audioLogPath;
     std::filesystem::path presentationLogPath;
@@ -204,6 +207,7 @@ int main(int argc, char** argv) {
         try {
             const auto settings = Kirby::LoadSettings(configPath);
             controlBindings = settings.controls;
+            motionSettings = settings.motion;
             if (!volumeOverride) masterVolume = settings.masterVolume;
             if (!dataOverride) dataRoot = settings.gameData;
             if (!vsyncOverride) vsync = settings.vsync;
@@ -213,9 +217,13 @@ int main(int argc, char** argv) {
         }
     }
     if (mode == "--print-settings") {
-        std::cout << Kirby::FormatSettings({dataRoot, masterVolume, vsync, gpuResidentCopies, controlBindings});
+        std::cout << Kirby::FormatSettings({dataRoot, masterVolume, vsync, gpuResidentCopies, controlBindings, motionSettings});
         return 0;
     }
+#ifdef _WIN32
+    try { Kirby::ValidateWindowsInput(dataRoot); }
+    catch (const std::exception& error) { std::cerr << "Input: " << error.what() << '\n'; return 2; }
+#endif
     if (!frameLogPath.empty() && mode != "--video" && mode != "--video-hidden") {
         std::cerr << "--frame-log requires --video or --video-hidden\n";
         return 2;
@@ -230,8 +238,10 @@ int main(int argc, char** argv) {
     if (mode == "--probe-configured-controls" && !explicitConfig) {
         std::cerr << "--probe-configured-controls requires --config TOML\n"; return 2;
     }
-    if (mode == "--video" || mode == "--video-hidden" || mode == "--probe-configured-controls")
+    if (mode == "--video" || mode == "--video-hidden" || mode == "--probe-configured-controls") {
         Kirby::ConfigureControlBindings(controlBindings);
+        Kirby::ConfigureMotion(motionSettings);
+    }
 
     KirbyInstallDiagnostics();
     AudioBackend::Instance().SetMasterVolume(masterVolume / 100);

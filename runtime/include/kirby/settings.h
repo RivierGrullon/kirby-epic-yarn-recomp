@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 #include "kirby/input/bindings.h"
+#include "kirby/input/motion.h"
 #include <filesystem>
 #include <iosfwd>
 #include <string>
@@ -12,6 +13,7 @@ struct Settings {
     bool vsync = true;
     bool gpuResidentCopies = false;
     ControlBindings controls{};
+    MotionSettings motion{};
 };
 
 // Errors throw without modifying the source file. Relative DATA paths are

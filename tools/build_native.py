@@ -30,7 +30,7 @@ def apply_snapshot_patch(patch, workspace):
             original = target.read_bytes()
             if b'\0' not in original and b'\r\n' in original:
                 target.write_bytes(original.replace(b'\r\n', b'\n'))
-    apply = ['git', 'apply', f'--directory={workspace.relative_to(ROOT).as_posix()}']
+    apply = ['git', 'apply', '--ignore-space-change', f'--directory={workspace.relative_to(ROOT).as_posix()}']
     if subprocess.run([*apply, '--check'], input=content, cwd=ROOT, capture_output=True).returncode == 0:
         subprocess.run(apply, input=content, cwd=ROOT, check=True)
     elif subprocess.run([*apply, '--reverse', '--check'], input=content, cwd=ROOT, capture_output=True).returncode:
@@ -40,7 +40,7 @@ def apply_snapshot_patch(patch, workspace):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--configure-only", action="store_true")
-    parser.add_argument("--target", choices=("linux", "windows"), default="linux")
+    parser.add_argument("--target", choices=("linux", "windows"), default="windows" if os.name == "nt" else "linux")
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--translated-jobs", type=int, default=2)
     parser.add_argument("--stage-root",type=Path,help="Use isolated outputs below local/setup/builds/JOB")
@@ -51,7 +51,7 @@ def main():
         if args.profile_dawn_calls and (args.stage_root is None or args.target != 'linux'):
             raise ValueError("--profile-dawn-calls requires a Linux build with --stage-root")
         stage = args.stage_root
-        if args.target == 'windows' and stage is None:
+        if args.target == 'windows' and os.name != 'nt' and stage is None:
             stage = ROOT/'local/setup/builds/windows-developer'
         layout=BuildLayout(ROOT,stage)
         layout.ensure()
@@ -79,10 +79,16 @@ def main():
         if not stamp.is_file() or stamp.read_text().strip() != commit:
             raise ValueError("Runtime snapshot is partial or from a different revision; move local/native-workspace before retrying")
         link, target = workspace / "generated", layout.generated
-        if not (link.is_symlink() and link.resolve() == target.resolve()):
+        if not ((link.is_symlink() or (os.name == "nt" and link.is_junction())) and link.resolve() == target.resolve()):
             if link.exists() or link.is_symlink():
                 raise ValueError(f"Unexpected existing path: {link}; left untouched")
-            link.symlink_to(os.path.relpath(target, workspace), target_is_directory=True)
+            if os.name == "nt":
+                link_literal = str(link).replace("'", "''")
+                target_literal = str(target).replace("'", "''")
+                subprocess.run(["powershell", "-NoProfile", "-Command",
+                                f"New-Item -ItemType Junction -Path '{link_literal}' -Target '{target_literal}' | Out-Null"], check=True)
+            else:
+                link.symlink_to(os.path.relpath(target, workspace), target_is_directory=True)
         for patch in sorted((ROOT / "patches/wiicompiled").glob("*.patch")):
             apply_snapshot_patch(patch, workspace)
         aurora_snapshot = workspace / "aurora"
@@ -97,6 +103,13 @@ def main():
             apply_snapshot_patch(patch, workspace)
         aurora = aurora_snapshot
         build = layout.build
+        platform_options = []
+        if os.name == "nt":
+            sdk = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Windows Kits/10/Include"
+            headers = sorted(sdk.glob("*/cppwinrt/winrt/base.h"), reverse=True)
+            if not headers:
+                raise ValueError("Windows SDK C++/WinRT headers are required for the pinned runtime")
+            platform_options.append(f"-DMKW_CPPWINRT_INCLUDE_DIR={headers[0].parent.parent.as_posix()}")
         configure=["cmake", "-S", workspace / "runtime", "-B", build, "-G", "Ninja",
                                 "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++",
                                 "-DCMAKE_BUILD_TYPE=Release", "-DAURORA_DAWN_PROVIDER=package",
@@ -108,10 +121,10 @@ def main():
                                 f"-DCMAKE_PROJECT_mkw_recompiled_INCLUDE={ROOT / 'cmake/native_project.cmake'}",
                                 f"-DMKW_AURORA_DIR={aurora}",
                                 f"-DMKW_TRANSLATED_SHARD_MANIFEST={layout.generated / 'build_shards/shards.cmake'}",
-                                f"-DMKW_TRANSLATED_COMPILE_JOBS={max(1, args.translated_jobs)}"]
+                                f"-DMKW_TRANSLATED_COMPILE_JOBS={max(1, args.translated_jobs)}", *platform_options]
         if layout.stage is not None:
             configure.append(f"-DCMAKE_RUNTIME_OUTPUT_DIRECTORY={build}")
-        if args.target == 'windows':
+        if args.target == 'windows' and os.name != 'nt':
             configure = [argument for argument in configure if not str(argument).startswith(
                 ('-DCMAKE_C_COMPILER=', '-DCMAKE_CXX_COMPILER='))]
             configure.append(f"-DCMAKE_TOOLCHAIN_FILE={ROOT/'cmake/windows-toolchain.cmake'}")

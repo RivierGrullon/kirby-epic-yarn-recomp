@@ -230,7 +230,8 @@ void PollWpad(CpuContext& cpu, bool force) {
     lastPoll = now;
     // Aurora's noexcept update only queues host events. Invoke guest callbacks
     // afterwards, at a boundary where translated resident registers are flushed.
-    if (windowActive) PollHostEvents(); else aurora_wpad_update();
+    if (windowActive) PollHostEvents();
+    else { UpdateControllerMotion(); aurora_wpad_update(); }
     auto pending = std::exchange(events, {});
     for (const auto& event : pending) {
         if (event.infoOutput) WriteInfo(event.infoOutput,event.info);

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Integrate celeron633's tested native Windows runtime, launcher process handling,
+  NTFS-stream saves and LLVM-MinGW build path, plus 16:9 presentation and motion
+  settings. Retain Linux setup and diagnostics, and preserve original commits
+  and authorship.
+
 - Keep GPU profiling active across texture and display readback submissions, with
   an opt-in real Vulkan/Tracy regression check. This does not change the FPS mode.
 - Add a first-installation command with prerequisite checks, Docker/Podman

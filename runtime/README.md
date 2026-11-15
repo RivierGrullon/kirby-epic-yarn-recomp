@@ -131,6 +131,17 @@ WPAD reports across four virtual device presets, including obsolete binding
 removal, keyboard/controller sharing and release. These probes use virtual SDL
 devices and their own input configuration; physical input and the
 window's focus/capture behavior still require verification.
+
+`input/motion.h` defines motion settings, gravity conversion and gyro integration.
+`motion_device.cpp` samples borrowed SDL
+handles, converts gravity to sideways KPAD axes and integrates gyro rates with
+stationary bias calibration. `controller_motion.cpp` resolves Aurora's assigned
+gamepad per port and supplies its existing acceleration/pointer overrides before
+host sampling. The launcher uses the same sampler for previews and stores motion
+settings and controller-GUID calibration in the shared TOML file. It owns and
+closes only its preview handle; no F1 settings overlay or second binding system
+is introduced. `kirby_motion` covers synthetic sensor math and SDL lifecycle;
+the SDL controller probe also checks motion through guest WPAD reports.
 Its `--monitor-controller` mode reads physical devices for 30 seconds without a
 virtual device or game window and logs changes at the SDL/PAD/guest boundaries.
 Use the isolated command in the project README to preserve existing preferences.
@@ -168,3 +179,24 @@ backend polls global controller state. Actions are also checked against current
 window focus before dispatch. The ImGui input regression covers initial absence
 of focus, repeated background polling, focus loss/regain, interrupted clicks and
 fresh foreground input; it does not certify physical controller mappings.
+
+## Windows host adaptation
+
+`include/kirby/services/windows_fs.h` supplies the descriptor operations used by
+the disc and NAND services on Windows. Directory handles protect path resolution;
+each child component rejects traversal, device/stream syntax and reparse points.
+Binary reads retain 64-bit offsets. Four authored NAND attribute bytes live in
+the `kirby.isfs` NTFS stream and travel with a file when it is renamed. The Linux
+descriptor/xattr implementation remains selected on Linux.
+
+Windows settings use exclusive temporary files, flushed writes and atomic
+replacement. The launcher uses celeron633's Windows process handles and SHA-256 verification.
+Linux retains the newer SDL process launcher and internal SHA-1 verification. Game startup performs the same ID,
+revision, size and hash validation before guest execution. Native registry audits
+compare names by content, independently of compiler string-literal merging.
+
+`patches/wiicompiled/windows-fail-closed.patch` rejects unmapped Windows guest
+faults after the existing copy/code-protection handlers, rather than allocating
+new guest RAM. Build junctions and Windows SDK discovery live in `tools/build_native.py`.
+See [Windows bring-up](../docs/bringup.md#windows-x64-port-2026-11-14) for evidence
+and unverified paths.
