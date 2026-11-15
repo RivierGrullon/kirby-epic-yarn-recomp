@@ -4,6 +4,9 @@ import json
 import os
 from pathlib import Path
 import re
+import uuid
+
+from installer.platforms import is_link, open_read
 
 
 class BuildLayout:
@@ -36,7 +39,7 @@ class BuildLayout:
         for path in (self.stage,*self.stage.parents):
             if path==self.root:
                 break
-            if path.is_symlink():
+            if is_link(path):
                 raise ValueError('Build stage paths must not contain symlinks')
 
     def ensure(self):
@@ -44,24 +47,50 @@ class BuildLayout:
             self._check_stage()
             self.stage.mkdir(parents=True,exist_ok=True,mode=0o700)
             marker=self.stage/'.layout.json'
-            info=self.root.stat()
-            # Bind mounts use another path inside the build container, but the
-            # checkout's filesystem identity remains the same.
-            record=dict(version=1,project_identity=dict(device=info.st_dev,inode=info.st_ino),
-                        kind='kirby-native-build-stage')
-            if marker.exists() or marker.is_symlink():
-                if marker.is_symlink() or not marker.is_file() or marker.stat().st_size>4096:
+            previous=None
+            if marker.exists() or is_link(marker):
+                if is_link(marker) or not marker.is_file() or marker.stat().st_size>4096:
                     raise ValueError('Invalid build stage ownership record')
-                if json.loads(marker.read_text())!=record:
-                    raise ValueError('Build stage belongs to another layout or checkout')
+                with os.fdopen(open_read(marker),'r',encoding='utf-8') as stream:
+                    previous=json.load(stream)
+                if not isinstance(previous,dict):
+                    raise ValueError('Invalid build stage ownership record')
+                if previous.get('version')==1:
+                    info=self.root.stat()
+                    legacy=dict(version=1,project_identity=dict(device=info.st_dev,inode=info.st_ino),
+                                kind='kirby-native-build-stage')
+                    if previous!=legacy:
+                        raise ValueError('Build stage belongs to another layout or checkout')
+            elif any(self.stage.iterdir()):
+                raise ValueError('Refusing an unowned, nonempty build stage')
+            # A private checkout token survives Windows-to-Linux bind mounts,
+            # whose device/inode identities are not shared with the host.
+            token_path=self.root/'local/setup/project-id'
+            try:
+                fd=os.open(token_path,os.O_CREAT|os.O_EXCL|os.O_WRONLY|getattr(os,'O_NOFOLLOW',0),0o600)
+            except FileExistsError:
+                pass
             else:
-                if any(self.stage.iterdir()):
-                    raise ValueError('Refusing an unowned, nonempty build stage')
-                fd=os.open(marker,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
-                with os.fdopen(fd,'w') as stream:
-                    stream.write(json.dumps(record)+'\n')
+                with os.fdopen(fd,'w',encoding='ascii') as stream:
+                    stream.write(uuid.uuid4().hex+'\n');stream.flush();os.fsync(stream.fileno())
+            with os.fdopen(open_read(token_path),'r',encoding='ascii') as stream:
+                token=stream.read(34).strip()
+            if not re.fullmatch('[a-f0-9]{32}',token):
+                raise ValueError('Invalid checkout ownership token')
+            record=dict(version=2,project_identity=dict(token=token),kind='kirby-native-build-stage')
+            if previous is not None and previous.get('version')!=1 and previous!=record:
+                raise ValueError('Build stage belongs to another layout or checkout')
+            if previous!=record:
+                import tempfile
+                fd,name=tempfile.mkstemp(prefix='.layout-',dir=self.stage)
+                try:
+                    with os.fdopen(fd,'w',encoding='utf-8') as stream:
+                        stream.write(json.dumps(record)+'\n');stream.flush();os.fsync(stream.fileno())
+                    os.replace(name,marker)
+                finally:
+                    Path(name).unlink(missing_ok=True)
             for path in (self.generated,self.metadata,self.logs,self.workspace,self.build,self.translator_artifacts):
-                if path.is_symlink():
+                if is_link(path):
                     raise ValueError('Build output directories must not be symlinks')
         for path in (self.generated,self.metadata,self.logs):
             path.mkdir(parents=True,exist_ok=True,mode=0o700)

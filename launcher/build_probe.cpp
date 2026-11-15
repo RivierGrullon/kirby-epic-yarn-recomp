@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "build_probe.h"
+#include "platform.h"
 #include <SDL3/SDL.h>
 #include <array>
 #include <stdexcept>
@@ -8,7 +9,7 @@ BuildProbe::~BuildProbe() { Stop(); }
 bool BuildProbe::Start(const std::filesystem::path& executable,const std::filesystem::path& libraries) {
     if (status_==BuildProbeStatus::Checking) return false;
     Cancel();
-    const auto path=std::filesystem::absolute(executable).string();
+    const auto path=Utf8(std::filesystem::absolute(executable));
     const char* arguments[]{path.c_str(),"--build-info",nullptr};
     const auto properties=SDL_CreateProperties();
     auto* environment=SDL_CreateEnvironment(true);
@@ -16,11 +17,13 @@ bool BuildProbe::Start(const std::filesystem::path& executable,const std::filesy
     if (configured) {
         configured=SDL_SetEnvironmentVariable(environment,"SDL_AUDIO_DRIVER","dummy",true) &&
             SDL_SetEnvironmentVariable(environment,"SDL_VIDEO_DRIVER","offscreen",true);
+#ifndef _WIN32
         if (!libraries.empty()) {
             const char* previous=SDL_GetEnvironmentVariable(environment,"LD_LIBRARY_PATH");
             const auto libraryPath=libraries.string()+(previous ? std::string(":")+previous : "");
             configured=configured && SDL_SetEnvironmentVariable(environment,"LD_LIBRARY_PATH",libraryPath.c_str(),true);
         }
+#endif
         configured=configured && SDL_SetPointerProperty(properties,SDL_PROP_PROCESS_CREATE_ARGS_POINTER,arguments) &&
             SDL_SetPointerProperty(properties,SDL_PROP_PROCESS_CREATE_ENVIRONMENT_POINTER,environment) &&
             SDL_SetNumberProperty(properties,SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,SDL_PROCESS_STDIO_NULL) &&

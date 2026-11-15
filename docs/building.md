@@ -1,26 +1,103 @@
 # Building and updating
 
-This is a source build for Linux x86-64. Translation and compilation happen on
-your machine using your own RK5E01 Rev 0 dump. Keep the complete extracted DATA
+This is a source build for Linux x86-64 and native Windows x86-64. Translation
+and compilation use your own RK5E01 Rev 0 dump. Windows builds produce `.exe`
+files; the game runs on Windows, outside the build container. Keep the complete extracted DATA
 partition for runtime loading; translating `main.dol` alone is not enough to play.
 
 ## Prerequisites
 
-Install Git, Python 3, rootless Podman and Dolphin's `dolphin-tool` on the host.
-The extraction helper also supports the Dolphin Flatpak. Install `7z` or `7zz`
-if your WBFS is inside a `.7z` archive. A working desktop Vulkan driver is needed
-to run the game and graphics tests.
+Install these **before** running setup:
+
+- Git and Python **3.11 or newer**, available on PATH.
+- On Windows: the [Microsoft Visual C++ v14 Redistributable (x64)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist),
+  required by the bundled Dawn graphics library. Setup reports missing runtime DLLs
+  before compiling. Windows 10/11 x86-64 is the native desktop target.
+- **Docker or Podman**, installed and running. Either is sufficient. On Windows,
+  use Docker Desktop in Linux-container mode or a running Podman machine.
+- For a disc image: Dolphin's `dolphin-tool` (Linux) or `DolphinTool.exe`
+  (Windows), available on PATH. The installed Dolphin Flatpak also works on Linux.
+  An already extracted DATA folder does not need Dolphin.
+- For a `.7z` archive only: `7z` or `7zz` on PATH. **You do not need to compress
+  a WBFS or an extracted DATA folder.**
+- A desktop graphics session and a supported graphics driver for native startup
+  verification and play. Linux uses Vulkan; Windows uses Aurora's Windows backends.
+- On Windows, keep the checkout and saves on **NTFS** so Wii file-permission
+  metadata can be preserved with Windows extended attributes.
+- At least 3 GiB available RAM for compilation and several GB of free disk space.
+  Image extraction needs additional space for a full DATA export.
+
+On Ubuntu/Debian, missing Podman can be installed with `sudo apt update`, then
+`sudo apt install podman`. If you already use Docker, keep using Docker.
+See the [Podman installation guide](https://podman.io/docs/installation) or
+[Docker installation guide](https://docs.docker.com/engine/install/) for your OS.
+Setup reports missing prerequisites; it does not run sudo or install host packages.
+
+## First installation: one command
+
+Clone the source, or open a terminal in your existing checkout:
+
+```bash
+git clone https://github.com/RivierGrullon/kirby-epic-yarn-recomp.git
+cd kirby-epic-yarn-recomp
+```
+
+On **Linux**, pass the actual path to your own disc:
+
+```bash
+python3 tools/setup.py "$HOME/Games/Kirby.wbfs"
+```
+
+On **Windows**, use PowerShell from the checkout:
+
+```powershell
+py -3 tools/setup.py "C:\Games\Kirby.wbfs" --engine docker
+```
+
+Replace that filename with your own. WBFS, ISO, RVZ, a 7z containing one WBFS,
+and complete extracted DATA folders are accepted. If you already followed the
+old extraction steps and have `disc/DATA`, just run:
+
+```bash
+python3 tools/setup.py
+```
+
+On Windows, use `py -3` instead of `python3`. No extraction is repeated for a DATA
+folder. `--engine docker` and `--engine podman` explicitly select a backend;
+automatic detection uses an installed backend. `--check` checks host prerequisites
+without downloading or compiling, but does not certify the disc revision or GPU.
+
+Setup inspects the source, prepares the container toolchain if missing, fetches
+pinned dependencies, translates and compiles, verifies native startup, installs
+the launcher and selects the verified game. Windows cross-compilation takes place
+inside the build container and produces **native Windows executables**. WSL is
+not the game's runtime. Compiler output is kept in the printed log; readable
+stage messages remain in the terminal. Ctrl+C cancels the current job.
+
+After success, run `./build/native/kirby-launcher` on Linux, or open
+`build\native\kirby-launcher.exe` on Windows. Existing saves and preferences are
+preserved. For an existing settings file, select the DATA folder printed by setup
+if you want to change its current selection. Future builds are available from
+**Install → Build / update native game** in the launcher.
+
+This remains a development build. Cross-compilation and automated portability
+checks do not establish full-game compatibility or performance on Windows.
+
+## Manual build (Linux developers)
+
+The remaining build steps are an alternative to the setup command. If setup
+completed successfully, go directly to **Run on the host**; do not repeat them.
 
 The build container provides .NET 8, Clang, CMake, Ninja and Linux development
 dependencies. It does not install packages on Bazzite's host filesystem. Network
 access and several GB of free space are required. The base image is pinned by
 digest; the distribution package repositories are not snapshotted.
 
-Build commands use the host network namespace so the container can reach the
-host's DNS resolver on Bazzite. The container still receives no display sockets,
+Podman build commands use the host network namespace to reach Bazzite's DNS
+resolver. Docker uses its normal container networking. The container still receives no display sockets,
 audio sockets or GPU devices. Compilation does not start the game.
 
-## Fetch sources and build tools
+### Fetch sources and build tools
 
 ```bash
 git clone https://github.com/RivierGrullon/kirby-epic-yarn-recomp.git
@@ -38,7 +115,7 @@ Aurora is fetched at `vendor/wiicompiled/aurora-main`. The build helper creates
 the patched build copy at `local/native-workspace/aurora`; authored patches live
 in `patches/aurora/`. Do not edit the dependency checkout to make project changes.
 
-## Extract and verify your copy
+### Extract and verify your copy
 
 ```bash
 python3 tools/extract.py "/path/to/your-game.wbfs"
@@ -67,54 +144,7 @@ Preparation checks this against Swiftshine/key, validates executable sections an
 function ranges, and derives the startup registers from the DOL. Expected values
 are entry `0x80004050`, r2 `0x808EE8E0` and r13 `0x808E73E0`.
 
-### Inspect another source without replacing the current game
-
-```bash
-python3 tools/install.py --inspect "/path/to/your-game.7z"
-python3 tools/install.py --inspect "/path/to/extracted/DATA"
-```
-
-The setup worker accepts DATA folders, Dolphin export parents, WBFS, ISO, RVZ
-and a 7z containing exactly one WBFS. Image inspection exports the full DATA
-partition into a temporary directory, verifies it, then selects a cache under
-`local/setup/sources/`. It can take as long as extraction. The completed event's
-`result.data_root` is the verified folder. It does not replace `disc/`, change
-the launcher's selected data, translate, compile, or start the game.
-
-Reusing an image cache requires hashing the selected image again and rechecking
-the exported layout. Validation covers the exact DOL hash, Wii/revision and title
-metadata, and every FST entry's path, file size and logical extent. It does not
-authenticate Nintendo signatures or all asset contents. Keep your dump intact.
-
-The launcher exposes this import under **Install → Choose disc image** or
-**Choose DATA folder**. It shows real byte progress while hashing and the current
-stage while unpacking, extracting or validating. **Cancel import** stops active
-work. Closing the launcher during import requests cancellation and waits for the
-worker to exit. Play and additional imports are disabled during the job.
-
-The selected DATA path changes only after a valid completion and successful
-worker exit. Failure, cancellation and picker dismissal keep the previous
-selection. **Verify selected folder** runs the same full layout check. Imported
-sources stay under `local/setup/`; saves and executable files are not moved.
-
-The worker emits JSON lines; external tool output stays in `local/setup/logs/`.
-Only one job can use a setup workspace at a time. SIGINT/SIGTERM cancel active
-work and remove its temporary export. See [the worker protocol](../tools/installer/README.md)
-for launcher integration. After importing, choose **Build / update native game**
-to translate, compile and verify that selected DATA folder. The page shows the
-actual stage and offers **Cancel build**. It selects an independent executable
-only after native startup checks pass. A source import alone is not a newly
-compiled build. Prepare the local toolchain image using the prerequisites above;
-automatic image setup and dedicated repair/rollback controls remain pending.
-
-To test the launcher's actual process/protocol client without opening a window
-or changing the selected data or settings:
-
-```bash
-build/native/kirby-launcher --check-source "/path/to/own-disc.wbfs"
-```
-
-## Translate and compile
+### Translate and compile
 
 ```bash
 bash tools/container.sh python3 tools/kirby.py translate --threads 2
@@ -222,6 +252,58 @@ LD_LIBRARY_PATH="$PWD/local/host-libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" buil
 Do not use that link for unrelated missing libraries. See the
 [README](../README.md) for controls, settings, saves and known limitations.
 
+## Optional: inspect another source after setup
+
+These are optional diagnostics, not steps required to build your first game.
+Use your actual filename; `.7z` is just one supported input format. The launcher
+command below requires an already compiled launcher.
+
+```bash
+python3 tools/install.py --inspect "/path/to/your-game.wbfs"
+python3 tools/install.py --inspect "/path/to/extracted/DATA"
+```
+
+The setup worker accepts DATA folders, Dolphin export parents, WBFS, ISO, RVZ
+and a 7z containing exactly one WBFS. Image inspection exports the full DATA
+partition into a temporary directory, verifies it, then selects a cache under
+`local/setup/sources/`. It can take as long as extraction. The completed event's
+`result.data_root` is the verified folder. It does not replace `disc/`, change
+the launcher's selected data, translate, compile, or start the game.
+
+Reusing an image cache requires hashing the selected image again and rechecking
+the exported layout. Validation covers the exact DOL hash, Wii/revision and title
+metadata, and every FST entry's path, file size and logical extent. It does not
+authenticate Nintendo signatures or all asset contents. Keep your dump intact.
+
+The launcher exposes this import under **Install → Choose disc image** or
+**Choose DATA folder**. It shows real byte progress while hashing and the current
+stage while unpacking, extracting or validating. **Cancel import** stops active
+work. Closing the launcher during import requests cancellation and waits for the
+worker to exit. Play and additional imports are disabled during the job.
+
+The selected DATA path changes only after a valid completion and successful
+worker exit. Failure, cancellation and picker dismissal keep the previous
+selection. **Verify selected folder** runs the same full layout check. Imported
+sources stay under `local/setup/`; saves and executable files are not moved.
+
+The worker emits JSON lines; external tool output stays in `local/setup/logs/`.
+Only one job can use a setup workspace at a time. SIGINT/SIGTERM cancel active
+work and remove its temporary export. See [the worker protocol](../tools/installer/README.md)
+for launcher integration. After importing, choose **Build / update native game**
+to translate, compile and verify that selected DATA folder. The page shows the
+actual stage and offers **Cancel build**. It selects an independent executable
+only after native startup checks pass. A source import alone is not a newly
+compiled build. Prepare the local toolchain image using the prerequisites above;
+automatic image setup and dedicated repair/rollback controls remain pending.
+
+To test the launcher's actual process/protocol client without opening a window
+or changing the selected data or settings:
+
+```bash
+build/native/kirby-launcher --check-source "/path/to/own-disc.wbfs"
+```
+
+
 ## Rebuild after changes
 
 For authored C++ or launcher changes, rebuild before relaunching:
@@ -230,7 +312,8 @@ For authored C++ or launcher changes, rebuild before relaunching:
 bash tools/container.sh cmake --build build/native --target WiiCompiled kirby-launcher --parallel 2
 ```
 
-The launcher runs the existing executable; it does not compile changes. After
+Play runs the selected existing executable. Use **Install → Build / update native game**
+to compile changes through the launcher, or the developer commands above. After
 changing native registrations or translation inputs, run translation and
 `build_native.py` again. After changing upstream patches, use `build_native.py`
 to check and apply them to the local snapshots.

@@ -8,11 +8,20 @@
 #include <string>
 #include <utility>
 #include <vector>
+#ifdef _WIN32
+// Keep the IOS method names independent of Win32's A/W selection macros.
+#undef CreateFile
+#undef CreateDirectory
+#endif
 
 namespace Kirby {
 class NandFile {
 public:
+#ifdef _WIN32
+    NandFile(intptr_t fd, uint32_t mode) : fd_(fd), mode_(mode) {}
+#else
     NandFile(int fd, uint32_t mode) : fd_(fd), mode_(mode) {}
+#endif
     ~NandFile();
     NandFile(const NandFile&) = delete;
     NandFile& operator=(const NandFile&) = delete;
@@ -22,7 +31,11 @@ public:
     int32_t Stat(uint32_t& length, uint32_t& offset) const;
 private:
     friend class NandStore;
+#ifdef _WIN32
+    intptr_t fd_;
+#else
     int fd_;
+#endif
     uint32_t mode_;
 };
 
@@ -44,7 +57,11 @@ public:
 private:
     int32_t Create(const std::string& path, std::array<uint8_t,4> metadata, bool directory) const;
     mutable std::vector<std::pair<std::string,std::weak_ptr<NandFile>>> opened_;
+#ifdef _WIN32
+    intptr_t rootFd_ = -1;
+#else
     int rootFd_ = -1;
+#endif
     uint64_t titleId_;
     std::string dataDirectory_;
 };

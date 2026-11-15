@@ -6,13 +6,14 @@ from pathlib import Path
 
 from kirby import EXPECTED_SHA1
 from .installations import canonical
+from .platforms import WINDOWS, executable_name
 
 
 def tree_digest(root,paths,check_cancel=lambda:None):
     value=hashlib.sha256()
     for path in sorted(set(paths)):
         check_cancel()
-        name=str(path.relative_to(root)).encode()
+        name=path.relative_to(root).as_posix().encode()
         value.update(len(name).to_bytes(8,'big')+name)
         if path.is_symlink():
             raise ValueError(f'Build input must not be a symlink: {path}')
@@ -31,7 +32,9 @@ def generated_digest(path,check_cancel=lambda:None):
     return tree_digest(path,[p for p in path.rglob('*') if p.is_file() or p.is_symlink()],check_cancel)
 
 
-def build_keys(root,identity,image_id,check_cancel=lambda:None):
+def build_keys(root,identity,image_id,check_cancel=lambda:None,*,target=None):
+    target=target or ("windows" if WINDOWS else "linux")
+    executable_name(target)  # Reject an unknown compilation target.
     root=Path(root)
     paths=[root/name for name in ('projects/RK5E01/recomp.yml','tools/kirby.py','tools/build_layout.py','dependencies.json',
                                   'vendor/key/config/RK5E01/config.yml','vendor/key/config/RK5E01/symbols.txt',
@@ -42,8 +45,8 @@ def build_keys(root,identity,image_id,check_cancel=lambda:None):
     paths=[p for p in paths if '__pycache__' not in p.parts and p.suffix!='.pyc']
     translation=hashlib.sha256(canonical(dict(version=1,dol_sha1=EXPECTED_SHA1,
                     inputs=tree_digest(root,paths,check_cancel)))).hexdigest()
-    cache=hashlib.sha256(canonical(dict(translation=translation,image_id=image_id))).hexdigest()
-    native=hashlib.sha256(canonical(dict(translation=translation,image_id=image_id,project=identity))).hexdigest()
+    cache=hashlib.sha256(canonical(dict(translation=translation,image_id=image_id,target=target))).hexdigest()
+    native=hashlib.sha256(canonical(dict(translation=translation,image_id=image_id,project=identity,target=target))).hexdigest()
     return dict(translation=translation,cache=cache,native=native)
 
 
@@ -55,6 +58,8 @@ def compile_jobs(cpus,available):
 
 
 def host_compile_jobs():
+    if WINDOWS:
+        return compile_jobs(os.cpu_count() or 1, windows_available_memory())
     values={line.split(':',1)[0]:int(line.split()[1])*1024
             for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:')}
     available=values['MemAvailable']
@@ -69,3 +74,20 @@ def host_compile_jobs():
     except (OSError,StopIteration,ValueError):
         pass
     return compile_jobs(cpus,available)
+
+
+def windows_available_memory():
+    import ctypes
+    from ctypes import wintypes
+    class MemoryStatus(ctypes.Structure):
+        _fields_=[('length',wintypes.DWORD),('load',wintypes.DWORD),
+                  ('total_physical',ctypes.c_ulonglong),('available_physical',ctypes.c_ulonglong),
+                  ('total_page',ctypes.c_ulonglong),('available_page',ctypes.c_ulonglong),
+                  ('total_virtual',ctypes.c_ulonglong),('available_virtual',ctypes.c_ulonglong),
+                  ('extended_virtual',ctypes.c_ulonglong)]
+    status=MemoryStatus();status.length=ctypes.sizeof(status)
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    kernel.GlobalMemoryStatusEx.argtypes=[ctypes.POINTER(MemoryStatus)]
+    if not kernel.GlobalMemoryStatusEx(ctypes.byref(status)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return status.available_physical

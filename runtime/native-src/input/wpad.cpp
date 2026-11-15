@@ -14,6 +14,7 @@
 #include <deque>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -338,7 +339,7 @@ bool AcceptWpadRegistration(uint32_t address, const char* name) noexcept {
 void VerifyWpadRegistrations() {
     for (const auto& [address, name] : hooks) {
         const auto* hook = TranslatedFunctionRegistry::FindByAddressPtr(address);
-        if (!hook || hook->kind != FunctionKind::Native || hook->name != name)
+        if (!hook || hook->kind != FunctionKind::Native || !hook->name || std::string_view(hook->name) != name)
             throw std::runtime_error("Audited WPAD native registration is missing");
     }
 }

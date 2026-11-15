@@ -10,6 +10,7 @@ import tempfile
 
 from .data import DISC_CAPACITY, inspect_data
 from .jobs import run_process
+from .platforms import WINDOWS, is_link
 
 
 def _stamp(path):
@@ -46,7 +47,7 @@ def archive_member(listing):
         if not name.lower().endswith(".wbfs"):
             continue
         path = PurePosixPath(name)
-        if (not name or path.is_absolute() or ".." in path.parts or "\\" in name or "\0" in name
+        if (not name or path.is_absolute() or ".." in path.parts or "\\" in name or ":" in name or "\0" in name
                 or fields.get("Folder") == "+" or fields.get("Encrypted") == "+"
                 or any("link" in key.lower() for key in fields)
                 or any(token.startswith("l") for token in fields.get("Attributes", "").split())):
@@ -61,9 +62,11 @@ def archive_member(listing):
 
 
 def _dolphin(source, output):
-    native = shutil.which("dolphin-tool")
+    native = shutil.which("DolphinTool.exe") if WINDOWS else shutil.which("dolphin-tool")
     if native:
         return [native]
+    if WINDOWS:
+        raise ValueError("DolphinTool.exe from Dolphin must be available on PATH")
     flatpak = shutil.which("flatpak")
     if not flatpak:
         raise ValueError("Dolphin's dolphin-tool or the Dolphin Flatpak is required")
@@ -88,7 +91,7 @@ def inspect_source(selected, job):
     cache = job.workspace / "sources" / digest
     manifest = dict(version=1, source_sha256=digest, source_bytes=stamp[2])
     if cache.exists():
-        if cache.is_symlink() or (cache / "source.json").is_symlink() or not (cache / "source.json").is_file():
+        if is_link(cache) or is_link(cache / "source.json") or not (cache / "source.json").is_file():
             raise ValueError("Setup cache requires regular, unlinked metadata")
         with (cache / "source.json").open("rb") as stream:
             data = stream.read(4097)
@@ -117,7 +120,7 @@ def inspect_source(selected, job):
             run_process(job, [sevenzip, "x", "-y", "-spd", f"-o{images}", "--", source, name])
             image = images / name
             if (not image.resolve().is_relative_to(images.resolve())
-                    or any((images / Path(*PurePosixPath(name).parts[:i])).is_symlink()
+                    or any(is_link(images / Path(*PurePosixPath(name).parts[:i]))
                            for i in range(1, len(PurePosixPath(name).parts) + 1))
                     or not image.is_file() or image.stat().st_size != size):
                 raise ValueError("Archive did not produce the selected regular WBFS")
@@ -138,7 +141,7 @@ def inspect_source(selected, job):
         (staging / "source.json").write_text(json.dumps(manifest) + "\n")
         job.check_cancel()
         cache.parent.mkdir(exist_ok=True, mode=0o700)
-        if cache.parent.is_symlink():
+        if is_link(cache.parent):
             raise ValueError("Setup cache must not be a symlink")
         relative_data = Path(result["data_root"]).relative_to(staging.resolve())
         os.rename(staging, cache)

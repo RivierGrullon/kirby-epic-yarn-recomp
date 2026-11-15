@@ -25,13 +25,15 @@ class ContainerJobsTests(unittest.TestCase):
         self.root=Path(self.temp.name)
         self.repo=self.root/'repo';(self.repo/'tools').mkdir(parents=True)
         shutil.copy2(ROOT/'tools/container.sh',self.repo/'tools/container.sh')
+        if (ROOT/'tools/container_engine.py').is_file():
+            shutil.copy2(ROOT/'tools/container_engine.py',self.repo/'tools/container_engine.py')
         self.state_path=self.root/'engine.json'
         self.state_path.write_text(json.dumps(dict(containers={'c'*64:dict(labels={'owner':'someone-else'})})))
         self.bin=self.root/'bin';self.bin.mkdir()
         script=ROOT/'tests/tooling/fixtures/podman.py'
         tool=self.bin/'podman';tool.write_text(f'#!{sys.executable}\n'+script.read_text());tool.chmod(0o700)
         self.env=patch.dict(os.environ,PATH=str(self.bin)+os.pathsep+os.environ['PATH'],
-                            KIRBY_TEST_PODMAN_STATE=str(self.state_path))
+                            KIRBY_TEST_PODMAN_STATE=str(self.state_path), KIRBY_CONTAINER_ENGINE='podman')
         self.env.start();self.addCleanup(self.env.stop)
 
     def state(self):return json.loads(self.state_path.read_text())
@@ -52,6 +54,12 @@ class ContainerJobsTests(unittest.TestCase):
         self.assertEqual(result.image_id,'a'*64)
         self.assert_foreign_only()
         self.assertEqual(list((self.root/'setup/staging').iterdir()),[])
+
+    def test_missing_engine_does_not_leave_an_unrecoverable_empty_receipt(self):
+        with self.job() as job,patch('installer.container.select_engine',side_effect=ValueError('engine unavailable')):
+            with self.assertRaisesRegex(ValueError,'engine unavailable'):
+                run_container(job,self.repo,['success'],image_id='a'*64)
+            self.assertEqual(list((job.workspace/'staging').iterdir()),[])
 
     def test_tool_failure_cleans_up_the_detached_engine_record(self):
         with self.job() as job,self.assertRaisesRegex(ValueError,'code 7'):
@@ -141,3 +149,20 @@ class ContainerJobsTests(unittest.TestCase):
                                on_output=output.extend,stop_when=lambda:b'ready' in output,
                                cwd=self.root,env=dict(os.environ,SDL_AUDIO_DRIVER='dummy'))
         self.assertEqual(result,b'ready\n')
+
+
+class DockerContainerJobsTests(ContainerJobsTests):
+    def setUp(self):
+        super().setUp()
+        (self.bin/'podman').rename(self.bin/'docker')
+        os.environ['KIRBY_CONTAINER_ENGINE']='docker'
+
+    def test_recovery_uses_recorded_engine_after_selection_changes(self):
+        self.configure(fail_cleanup=True)
+        with self.job() as job,self.assertRaises(CleanupError):
+            run_container(job,self.repo,['success'])
+        self.configure(fail_cleanup=False)
+        os.environ['KIRBY_CONTAINER_ENGINE']='podman'
+        with Job(self.root/'setup','recovery',lambda event:None) as job:
+            recover_containers(job)
+        self.assert_foreign_only()

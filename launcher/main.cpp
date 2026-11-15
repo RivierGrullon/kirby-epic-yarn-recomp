@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Linux desktop frontend using the project's existing SDL3 and Dear ImGui libraries.
+// Native desktop frontend using the project's existing SDL3 and Dear ImGui libraries.
 #include <SDL3/SDL.h>
 #include "kirby/settings.h"
+#include "kirby/platform/command_line.h"
 #include "kirby/app/build_info.h"
 #include "pages/pages.h"
 #include "input_focus.h"
 #include "build_probe.h"
+#include "platform.h"
+#include <cryptopp/sha.h>
 #include "setup/job.h"
 #include "setup/installation.h"
 #include <imgui.h>
@@ -19,18 +22,13 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <fcntl.h>
 #include <memory>
 #include <mutex>
-#include <spawn.h>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
-#include <sys/wait.h>
-#include <unistd.h>
 
-extern char** environ;
 namespace fs = std::filesystem;
 namespace {
 constexpr char ExpectedSha1[] = "f4280a2b0709bfde4132be22e9f7fa8ecfa2a130";
@@ -47,81 +45,112 @@ bool Verify(const fs::path& data, std::string& status) {
     for (const char* entry : {"sys/main.dol", "sys/boot.bin", "sys/fst.bin", "ticket.bin", "tmd.bin", "files"}) {
         if (!fs::exists(data / entry)) { status = std::string("Missing ") + entry; return false; }
     }
-    int pipefd[2];
-    if (pipe(pipefd)) { status = "Could not open verification pipe"; return false; }
-    posix_spawn_file_actions_t actions;
-    posix_spawn_file_actions_init(&actions);
-    posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO);
-    posix_spawn_file_actions_addclose(&actions, pipefd[0]);
-    posix_spawn_file_actions_addclose(&actions, pipefd[1]);
-    std::string dol = (data / "sys/main.dol").string();
-    char* args[]{const_cast<char*>("sha1sum"), dol.data(), nullptr};
-    pid_t child = -1;
-    const int error = posix_spawnp(&child, "sha1sum", &actions, nullptr, args, environ);
-    posix_spawn_file_actions_destroy(&actions); close(pipefd[1]);
-    std::string digest; std::array<char, 1024> buffer{};
-    if (!error) for (;;) {
-        const auto count = read(pipefd[0], buffer.data(), buffer.size());
-        if (count > 0) digest.append(buffer.data(), count);
-        else if (count < 0 && errno == EINTR) continue;
-        else break;
+    std::ifstream input(data/"sys/main.dol",std::ios::binary);
+    CryptoPP::SHA1 hash;std::array<char,65536> buffer{};
+    while (input) {
+        input.read(buffer.data(),buffer.size());
+        hash.Update(reinterpret_cast<const CryptoPP::byte*>(buffer.data()),input.gcount());
     }
-    close(pipefd[0]);
-    int result = -1;
-    if (!error) while (waitpid(child, &result, 0) < 0 && errno == EINTR) {}
-    const bool valid = !error && WIFEXITED(result) && WEXITSTATUS(result) == 0 &&
-        digest.starts_with(std::string(ExpectedSha1) + " ");
+    std::array<CryptoPP::byte,CryptoPP::SHA1::DIGESTSIZE> bytes{};hash.Final(bytes.data());
+    constexpr char hex[]="0123456789abcdef";std::string digest;
+    for (const auto byte : bytes) { digest+=hex[byte>>4];digest+=hex[byte&15]; }
+    const bool valid=input.eof() && digest==ExpectedSha1;
     status = valid ? "RK5E01 Rev 0 (USA) verified" : "Wrong revision or SHA-1 verification failed";
     return valid;
 }
+std::string LocalUrl(const fs::path& path) {
+    const auto generic=fs::absolute(path).generic_u8string();
+    std::string url="file://";
+#ifdef _WIN32
+    if (!generic.starts_with(u8"/")) url+='/' ;
+#endif
+    constexpr char hex[]="0123456789ABCDEF";
+    for (const unsigned char character : generic) {
+        if ((character>='a' && character<='z') || (character>='A' && character<='Z') ||
+            (character>='0' && character<='9') || std::string_view("/-._~:").find(character)!=std::string_view::npos)
+            url+=character;
+        else { url+='%';url+=hex[character>>4];url+=hex[character&15]; }
+    }
+    return url;
+}
 void OpenFolder(const fs::path& path) {
-    fs::create_directories(path);
-    SDL_OpenURL(("file://" + path.string()).c_str());
+    fs::create_directories(path);SDL_OpenURL(LocalUrl(path).c_str());
+}
+SDL_Process* StartGame(const fs::path& executable,const fs::path& settings,const fs::path& root) {
+    fs::create_directories(root/"build-logs");
+    const auto logPath=Launcher::Utf8(root/"build-logs/launcher-game.log");
+    auto* log=SDL_IOFromFile(logPath.c_str(),"ab");
+    const auto properties=SDL_CreateProperties();auto* environment=SDL_CreateEnvironment(true);
+    const auto exe=Launcher::Utf8(executable),config=Launcher::Utf8(settings),directory=Launcher::Utf8(root);
+    const char* args[]{exe.c_str(),"--video","--config",config.c_str(),nullptr};
+    bool configured=log && properties && environment;
+#ifndef _WIN32
+    if (configured) {
+        const char* previous=SDL_GetEnvironmentVariable(environment,"LD_LIBRARY_PATH");
+        const auto libraries=Launcher::Utf8(root/"local/host-libs")+(previous ? std::string(":")+previous : "");
+        configured=SDL_SetEnvironmentVariable(environment,"LD_LIBRARY_PATH",libraries.c_str(),true);
+    }
+#endif
+    configured=configured && SDL_SetPointerProperty(properties,SDL_PROP_PROCESS_CREATE_ARGS_POINTER,args) &&
+        SDL_SetPointerProperty(properties,SDL_PROP_PROCESS_CREATE_ENVIRONMENT_POINTER,environment) &&
+        SDL_SetStringProperty(properties,SDL_PROP_PROCESS_CREATE_WORKING_DIRECTORY_STRING,directory.c_str()) &&
+        SDL_SetNumberProperty(properties,SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,SDL_PROCESS_STDIO_NULL) &&
+        SDL_SetNumberProperty(properties,SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER,SDL_PROCESS_STDIO_REDIRECT) &&
+        SDL_SetPointerProperty(properties,SDL_PROP_PROCESS_CREATE_STDOUT_POINTER,log) &&
+        SDL_SetBooleanProperty(properties,SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN,true);
+    auto* process=configured ? SDL_CreateProcessWithProperties(properties) : nullptr;
+    if (log) SDL_CloseIO(log);
+    if (properties) SDL_DestroyProperties(properties);
+    if (environment) SDL_DestroyEnvironment(environment);
+    return process;
 }
 }
 
 int main(int argc, char** argv) {
+    Kirby::CommandLineArguments arguments;
+    try { arguments.Normalize(argc,argv); }
+    catch (const std::exception& error) { std::cerr << error.what() << '\n';return 2; }
     if (argc==2 && std::string_view(argv[1])=="--build-info") {
         std::cout << Kirby::BuildInformation(Kirby::BuildProgram::Launcher); return 0;
     }
     if (argc==3 && std::string_view(argv[1])=="--check-native-build") {
         try {
             Launcher::BuildProbe probe;
-            const auto root=(fs::path(SDL_GetBasePath())/"WiiCompiled").parent_path().parent_path().parent_path();
-            probe.Start(argv[2],root/"local/host-libs");
+            const auto root=(Launcher::FromUtf8(SDL_GetBasePath())/Launcher::GameExecutable).parent_path().parent_path().parent_path();
+            probe.Start(Launcher::FromUtf8(argv[2]),root/"local/host-libs");
             while (probe.Status()==Launcher::BuildProbeStatus::Checking) { probe.Poll();SDL_Delay(1); }
             if (probe.Status()==Launcher::BuildProbeStatus::Ready) { std::cout << probe.Document();return 0; }
             std::cerr << probe.Error() << '\n';return 1;
         } catch (const std::exception& error) { std::cerr << error.what() << '\n';return 1; }
     }
     if (argc == 3 && std::string_view(argv[1]) == "--print-settings")
-        return Kirby::InspectSettings(argv[2], std::cout, std::cerr);
+        return Kirby::InspectSettings(Kirby::CommandLinePath(argv[2]), std::cout, std::cerr);
     if (argc == 3 && std::string_view(argv[1]) == "--check-data") {
         std::string status;
-        const bool valid = Verify(argv[2], status);
+        const bool valid = Verify(Launcher::FromUtf8(argv[2]), status);
         std::puts(status.c_str()); return valid ? 0 : 1;
     }
     if (argc==3 && std::string_view(argv[1])=="--check-source") {
-        const auto root=(fs::path(SDL_GetBasePath())/"WiiCompiled").parent_path().parent_path().parent_path();
+        const auto root=(Launcher::FromUtf8(SDL_GetBasePath())/Launcher::GameExecutable).parent_path().parent_path().parent_path();
         Launcher::Setup::Job job;
         std::signal(SIGINT,[](int) { sourceCancelled=1; });
         std::signal(SIGTERM,[](int) { sourceCancelled=1; });
-        job.Start(root/"tools/install.py",argv[2],root/"local/setup");
+        job.Start(root/"tools/install.py",Launcher::FromUtf8(argv[2]),root/"local/setup");
         while (job.Current().Busy()) {
             if (sourceCancelled) job.Cancel();
             job.Poll();SDL_Delay(1);
         }
         std::cout << job.Current().message << '\n';
-        if (job.Current().result) std::cout << job.Current().result->dataRoot.string() << '\n';
+        if (job.Current().result) std::cout << Launcher::Utf8(job.Current().result->dataRoot) << '\n';
         return job.Current().status==Launcher::Setup::Status::Ready ? 0 :
             job.Current().status==Launcher::Setup::Status::Cancelled ? 2 : 1;
     }
     const bool selfTest = argc == 2 && std::string_view(argv[1]) == "--self-test";
     if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --check-source SOURCE | --print-settings TOML | --build-info | --check-native-build EXECUTABLE]\n"); return 2; }
-    const fs::path developerExecutable = fs::path(SDL_GetBasePath()) / "WiiCompiled";
+    const fs::path developerExecutable = Launcher::FromUtf8(SDL_GetBasePath()) / Launcher::GameExecutable;
     const fs::path root = developerExecutable.parent_path().parent_path().parent_path();
     if (!fs::exists(root / "tools/kirby.py")) {
-        std::fprintf(stderr,"Keep the launcher in this project's build/native folder\n"); return 2;
+        std::fprintf(stderr,"Keep the launcher in this project's build/native or build/windows folder\n"); return 2;
     }
     Launcher::State state{root, developerExecutable, root / "local/user/settings.toml", Kirby::Settings{root / "disc/DATA"}};
     auto& executable=state.executable;
@@ -183,14 +212,14 @@ int main(int argc, char** argv) {
     auto& valid = state.dataVerified;
     auto& status = state.dataStatus;
     if (!selfTest) valid = Verify(data, status);
-    pid_t game = -1;
+    SDL_Process* game=nullptr;
     Launcher::Setup::Job setupJob;
     bool setupApplied=false;
     std::string setupSelectionError;
     const auto startSetup=[&](const fs::path& source,Launcher::Setup::Operation operation=Launcher::Setup::Operation::Inspect) {
-        if (game>0 || setupJob.Current().Busy() || state.closing) return;
+        if (game!=nullptr || setupJob.Current().Busy() || state.closing) return;
         setupApplied=false;setupSelectionError.clear();
-        setupJob.Start(root/"tools/install.py",source,root/"local/setup","python3",operation);
+        setupJob.Start(root/"tools/install.py",source,root/"local/setup",Launcher::PythonExecutable,operation);
         state.setup=setupJob.Current();
     };
     Launcher::BuildProbe buildProbe;
@@ -219,7 +248,7 @@ int main(int argc, char** argv) {
           state.choosingSource=selection->pending;
           if (selection->ready) { selectedSource=selection->path;selectionError=selection->error;selection->ready=false; } }
         if (!selectionError.empty()) setupSelectionError="Could not open source chooser: "+selectionError;
-        if (!selectedSource.empty() && !selfTest) startSetup(selectedSource);
+        if (!selectedSource.empty() && !selfTest) startSetup(Launcher::FromUtf8(selectedSource));
         if (!selfTest) {
             setupJob.Poll();state.setup=setupJob.Current();
             if (state.setup.status==Launcher::Setup::Status::Ready && !setupApplied && !state.closing) {
@@ -247,11 +276,11 @@ int main(int argc, char** argv) {
             }
             if (state.closing && !state.setup.Busy()) running=false;
         }
-        if (game > 0) {
+        if (game!=nullptr) {
             int result = 0;
-            if (waitpid(game, &result, WNOHANG) == game) {
-                game = -1; SDL_ShowWindow(window); SDL_RaiseWindow(window);
-                state.gameStatus = WIFEXITED(result) && WEXITSTATUS(result) == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
+            if (SDL_WaitProcess(game,false,&result)) {
+                SDL_DestroyProcess(game);game=nullptr; SDL_ShowWindow(window); SDL_RaiseWindow(window);
+                state.gameStatus = result == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
                 refreshBuild();
             }
         }
@@ -273,7 +302,7 @@ int main(int argc, char** argv) {
         ImGui_ImplSDLRenderer3_NewFrame(); ImGui_ImplSDL3_NewFrame();
         Launcher::SynchronizeInputFocus(focused);
         ImGui::NewFrame();
-        state.gameRunning = game > 0;
+        state.gameRunning = game!=nullptr;
         if (selfTest) {
             // Exercise every page at both layout sizes without file/process actions.
             page = static_cast<Launcher::Page>((frames / 3) % Launcher::PageNames.size());
@@ -286,7 +315,7 @@ int main(int argc, char** argv) {
         if (!selfTest && focused && !state.closing) try {
             switch (action) {
             case Launcher::Action::Play:
-                if (setupJob.Current().Busy() || state.choosingSource || game>0) break;
+                if (setupJob.Current().Busy() || state.choosingSource || game!=nullptr) break;
                 if (!state.installationError.empty()) { state.gameStatus="Repair the installed build before playing. "+state.installationError;break; }
                 if (!state.installationId.empty()) {
                     const auto installed=Launcher::Setup::ReadInstallation(root);
@@ -300,31 +329,18 @@ int main(int argc, char** argv) {
                         buildProbe.Cancel();state.checkingBuild=false;
                         state.buildStatus="Refresh build information after the game closes";
                     }
-                    const auto libs = (root / "local/host-libs").string();
-                    const char* previous = std::getenv("LD_LIBRARY_PATH");
-                    const std::string libraryPath = libs + (previous ? std::string(":") + previous : "");
-                    setenv("LD_LIBRARY_PATH", libraryPath.c_str(), 1);
-                    std::string exe = executable.string(), configArg = settings.string();
-                    char* args[]{exe.data(), const_cast<char*>("--video"), const_cast<char*>("--config"), configArg.data(), nullptr};
-                    fs::create_directories(root / "build-logs");
-                    posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
-                    posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, (root/"build-logs/launcher-game.log").c_str(), O_WRONLY|O_CREAT|O_APPEND, 0600);
-                    posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO);
-                    // Existing save paths stay relative to the repository.
-                    fs::current_path(root);
-                    const int error = posix_spawn(&game, exe.c_str(), &actions, nullptr, args, environ);
-                    posix_spawn_file_actions_destroy(&actions);
-                    if (error) { game = -1; state.gameStatus = "Could not start the native executable"; }
+                    game=StartGame(executable,settings,root);
+                    if (!game) state.gameStatus="Could not start the native executable: "+std::string(SDL_GetError());
                     else { state.gameStatus = "Game running"; SDL_MinimizeWindow(window); }
                 } else if (valid) state.gameStatus = fs::exists(executable)
                     ? "Could not save settings" : "Native executable missing. See the build guide.";
                 break;
             case Launcher::Action::ChooseData:
             case Launcher::Action::ChooseImage:
-                if (setupJob.Current().Busy() || state.choosingSource || game>0) break;
+                if (setupJob.Current().Busy() || state.choosingSource || game!=nullptr) break;
                 { std::lock_guard lock(selection->mutex);selection->pending=true;state.choosingSource=true; }
                 if (action==Launcher::Action::ChooseData)
-                    SDL_ShowOpenFolderDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,data.c_str(),false);
+                    SDL_ShowOpenFolderDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,Launcher::Utf8(data).c_str(),false);
                 else {
                     static constexpr SDL_DialogFileFilter filters[]{{"Wii disc images and archives","wbfs;iso;rvz;7z"},{"All files","*"}};
                     SDL_ShowOpenFileDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,filters,2,nullptr,false);
@@ -346,7 +362,7 @@ int main(int argc, char** argv) {
             case Launcher::Action::OpenLogs: OpenFolder(root / "build-logs"); break;
             case Launcher::Action::OpenSaves: OpenFolder(root / "local/user/nand/title/00010000/524b3545/data"); break;
             case Launcher::Action::OpenSettings: OpenFolder(settings.parent_path()); break;
-            case Launcher::Action::BuildGuide: SDL_OpenURL(("file://"+(root/"docs/building.md").string()).c_str()); break;
+            case Launcher::Action::BuildGuide: SDL_OpenURL(LocalUrl(root/"docs/building.md").c_str()); break;
             case Launcher::Action::ShowInstall: page = Launcher::Page::Install; break;
             case Launcher::Action::RefreshBuildInfo: refreshBuild(); break;
             case Launcher::Action::None: break;
@@ -361,6 +377,7 @@ int main(int argc, char** argv) {
     }
     if (settingsDirty && !saveSettings()) std::fprintf(stderr,"Settings: %s\n",settingsError.c_str());
     buildProbe.Cancel();
+    if (game) SDL_DestroyProcess(game);
     ImGui_ImplSDLRenderer3_Shutdown(); ImGui_ImplSDL3_Shutdown(); ImGui::DestroyContext();
     SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
     return 0;

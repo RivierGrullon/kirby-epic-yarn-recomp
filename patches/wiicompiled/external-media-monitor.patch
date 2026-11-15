@@ -1,0 +1,36 @@
+--- a/runtime/src/music_attenuation.cpp
++++ b/runtime/src/music_attenuation.cpp
+@@ -12,7 +12,9 @@
+ #include <mutex>
+ #include <thread>
+ 
+-#if defined(_WIN32)
++#if defined(MKW_DISABLE_EXTERNAL_MEDIA_MONITOR)
++// Kirby does not expose external-media music ducking.
++#elif defined(_WIN32)
+ #include <winrt/base.h>
+ #include <winrt/Windows.Foundation.h>
+ #include <winrt/Windows.Foundation.Collections.h>
+@@ -176,7 +178,9 @@
+            g_externalMediaPlaying.load(std::memory_order_acquire);
+ }
+ 
+-#if defined(_WIN32)
++#if defined(MKW_DISABLE_EXTERNAL_MEDIA_MONITOR)
++// Kirby does not expose external-media music ducking.
++#elif defined(_WIN32)
+ void MonitorWindowsMediaSessions() noexcept {
+     using namespace winrt::Windows::Media::Control;
+     using namespace std::chrono_literals;
+@@ -479,7 +483,10 @@
+ #endif
+ 
+ void StartMonitor() noexcept {
+-#if defined(_WIN32)
++#if defined(MKW_DISABLE_EXTERNAL_MEDIA_MONITOR)
++    g_mediaControlAvailable.store(false, std::memory_order_release);
++    g_mediaControlInitializationComplete.store(true, std::memory_order_release);
++#elif defined(_WIN32)
+     // The process owns this monitor for its remaining lifetime. Keeping it
+     // detached avoids shutdown ordering between WinRT and static audio state.
+     std::thread(MonitorWindowsMediaSessions).detach();

@@ -2,7 +2,10 @@
 #pragma once
 #include "protocol.h"
 #include <chrono>
+#include "../platform.h"
+#ifndef _WIN32
 #include <sys/types.h>
+#endif
 
 namespace Launcher::Setup {
 enum class Status { Idle,Running,Cancelling,Ready,Failed,Cancelled };
@@ -23,7 +26,7 @@ public:
     Job(const Job&)=delete;
     Job& operator=(const Job&)=delete;
     bool Start(const std::filesystem::path& worker,const std::filesystem::path& source,
-               const std::filesystem::path& workspace,const std::string& python="python3",
+               const std::filesystem::path& workspace,const std::string& python=PythonExecutable,
                Operation operation=Operation::Inspect);
     void Poll();
     void Cancel();
@@ -34,10 +37,23 @@ private:
     void Abort(std::string message);
     void Finish();
     void Close();
-    void Drain(int fd,bool& eof,bool protocol);
+    #ifdef _WIN32
+    using Pipe=void*;
+    void StartWindows(const std::filesystem::path& worker,const std::filesystem::path& workspace,const std::string& python);
+#else
+    using Pipe=int;
+#endif
+    void Drain(Pipe fd,bool& eof,bool protocol);
     View view_;
+#ifdef _WIN32
+    void* process_=nullptr;
+    void* processGroup_=nullptr;
+    Pipe input_=nullptr,output_=nullptr,error_=nullptr;
+#else
     pid_t pid_=-1;
-    int input_=-1,output_=-1,error_=-1,exitCode_=0;
+    Pipe input_=-1,output_=-1,error_=-1;
+#endif
+    int exitCode_=0;
     uint64_t graceMs_,sequence_=1;
     bool exited_=false,outputEof_=false,errorEof_=false,cancelled_=false,termSent_=false,killSent_=false;
     Clock::time_point cancelAt_,exitAt_;

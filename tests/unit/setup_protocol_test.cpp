@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "setup/protocol.h"
+#include "launcher_test_paths.h"
+#include <nlohmann/json.hpp>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -18,9 +20,15 @@ int main() {
     Check(progress.completed==128 && progress.total==512,"Genuine byte progress was lost");
     const auto extraction=ParseEvent(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"extract","state":"started"})","job-1",1);
     Check(!extraction.completed && !extraction.total,"Unknown extraction progress was invented");
-    const auto ready=ParseEvent(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"inspect","state":"complete","result":{"source":"/selected's copy.wbfs","source_kind":"wbfs","source_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","cached":false,"data_root":"/setup/export/DATA","game_id":"RK5E01","revision":0,"dol_sha1":"f4280a2b0709bfde4132be22e9f7fa8ecfa2a130","entry_point":2147500112,"asset_files":12,"asset_bytes":1024,"validation":"dol-sha1-and-data-layout"}})","job-1",1);
-    Check(ready.result && ready.result->dataRoot=="/setup/export/DATA" && ready.result->assetFiles==12,
+    auto readyObject=nlohmann::json::parse(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"inspect","state":"complete","result":{"source":"/selected's copy.wbfs","source_kind":"wbfs","source_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","cached":false,"data_root":"/setup/export/DATA","game_id":"RK5E01","revision":0,"dol_sha1":"f4280a2b0709bfde4132be22e9f7fa8ecfa2a130","entry_point":2147500112,"asset_files":12,"asset_bytes":1024,"validation":"dol-sha1-and-data-layout"}})");
+    readyObject["result"]["source"]=AbsoluteFixture("selected's copy.wbfs");
+    readyObject["result"]["data_root"]=AbsoluteFixture("setup/export/DATA");
+    const auto ready=ParseEvent(readyObject.dump(),"job-1",1);
+    Check(ready.result && ready.result->dataRoot==Launcher::FromUtf8(AbsoluteFixture("setup/export/DATA")) && ready.result->assetFiles==12,
           "Successful source identity was not parsed");
+    const auto unicode=Launcher::FromUtf8(AbsoluteFixture("selected copy ")+"\xc3\xb1.wbfs");
+    const auto request=nlohmann::json::parse(InspectRequest("job-1",unicode));
+    Check(request.at("source")==Launcher::Utf8(unicode),"UTF-8 selected source changed in transit");
     Reject("{}");Reject("garbage");Reject("[]");Reject(std::string(65537,'x'));
     for (const auto field : {"version","sequence","completed","total"}) {
         const std::string valid=R"({"version":1,"job_id":"job-1","sequence":1,"stage":"hash","state":"progress","completed":1,"total":4})";

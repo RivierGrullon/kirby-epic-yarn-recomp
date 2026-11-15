@@ -6,13 +6,18 @@
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
+#ifdef _WIN32
+#include "kirby/platform/windows_file.h"
+#include <atomic>
+#else
 #include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 namespace Kirby {
 namespace {
 void Validate(const Settings& settings) {
-    if (settings.gameData.empty() || settings.gameData.native().find('\0') != std::string::npos)
+    if (settings.gameData.empty() || settings.gameData.native().find(fs::path::value_type{}) != fs::path::string_type::npos)
         throw std::runtime_error("paths.dvd_root must be a nonempty path");
     if (!std::isfinite(settings.masterVolume) || settings.masterVolume < 0 || settings.masterVolume > 100)
         throw std::runtime_error("audio.volume must be between 0 and 1");
@@ -23,14 +28,14 @@ std::optional<std::string> Read(const fs::path& file) {
     if (!fs::is_regular_file(file) || fs::file_size(file) > 262144)
         throw std::runtime_error("configuration must be a regular file smaller than 256 KiB");
     std::ifstream input(file, std::ios::binary);
-    if (!input) throw std::runtime_error("cannot read " + file.string());
+    if (!input) throw std::runtime_error("cannot read " + RuntimeConfigFile::PathToUtf8(file));
     std::string text{std::istreambuf_iterator<char>(input), {}};
-    if (input.bad()) throw std::runtime_error("failed to read " + file.string());
+    if (input.bad()) throw std::runtime_error("failed to read " + RuntimeConfigFile::PathToUtf8(file));
     return text;
 }
 Settings Parse(const std::string& text, const fs::path& file, Settings defaults) {
     std::istringstream input(text);
-    const auto document = toml::parse(input, file.string());
+    const auto document = toml::parse(input, RuntimeConfigFile::PathToUtf8(file));
     using namespace RuntimeConfigFile;
     for (const char* section : {"kirby", "paths", "audio", "video", "controller", "keyboard"})
         if (document.contains(section) && !document.at(section).is_table())
@@ -98,6 +103,34 @@ std::string Update(std::string text, const Settings& settings) {
 void WriteAtomically(const fs::path& file, const std::string& text) {
     const auto destination = fs::absolute(file);
     fs::create_directories(destination.parent_path());
+#ifdef _WIN32
+    WindowsFile::Handle parent(WindowsFile::Root(destination.parent_path()));
+    if (!parent) throw std::runtime_error("cannot open settings directory");
+    static std::atomic<uint64_t> sequence{0};
+    WindowsFile::Handle temporary;
+    for (unsigned attempt = 0; attempt < 128; ++attempt) {
+        const auto leaf = destination.filename().native() + L".tmp." + std::to_wstring(GetCurrentProcessId()) +
+            L"." + std::to_wstring(GetTickCount64()) + L"." + std::to_wstring(sequence.fetch_add(1));
+        temporary.value = WindowsFile::Open(parent.value, leaf, FILE_WRITE_DATA | DELETE, WindowsFile::Kind::File, 2);
+        if (temporary) break;
+        if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS)
+            throw std::runtime_error("cannot create temporary settings");
+    }
+    if (!temporary) throw std::runtime_error("cannot allocate unique temporary settings file");
+    try {
+        size_t offset = 0;
+        while (offset < text.size()) {
+            DWORD count = 0;
+            if (!WriteFile(temporary.value, text.data() + offset,
+                           static_cast<DWORD>(std::min<size_t>(text.size() - offset, MAXDWORD)), &count, nullptr) || !count)
+                throw std::runtime_error("cannot write temporary settings");
+            offset += count;
+        }
+        if (!FlushFileBuffers(temporary.value)) throw std::runtime_error("cannot flush temporary settings");
+        if (!WindowsFile::Rename(temporary.value, parent.value, destination.filename().native(), true))
+            throw std::runtime_error("cannot atomically replace settings");
+    } catch (...) { WindowsFile::Remove(temporary.value); throw; }
+#else
     std::string temporary = destination.string() + ".tmp.XXXXXX";
     int fd = mkstemp(temporary.data()); // Exclusive creation, mode 0600, same filesystem.
     if (fd < 0) throw std::runtime_error("cannot create temporary settings: " + std::string(std::strerror(errno)));
@@ -120,6 +153,7 @@ void WriteAtomically(const fs::path& file, const std::string& text) {
         std::error_code ec; fs::remove(temporary, ec);
         throw;
     }
+#endif
 }
 } // namespace
 
@@ -142,7 +176,10 @@ Settings LoadOrMigrateSettings(const fs::path& file, const fs::path& legacy,
     std::istringstream input(*text);
     std::string data;
     int sync = 1, performance = 0;
-    if (!std::getline(input, data) || data.empty() ||
+    if (!std::getline(input, data))
+        throw std::runtime_error("invalid legacy launcher.cfg; original file preserved");
+    if (!data.empty() && data.back() == '\r') data.pop_back();
+    if (data.empty() ||
         !(input >> defaults.masterVolume >> sync) || (sync != 0 && sync != 1))
         throw std::runtime_error("invalid legacy launcher.cfg; original file preserved");
     input >> std::ws;
@@ -150,7 +187,7 @@ Settings LoadOrMigrateSettings(const fs::path& file, const fs::path& legacy,
         throw std::runtime_error("invalid legacy performance option; original file preserved");
     input >> std::ws;
     if (!input.eof()) throw std::runtime_error("unrecognized legacy settings; original file preserved");
-    defaults.gameData = data;
+    defaults.gameData = RuntimeConfigFile::PathFromUtf8(data);
     if (defaults.gameData.is_relative()) defaults.gameData = legacyWorkingDirectory / defaults.gameData;
     defaults.vsync = sync != 0;
     defaults.gpuResidentCopies = performance != 0;

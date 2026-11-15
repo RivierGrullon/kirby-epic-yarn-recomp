@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "build_probe.h"
+#include "launcher_test_paths.h"
 #include <SDL3/SDL.h>
 #include <chrono>
 #include <cerrno>
@@ -7,8 +8,10 @@
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
+#ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace fs=std::filesystem;
 namespace {
@@ -39,14 +42,21 @@ int Child(const std::string& mode) {
 }
 }
 int main(int argc,char** argv) {
-    if (argc==2 && std::string(argv[1])=="--build-info") return Child(fs::path(argv[0]).filename().string());
+    if (argc==2 && std::string(argv[1])=="--build-info") return Child(fs::path(argv[0]).stem().string());
     using namespace Launcher;
-    std::string pattern=(fs::temp_directory_path()/"kirby's build query.XXXXXX").string();
-    Check(mkdtemp(pattern.data())!=nullptr,"Could not create query fixture directory");
-    const fs::path directory=pattern;
+    const auto directory=TemporaryLauncherDirectory("kirby's build query ");
     struct Cleanup { fs::path path;~Cleanup() { fs::remove_all(path); } } cleanup{directory};
     const auto fixture=[&](const std::string& name) {
-        const auto path=directory/name;fs::create_symlink(fs::canonical(argv[0]),path);return path;
+#ifdef _WIN32
+        const auto path=directory/(name+".exe");
+        fs::copy_file(fs::canonical(argv[0]),path);
+        // A shared SDL or C++ runtime must remain beside the copied fixture.
+        for (const auto& entry : fs::directory_iterator(fs::canonical(argv[0]).parent_path()))
+            if (entry.path().extension()==".dll") fs::copy_file(entry.path(),directory/entry.path().filename(),fs::copy_options::skip_existing);
+#else
+        const auto path=directory/name;fs::create_symlink(fs::canonical(argv[0]),path);
+#endif
+        return path;
     };
     const auto valid=fixture("valid build's executable");
     const char* previousAudio=std::getenv("SDL_AUDIO_DRIVER");
@@ -78,7 +88,9 @@ int main(int argc,char** argv) {
     Check(timed.Status()==BuildProbeStatus::Idle && !timed.Information(),"Cancellation retained a pending query");
     Check((std::getenv("SDL_AUDIO_DRIVER") ? std::getenv("SDL_AUDIO_DRIVER") : "")==previous,
           "Child diagnostic changed the parent's audio environment");
+    #ifndef _WIN32
     int status=0;errno=0;
     Check(waitpid(-1,&status,WNOHANG)==-1 && errno==ECHILD,"Build query leaked a child or zombie");
+    #endif
     std::cout << "Build query: actual child identity, timeout, output bounds, failures and cleanup verified\n";
 }

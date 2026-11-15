@@ -10,6 +10,7 @@ import stat
 import tempfile
 
 from kirby import EXPECTED_SHA1
+from .platforms import WINDOWS, executable_name, open_read, is_link, fsync_directory
 
 VERIFICATION={'bootstrap','init','disc','es','video'}
 DSP_COEF_SHA256='d7741279c2e8ec5c5fb318f8fbdd6de6bf583520d288e836a5383233a4238179'
@@ -19,12 +20,36 @@ def digest(value):
     return isinstance(value,str) and re.fullmatch(r'[a-f0-9]{64}',value) is not None
 
 
+def valid_resources(resources):
+    dsp=dict(file='dsp_coef.bin',sha256=DSP_COEF_SHA256,size=4096)
+    if not WINDOWS:
+        return resources==[dsp]
+    if not isinstance(resources,list) or not 1<=len(resources)<=128:
+        return False
+    seen=set();has_dsp=False
+    for entry in resources:
+        if not isinstance(entry,dict) or set(entry)!={'file','sha256','size'}:
+            return False
+        name=entry['file']
+        if not isinstance(name,str) or name.lower() in seen:
+            return False
+        seen.add(name.lower())
+        if entry==dsp:
+            has_dsp=True;continue
+        if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.+-]{0,123}\.dll',name,re.IGNORECASE)
+                or not digest(entry['sha256']) or type(entry['size']) is not int or entry['size']<=0):
+            return False
+        if name.split('.')[0].upper() in {'CON','PRN','AUX','NUL',*(f'COM{i}' for i in range(1,10)),*(f'LPT{i}' for i in range(1,10))}:
+            return False
+    return has_dsp
+
+
 def canonical(value):
     return json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
 
 
 def read_json(path):
-    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC)
+    fd=open_read(path)
     with os.fdopen(fd,'rb') as stream:
         info=os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_size>131072:
@@ -36,7 +61,7 @@ def read_json(path):
 
 
 def file_digest(path,check_cancel=lambda:None):
-    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC)
+    fd=open_read(path)
     with os.fdopen(fd,'rb') as stream:
         before=os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode):
@@ -60,14 +85,14 @@ class InstallationStore:
         current=self.root
         for part in path.relative_to(self.root).parts:
             current/=part
-            if current.is_symlink():
+            if is_link(current):
                 raise ValueError('Installation directories must not be symlinks')
             current.mkdir(exist_ok=True,mode=0o700)
 
     def executable(self,identifier):
         if not digest(identifier):
             raise ValueError('Invalid installation identifier')
-        return self.builds/identifier/'WiiCompiled'
+        return self.builds/identifier/executable_name()
 
     def _validate(self,manifest):
         try:
@@ -76,18 +101,18 @@ class InstallationStore:
                     or manifest['dol_sha1']!=EXPECTED_SHA1 or not isinstance(manifest['data_root'],str)
                     or '\0' in manifest['data_root'] or not Path(manifest['data_root']).is_absolute()
                     or not all(digest(manifest[key]) for key in ('project_sha256','translation_key','toolchain_image_id'))
-                    or manifest['executable']['file']!='WiiCompiled' or not digest(manifest['executable']['sha256'])
+                    or manifest['executable']['file']!=executable_name() or not digest(manifest['executable']['sha256'])
                     or type(manifest['executable']['size']) is not int or manifest['executable']['size']<=0
                     or not isinstance(manifest['verification'],list) or set(manifest['verification'])!=VERIFICATION
                     or len(manifest['verification'])!=len(VERIFICATION)
-                    or manifest['resources']!=[dict(file='dsp_coef.bin',sha256=DSP_COEF_SHA256,size=4096)]):
+                    or not valid_resources(manifest['resources'])):
                 raise ValueError('Installation does not identify a fully verified RK5E01 native build')
         except (KeyError,TypeError) as error:
             raise ValueError('Malformed installation manifest') from error
 
     def manifest(self,identifier,*,check_cancel=lambda:None):
         path=self.executable(identifier)
-        if path.parent.is_symlink():
+        if is_link(path.parent):
             raise ValueError('Installation build directory must not be a symlink')
         value=read_json(path.parent/'manifest.json');self._validate(value)
         if hashlib.sha256(canonical(value)).hexdigest()!=identifier:
@@ -110,18 +135,18 @@ class InstallationStore:
             return identifier
         with tempfile.TemporaryDirectory(prefix='.publish-',dir=self.builds) as temporary:
             directory=Path(temporary)
-            source=Path(candidate)/'WiiCompiled'
-            fd=os.open(source,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC)
+            source=Path(candidate)/executable_name()
+            fd=open_read(source)
             with os.fdopen(fd,'rb') as stream:
                 if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                     raise ValueError('Build candidate must be a regular native executable')
-                with (directory/'WiiCompiled').open('xb') as output:
+                with (directory/executable_name()).open('xb') as output:
                     while chunk:=stream.read(1024*1024):check_cancel();output.write(chunk)
                     output.flush();os.fsync(output.fileno())
-            actual,size=file_digest(directory/'WiiCompiled',check_cancel)
+            actual,size=file_digest(directory/executable_name(),check_cancel)
             if actual!=manifest['executable']['sha256'] or size!=manifest['executable']['size']:
                 raise ValueError('Candidate executable digest or size mismatch')
-            (directory/'WiiCompiled').chmod(0o500)
+            (directory/executable_name()).chmod(0o700 if WINDOWS else 0o500)
             for resource in manifest['resources']:
                 source=Path(candidate)/resource['file']
                 actual,size=file_digest(source,check_cancel)
@@ -131,8 +156,8 @@ class InstallationStore:
                 actual,size=file_digest(directory/resource['file'],check_cancel)
                 if actual!=resource['sha256'] or size!=resource['size']:
                     raise ValueError('Copied runtime resource digest or size mismatch')
-                (directory/resource['file']).chmod(0o400)
-                with (directory/resource['file']).open('rb') as stream:os.fsync(stream.fileno())
+                with (directory/resource['file']).open('r+b' if WINDOWS else 'rb') as stream:os.fsync(stream.fileno())
+                (directory/resource['file']).chmod(0o600 if WINDOWS else 0o400)
             with (directory/'manifest.json').open('xb') as stream:
                 stream.write(canonical(manifest)+b'\n');stream.flush();os.fsync(stream.fileno())
             check_cancel()
@@ -140,9 +165,9 @@ class InstallationStore:
         return identifier
 
     def read_active(self):
-        if not self.pointer.exists() and not self.pointer.is_symlink():
+        if not self.pointer.exists() and not is_link(self.pointer):
             return None
-        if self.pointer.is_symlink():
+        if is_link(self.pointer):
             raise ValueError('Installation selection must not be a symlink')
         value=read_json(self.pointer)
         if (not isinstance(value,dict) or type(value.get('version')) is not int or value['version']!=1
@@ -163,9 +188,7 @@ class InstallationStore:
                 stream.write(canonical(value)+b'\n');stream.flush();os.fsync(stream.fileno())
             check_cancel()  # Selection commits after this last cancellation check.
             os.replace(name,self.pointer)
-            parent=os.open(self.pointer.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC)
-            try:os.fsync(parent)
-            finally:os.close(parent)
+            fsync_directory(self.pointer.parent)
         finally:
             Path(name).unlink(missing_ok=True)
         return value

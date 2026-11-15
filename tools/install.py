@@ -5,7 +5,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import select
 import signal
 import sys
 import threading
@@ -13,6 +12,7 @@ import uuid
 
 from kirby import ROOT
 from installer.jobs import Cancelled, Job
+from installer.platforms import WINDOWS, readable
 from installer.sources import inspect_source
 from installer.pipeline import execute_install
 
@@ -23,6 +23,9 @@ class RequestReader:
     """Pollable input without a buffered stdin lock surviving interpreter shutdown."""
     def __init__(self, fd):
         self.fd = fd
+        if WINDOWS:
+            import msvcrt
+            msvcrt.setmode(fd, os.O_BINARY)
         self.buffer = bytearray()
 
     def read(self, stop=None):
@@ -31,7 +34,7 @@ class RequestReader:
                 return None
             if len(self.buffer) > LIMIT:
                 raise ValueError("Oversized setup request")
-            if not select.select([self.fd], [], [], 0.1)[0]:
+            if not readable(self.fd):
                 continue
             chunk = os.read(self.fd, min(4096, LIMIT + 1 - len(self.buffer)))
             if not chunk:
@@ -94,7 +97,7 @@ def main():
                 while True:
                     try:
                         control = reader.read(finished)
-                    except (EOFError, ValueError, UnicodeError):
+                    except (EOFError, OSError, ValueError, UnicodeError):
                         return
                     if control is None:
                         return

@@ -5,7 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <unistd.h>
+#include "../filesystem_fixture.h"
 namespace {
 unsigned checks;
 void Check(bool value, const char* why) { ++checks; if (!value) throw std::runtime_error(why); }
@@ -37,10 +37,7 @@ std::array<uint8_t,4096> ram{};
 uint8_t* Resolve(uint32_t at,uint32_t size) { return at && uint64_t(at)+size<=ram.size()?ram.data()+at:nullptr; }
 }
 int main() {
-    char pattern[]="/tmp/kirby-disc-test-XXXXXX";
-    const auto* temp=mkdtemp(pattern);
-    if (!temp) return 1;
-    const std::filesystem::path root(temp);
+    const auto root = TestDirectory("kirby-disc-");
     try {
         Fixture(root);
         Kirby::ExtractedDisc disc(root,0x118240000ull);
@@ -108,17 +105,32 @@ int main() {
         // Validate malformed metadata and symlink rejection using independent mounts.
         Save(root/"files/dir/a",std::vector<uint8_t>(34));
         Check(Rejects([&]{Kirby::ExtractedDisc bad(root,0x118240000ull);}),"FST size must match extracted file");
+#ifndef _WIN32
         Fixture(root); std::filesystem::remove(root/"files/dir/a");
         std::filesystem::create_symlink(root/"sys/boot.bin",root/"files/dir/a");
         Check(Rejects([&]{Kirby::ExtractedDisc bad(root,0x118240000ull);}),"file symlink rejected");
         std::filesystem::remove(root/"files/dir/a"); Fixture(root);
+#else
+        Fixture(root);
+#endif
         std::filesystem::rename(root/"files/dir",root/"actual");
+#ifdef _WIN32
+        TestJunction(root/"actual", root/"files/dir");
+#else
         std::filesystem::create_directory_symlink(root/"actual",root/"files/dir");
+#endif
         Check(Rejects([&]{Kirby::ExtractedDisc bad(root,0x118240000ull);}),"directory symlink rejected");
         std::filesystem::remove(root/"files/dir"); Fixture(root);
         std::fstream fst(root/"sys/fst.bin",std::ios::binary|std::ios::in|std::ios::out);
         fst.seekp(53); fst.write("..",2); fst.close();
         Check(Rejects([&]{Kirby::ExtractedDisc bad(root,0x118240000ull);}),"FST traversal rejected");
+        for (const char unsafe : {'\\', ':'}) {
+            Fixture(root);
+            fst.open(root/"sys/fst.bin",std::ios::binary|std::ios::in|std::ios::out);
+            fst.seekp(53); fst.put(unsafe); fst.close();
+            Check(Rejects([&]{Kirby::ExtractedDisc bad(root,0x118240000ull);}),
+                  "FST rejects host separators and alternate data streams");
+        }
         Fixture(root);
         fst.open(root/"sys/fst.bin",std::ios::binary|std::ios::in|std::ios::out);
         std::array<uint8_t,4> word{}; Put(word.data(),5);

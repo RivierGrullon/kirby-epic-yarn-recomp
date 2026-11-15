@@ -16,15 +16,40 @@ from kirby import ROOT, run_logged
 from build_layout import BuildLayout
 
 
+def apply_snapshot_patch(patch, workspace):
+    # Git for Windows may have checked out clean dependency files as CRLF.
+    # Only normalize the owned build copy; upstream worktrees stay untouched.
+    content = patch.read_bytes().replace(b'\r\n', b'\n')
+    for line in content.splitlines():
+        if not line.startswith(b'+++ b/'):
+            continue
+        target = workspace/line[6:].decode('utf-8')
+        if target.is_symlink() or not target.resolve().is_relative_to(workspace.resolve()):
+            raise ValueError('Patch target escapes the private build snapshot')
+        if target.is_file():
+            original = target.read_bytes()
+            if b'\0' not in original and b'\r\n' in original:
+                target.write_bytes(original.replace(b'\r\n', b'\n'))
+    apply = ['git', 'apply', f'--directory={workspace.relative_to(ROOT).as_posix()}']
+    if subprocess.run([*apply, '--check'], input=content, cwd=ROOT, capture_output=True).returncode == 0:
+        subprocess.run(apply, input=content, cwd=ROOT, check=True)
+    elif subprocess.run([*apply, '--reverse', '--check'], input=content, cwd=ROOT, capture_output=True).returncode:
+        raise ValueError(f'{patch.name} does not apply cleanly; local source edits were left untouched')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--configure-only", action="store_true")
+    parser.add_argument("--target", choices=("linux", "windows"), default="linux")
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--translated-jobs", type=int, default=2)
     parser.add_argument("--stage-root",type=Path,help="Use isolated outputs below local/setup/builds/JOB")
     args = parser.parse_args()
     try:
-        layout=BuildLayout(ROOT,args.stage_root)
+        stage = args.stage_root
+        if args.target == 'windows' and stage is None:
+            stage = ROOT/'local/setup/builds/windows-developer'
+        layout=BuildLayout(ROOT,stage)
         layout.ensure()
         if not (layout.generated / "build_shards/shards.cmake").is_file():
             raise ValueError("Run tools/kirby.py translate first")
@@ -54,12 +79,8 @@ def main():
             if link.exists() or link.is_symlink():
                 raise ValueError(f"Unexpected existing path: {link}; left untouched")
             link.symlink_to(os.path.relpath(target, workspace), target_is_directory=True)
-        apply = ["git", "apply", f"--directory={workspace.relative_to(ROOT).as_posix()}"]
         for patch in sorted((ROOT / "patches/wiicompiled").glob("*.patch")):
-            if subprocess.run([*apply, "--check", str(patch)], cwd=ROOT, capture_output=True).returncode == 0:
-                subprocess.run([*apply, str(patch)], cwd=ROOT, check=True)
-            elif subprocess.run([*apply, "--reverse", "--check", str(patch)], cwd=ROOT, capture_output=True).returncode:
-                raise ValueError(f"{patch.name} does not apply cleanly; local source edits were left untouched")
+            apply_snapshot_patch(patch, workspace)
         aurora_snapshot = workspace / "aurora"
         aurora_stamp = workspace / ".aurora-source"
         aurora_commit = json.loads((ROOT / "dependencies.json").read_text())["wiicompiled"]["submodules"]["aurora-main"]
@@ -69,16 +90,14 @@ def main():
         if not aurora_stamp.is_file() or aurora_stamp.read_text().strip() != aurora_commit:
             raise ValueError("Aurora snapshot is partial or from a different revision; left untouched")
         for patch in sorted((ROOT / "patches/aurora").glob("*.patch")):
-            if subprocess.run([*apply, "--check", str(patch)], cwd=ROOT, capture_output=True).returncode == 0:
-                subprocess.run([*apply, str(patch)], cwd=ROOT, check=True)
-            elif subprocess.run([*apply, "--reverse", "--check", str(patch)], cwd=ROOT, capture_output=True).returncode:
-                raise ValueError(f"{patch.name} does not apply cleanly; local source edits were left untouched")
+            apply_snapshot_patch(patch, workspace)
         aurora = aurora_snapshot
         build = layout.build
         configure=["cmake", "-S", workspace / "runtime", "-B", build, "-G", "Ninja",
                                 "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++",
                                 "-DCMAKE_BUILD_TYPE=Release", "-DAURORA_DAWN_PROVIDER=package",
                                 "-DAURORA_SDL3_PROVIDER=vendor",
+                                f"-DAURORA_SDL3_LINKAGE={'shared' if args.target == 'windows' else 'static'}",
                                 f"-DKIRBY_PROJECT_ROOT={ROOT}",
                                 f"-DKIRBY_GENERATED_ROOT={layout.generated}",
                                 f"-DCMAKE_PROJECT_mkw_recompiled_INCLUDE={ROOT / 'cmake/native_project.cmake'}",
@@ -87,9 +106,25 @@ def main():
                                 f"-DMKW_TRANSLATED_COMPILE_JOBS={max(1, args.translated_jobs)}"]
         if layout.stage is not None:
             configure.append(f"-DCMAKE_RUNTIME_OUTPUT_DIRECTORY={build}")
+        if args.target == 'windows':
+            configure = [argument for argument in configure if not str(argument).startswith(
+                ('-DCMAKE_C_COMPILER=', '-DCMAKE_CXX_COMPILER='))]
+            configure.append(f"-DCMAKE_TOOLCHAIN_FILE={ROOT/'cmake/windows-toolchain.cmake'}")
         run_logged("configure",configure,layout=layout)
         if not args.configure_only:
             run_logged("compile", ["cmake", "--build", build, "--target", "WiiCompiled", "kirby-launcher", "--parallel", str(max(1, args.jobs))],layout=layout)
+            if args.target == 'windows':
+                # LLVM's C++ runtime and Dawn may be shared libraries. Keep DLLs
+                # next to the products so native Windows can resolve them.
+                libraries = list(build.rglob('*.dll'))
+                toolchain = Path('/opt/llvm-mingw/x86_64-w64-mingw32/bin')
+                libraries += list(toolchain.glob('*.dll'))
+                for library in libraries:
+                    if library.parent != build:
+                        destination = build/library.name
+                        if destination.exists() and destination.read_bytes() != library.read_bytes():
+                            raise ValueError(f'Conflicting Windows runtime library: {library.name}')
+                        shutil.copy2(library, destination)
             print("Native Kirby bootstrap built. Run --verify-bootstrap, then --probe-init and a bounded --headless probe.")
     except (OSError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

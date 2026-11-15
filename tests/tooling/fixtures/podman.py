@@ -9,6 +9,9 @@ import time
 path=Path(os.environ['KIRBY_TEST_PODMAN_STATE'])
 state=json.loads(path.read_text())
 args=sys.argv[1:]
+docker=Path(sys.argv[0]).name=='docker'
+if docker and any(arg in args for arg in ('--ignore','--time','--userns=keep-id')):
+    raise RuntimeError('Podman-only option sent to Docker')
 image='a'*64
 owned='b'*64
 
@@ -47,7 +50,11 @@ elif args[0]=='rm':
     if state.get('fail_cleanup'):
         print('Synthetic engine cleanup unavailable',file=sys.stderr)
         sys.exit(125)
-    for key in matching():
+    selected = args[2:] if docker else matching()
+    if docker:
+        assert args[1]=='--force'
+        assert all(key in state['containers'] and state['containers'][key]['labels'].get('io.kirby.setup-token') for key in selected)
+    for key in selected:
         del state['containers'][key]
     save()
 elif args[0]=='ps':

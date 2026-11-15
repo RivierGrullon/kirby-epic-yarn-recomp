@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pages.h"
+#include "../platform.h"
 #include <imgui.h>
 
 namespace Launcher {
@@ -49,12 +50,12 @@ Action DrawInstall(State& state) {
             if (setup.result) ImGui::Text("Verified %llu files%s",static_cast<unsigned long long>(setup.result->assetFiles),
                                         setup.result->cached ? " (cached export)" : "");
         }
-        if (!setup.source.empty()) ImGui::TextWrapped("Source: %s",setup.source.c_str());
+        if (!setup.source.empty()) ImGui::TextWrapped("Source: %s",Utf8(setup.source).c_str());
         if (!setup.logPath.empty() && ImGui::Button("Open setup logs")) action=Action::OpenSetupLogs;
     }
     ImGui::Spacing();
     ImGui::SeparatorText("Selected game data");
-    ImGui::TextWrapped("%s", state.config.gameData.c_str());
+    ImGui::TextWrapped("%s", Utf8(state.config.gameData).c_str());
     ImGui::TextWrapped("%s", state.dataStatus.c_str());
     ImGui::BeginDisabled(state.selfTest || state.gameRunning || setup.Busy() || state.choosingSource);
     if (ImGui::Button("Verify selected folder")) action=Action::VerifyData;
@@ -67,7 +68,7 @@ Action DrawInstall(State& state) {
     ImGui::BeginDisabled(state.selfTest || state.gameRunning || setup.Busy() || state.choosingSource || !state.dataVerified);
     if (ImGui::Button("Build / update native game")) action=Action::BuildGame;
     ImGui::EndDisabled();
-    ImGui::TextWrapped("The pinned local toolchain image must already be prepared. First builds can take several minutes; details are in the build guide.");
+    ImGui::TextWrapped("First-time setup prepares the build tools. For a fresh checkout, follow the Build Guide before building. First builds can take several minutes.");
     if (ImGui::Button("Open Build Guide")) action = Action::BuildGuide;
     return action;
 }

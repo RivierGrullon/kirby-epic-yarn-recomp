@@ -8,6 +8,7 @@ import tomllib
 
 from kirby import EXPECTED_SHA1
 from .jobs import run_process
+from .platforms import WINDOWS
 
 
 def check_elf(path):
@@ -17,12 +18,30 @@ def check_elf(path):
         raise ValueError('Build output is not a Linux x86-64 ELF executable')
 
 
+def check_pe(path):
+    """Require an x86-64 PE32+ executable, not a DLL or a DOS stub."""
+    with Path(path).open('rb') as stream:
+        header=stream.read(64)
+        if len(header)!=64 or header[:2]!=b'MZ':
+            raise ValueError('Build output is not a Windows x86-64 PE executable')
+        offset=struct.unpack_from('<I',header,60)[0]
+        if not 64<=offset<=1024*1024:
+            raise ValueError('Invalid PE header offset')
+        stream.seek(offset);pe=stream.read(264)
+    if (len(pe)<264 or pe[:4]!=b'PE\0\0' or struct.unpack_from('<H',pe,4)[0]!=0x8664
+            or struct.unpack_from('<H',pe,20)[0]<240
+            or not struct.unpack_from('<H',pe,22)[0]&2
+            or struct.unpack_from('<H',pe,22)[0]&0x2000
+            or struct.unpack_from('<H',pe,24)[0]!=0x20b):
+        raise ValueError('Build output is not a Windows x86-64 PE executable')
+
+
 def verify_native(job,root,executable,data_root,identity):
     root=Path(root);executable=Path(executable).resolve()
-    check_elf(executable)
+    (check_pe if WINDOWS else check_elf)(executable)
     environment=dict(os.environ,SDL_AUDIO_DRIVER='dummy')
     libraries=root/'local/host-libs'
-    if libraries.is_dir():
+    if not WINDOWS and libraries.is_dir():
         environment['LD_LIBRARY_PATH']=str(libraries)+(os.pathsep+environment['LD_LIBRARY_PATH'] if environment.get('LD_LIBRARY_PATH') else '')
     document=run_process(job,[executable,'--build-info'],capture_limit=16384,timeout=10,env=environment)
     info=tomllib.loads(document.decode('utf-8'))

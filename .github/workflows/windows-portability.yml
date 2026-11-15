@@ -1,0 +1,61 @@
+name: Native Windows portability
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-host:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Verify Windows worker and first-installation boundaries
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_windows_worker.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_setup.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Prepare pinned native LLVM-MinGW
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'llvm-mingw.zip'
+          Invoke-WebRequest 'https://github.com/mstorsjo/llvm-mingw/releases/download/20260616/llvm-mingw-20260616-ucrt-x86_64.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35') { throw 'LLVM-MinGW checksum mismatch' }
+          Expand-Archive $archive -DestinationPath $env:RUNNER_TEMP
+          Join-Path $env:RUNNER_TEMP 'llvm-mingw-20260616-ucrt-x86_64\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Verify translated-data COFF assembly
+        shell: pwsh
+        run: |
+          $env:KIRBY_MINGW_TEST = Join-Path $env:RUNNER_TEMP 'llvm-mingw-20260616-ucrt-x86_64'
+          python -m unittest discover -s tests -p test_windows_data.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Compile and run native Windows filesystem tests
+        shell: pwsh
+        run: |
+          $common = @('-std=c++20', '-static', '-Wall', '-Wextra', '-Werror', '-Iruntime/include')
+          x86_64-w64-mingw32-clang++ @common tests/unit/services/nand_test.cpp runtime/src/services/nand.cpp -o "$env:RUNNER_TEMP/nand-test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$env:RUNNER_TEMP/nand-test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          x86_64-w64-mingw32-clang++ @common tests/unit/services/disc_test.cpp runtime/src/services/disc.cpp runtime/src/services/nand.cpp runtime/src/services/ios_service.cpp runtime/src/services/es_metadata.cpp -o "$env:RUNNER_TEMP/disc-test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$env:RUNNER_TEMP/disc-test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          x86_64-w64-mingw32-clang++ @common tests/unit/frame_log_test.cpp runtime/src/app/frame_log.cpp -o "$env:RUNNER_TEMP/frame-log-test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$env:RUNNER_TEMP/frame-log-test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          x86_64-w64-mingw32-clang++ @common tests/unit/command_line_test.cpp -lshell32 -o "$env:RUNNER_TEMP/command-line-test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$env:RUNNER_TEMP/command-line-test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

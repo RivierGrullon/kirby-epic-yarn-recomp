@@ -1,8 +1,15 @@
 # Setup worker
 
+For a first installation, use `python3 tools/setup.py SOURCE` (Windows:
+`py -3 tools/setup.py SOURCE`). It checks prerequisites and prepares the selected
+Docker/Podman toolchain before invoking this worker. The worker itself is also
+used by the already-built launcher.
+
 `python3 tools/install.py` reads version 1 JSON-lines requests on stdin and writes
-only JSON-lines events to stdout. Run it on the host, with Dolphin's CLI or the
-Dolphin Flatpak and 7z installed. Python uses only its standard library.
+only JSON-lines events to stdout. Run it on the host. Images need Dolphin's CLI
+(`DolphinTool.exe` on Windows); Linux also supports the Dolphin Flatpak. Archives
+additionally need 7z. Extracted DATA folders need neither. Python uses only its
+standard library.
 
 One worker handles one inspection or installation. The launcher must keep draining stdout and
 poll the process exit status. It may keep stdin open until the worker exits.
@@ -91,7 +98,8 @@ parallelism is bounded by available RAM and CPUs, up to four jobs. Translation
 receipts hash their generated files; native receipts hash the executable and
 required DSP coefficient resource. Changed or damaged inputs invalidate reuse.
 
-Verification runs on an independent copy: Linux x86-64 ELF and build provenance,
+Verification runs on an independent copy: Linux x86-64 ELF or Windows x86-64 PE
+and build provenance,
 bootstrap, SDK initialization, disc access, ES metadata, and a hidden first-frame
 probe with initialized controller/audio services. Probes use dummy audio, zero
 volume and temporary user data. They do not certify visible smoothness, audible
@@ -122,9 +130,9 @@ metadata/artifacts block Play. The reader reuses Crypto++ from the pinned runtim
 upstream source and license files remain intact. These hashes detect changes;
 they are not signatures from a trusted distributor.
 
-The worker requires an existing toolchain image; automatic toolchain preparation,
-dedicated repair/rollback controls and cross-process Play/build locking remain
-pending. Repeating `--install` reuses matching compiler caches and rebuilds damaged
+The worker requires an existing toolchain image, which the first-installation
+setup command prepares. Dedicated repair/rollback controls and cross-process
+Play/build locking remain pending. Repeating `--install` reuses matching compiler caches and rebuilds damaged
 compiler outputs. It does not yet repair a corrupted immutable installation.
 
 ## Managed build containers

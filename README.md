@@ -1,11 +1,11 @@
 # Kirby's Epic Yarn Recompiled
 
-**A native Linux x86-64 port of Kirby's Epic Yarn, built with
+**A native recompilation of Kirby's Epic Yarn for Linux and Windows x86-64, built with
 [WiiCompiled](https://github.com/patchzyy/Wiicompiled) and
 [Aurora](https://github.com/patchzyy/aurora-wiicompiled).**
 
 The Wii executable is translated from PowerPC to C++ and compiled for the host.
-The native runtime uses Vulkan for graphics. Dolphin extracts your disc and serves
+The native runtime uses Aurora for graphics (Vulkan on Linux). Dolphin extracts your disc and serves
 as a behavior reference; it does not run the native game.
 
 ![Fountain Gardens running in the native Linux build](docs/images/fountain-gardens.png)
@@ -28,10 +28,12 @@ not stable frame pacing or full-game compatibility.*
 
 ## Requirements
 
-- Linux x86-64 with a desktop session and a working Vulkan driver.
+- Linux x86-64 or Windows x86-64 with a desktop session and working graphics drivers.
+  Windows support is under development; see the build guide for validation limits.
 - Your own complete RK5E01 Rev 0 dump, including the extracted `files/` tree.
-- Git, Python 3 and rootless Podman for the build environment.
-- Dolphin's `dolphin-tool` for extraction; 7-Zip for a `.7z` containing a WBFS.
+- Git, Python 3.11+ and **Docker or Podman** for the build environment.
+- Dolphin's `dolphin-tool` / `DolphinTool.exe` for image extraction; 7-Zip only for `.7z` inputs.
+  Neither is required for an already extracted DATA folder.
 - Several GB of storage and enough memory to compile the generated C++.
 
 Expected `sys/main.dol` SHA-1:
@@ -43,8 +45,18 @@ Laptop GPU**. Legion Go performance has not yet been measured.
 
 ## Build and play
 
-Follow the [build guide](docs/building.md) to fetch the pinned dependencies,
-extract and verify your copy, translate the DOL and compile the runtime.
+Install the [prerequisites](docs/building.md#prerequisites), then run one setup
+command from the checkout with the actual path to your own disc or DATA folder:
+
+```bash
+python3 tools/setup.py "/actual/path/to/Kirby.wbfs"
+```
+
+On Windows PowerShell, use `py -3 tools/setup.py "C:\Games\Kirby.wbfs"`.
+If `disc/DATA` is already extracted, omit the path. Use `--engine docker` or
+`--engine podman` to choose explicitly, or `--check` to check prerequisites first.
+Setup prepares tools, translates, compiles and verifies the game and launcher.
+See the [build guide](docs/building.md) for the full first-installation flow.
 
 From a completed local build, run:
 
@@ -52,9 +64,12 @@ From a completed local build, run:
 build/native/kirby-launcher
 ```
 
+On Windows, open `build\native\kirby-launcher.exe`.
+
 The launcher can currently:
 
-- Select and verify an extracted DATA folder.
+- Import a disc image or select and verify an extracted DATA folder.
+- Build and update the native game, with progress and cancellation.
 - Start the native game in a visible window.
 - Set master volume and VSync for the next launch.
 - Rebind gamepad buttons, stick/trigger directions and keyboard keys, with
@@ -66,15 +81,15 @@ The launcher can currently:
 These actions are organized into **Play**, **Install**, **Display**, **Audio**,
 **Controls**, **Saves** and **Diagnostics**. Navigation uses a sidebar on wider
 windows and tabs on compact windows. Settings saving stays available on every
-page. The Install page currently selects an extracted folder and opens the build
-guide; it does not import or compile a dump yet.
+page. The Install page imports and verifies your source, then builds the native game.
+First-time toolchain and launcher preparation is handled by `tools/setup.py`.
 
 Settings are shared with the native game and saved on **Save settings**, **Play**,
 or closing the launcher. Changes apply on the next game launch. Existing launcher
 preferences migrate automatically while retaining the original file. See the
 [settings guide](docs/settings.md) for the format and recovery instructions.
-Archive import, toolchain
-setup, translation and compilation are currently command-line steps. Resolution
+The first installation uses the setup command; later imports and builds can use
+the launcher. Resolution
 scaling, per-device input profiles, motion configuration and a validated 30/60 FPS
 selector are not available in the launcher yet.
 

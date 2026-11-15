@@ -6,7 +6,7 @@ Read the [build guide](docs/building.md), [runtime layout](runtime/README.md) an
 
 ## Bug reports
 
-Include the commit, Linux distribution, CPU/GPU, graphics driver, game revision,
+Include the commit, Windows version or Linux distribution, CPU/GPU, graphics driver, game revision,
 scene and steps to reproduce. State whether Experimental performance mode and
 VSync were enabled. For controls, include the controller model, connection type,
 button pressed and observed result. For audio, distinguish silence, crackling,
@@ -40,7 +40,10 @@ python3 -m unittest discover -s tests -v
 ```
 
 Native integration tests are skipped unless their executable paths are provided.
-CI runs the synthetic tooling tests; it does not build or execute the game.
+CI runs the synthetic tooling tests and native Windows worker/filesystem checks;
+it does not build or execute the game. Windows checks use the runner's NTFS
+volume to cover extended attributes and directory junctions that Wine cannot
+validate here. A portable test passing does not certify Windows gameplay.
 
 With a local build and host graphics session:
 

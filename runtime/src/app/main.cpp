@@ -20,6 +20,7 @@
 #include "kirby/app/events.h"
 #include "kirby/app/frame_log.h"
 #include "kirby/settings.h"
+#include "kirby/platform/command_line.h"
 #include "audio_backend.h"
 #include <memory>
 #include "timebase_contract.h"
@@ -141,6 +142,9 @@ bool KirbyAcceptRuntimeRegistration(uint32_t address, const char* name) noexcept
 }
 
 int main(int argc, char** argv) {
+    Kirby::CommandLineArguments arguments;
+    try { arguments.Normalize(argc,argv); }
+    catch (const std::exception& error) { std::cerr << error.what() << '\n';return 2; }
     if (argc==2 && std::string_view(argv[1])=="--build-info") {
         std::cout << Kirby::BuildInformation(Kirby::BuildProgram::Runtime); return 0;
     }
@@ -157,9 +161,9 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument = argv[i];
         if (argument == "--print-settings" && i + 1 < argc && argv[i+1][0]) {
-            mode = argument; configPath = argv[++i]; explicitConfig = true;
+            mode = argument; configPath = Kirby::CommandLinePath(argv[++i]); explicitConfig = true;
         } else if (argument == "--config" && i + 1 < argc && argv[i+1][0]) {
-            configPath = argv[++i]; explicitConfig = true;
+            configPath = Kirby::CommandLinePath(argv[++i]); explicitConfig = true;
         } else if (argument == "--volume" && i + 1 < argc) {
             volumeOverride = true;
             char* end = nullptr;
@@ -173,9 +177,9 @@ int main(int argc, char** argv) {
         } else if (argument == "--gpu-resident-copies" || argument == "--ram-copies") {
             gpuResidentCopies = argument == "--gpu-resident-copies"; copiesOverride = true;
         }
-        else if (argument == "--frame-log" && i + 1 < argc && argv[i+1][0]) frameLogPath=argv[++i];
+        else if (argument == "--frame-log" && i + 1 < argc && argv[i+1][0]) frameLogPath=Kirby::CommandLinePath(argv[++i]);
         else if (argument == "--game-data" && i + 1 < argc && argv[i+1][0]) {
-            dataRoot = argv[++i]; dataOverride = true;
+            dataRoot = Kirby::CommandLinePath(argv[++i]); dataOverride = true;
         }
         else if (argument == "--headless" || argument == "--video" || argument == "--video-hidden" || argument == "--probe-pos-matrix" || argument == "--benchmark-pos-matrix" || argument == "--probe-configured-controls" || argument == "--probe-ax-task" || argument == "--probe-thread-fault" || argument == "--probe-threads" || argument == "--probe-wpad" || argument == "--probe-sdl-controller" || argument == "--monitor-controller" || argument == "--probe-video-retrace" || argument == "--verify-bootstrap" || argument == "--probe-init" ||
                  argument == "--probe-alarms" || argument == "--probe-interrupt-init" || argument == "--probe-exi-init" || argument == "--probe-si-init" ||
@@ -246,24 +250,25 @@ int main(int argc, char** argv) {
         }
         TranslatedFunctionRegistry::Finalize();
         const auto* matrixHook=TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::GXLoadPosMtxImm);
-        Require(matrixHook && matrixHook->kind==FunctionKind::Native && matrixHook->name=="KirbyGXLoadPosMtxImm",
+        Require(matrixHook && matrixHook->kind==FunctionKind::Native && matrixHook->name &&
+                std::string_view(matrixHook->name)=="KirbyGXLoadPosMtxImm",
                 "Audited position-matrix upload is missing from the native registry");
         for (const auto& [address,name] : cacheHooks) {
             const auto* hook=TranslatedFunctionRegistry::FindByAddressPtr(address);
-            Require(hook && hook->kind==FunctionKind::Native && hook->name==name,
+            Require(hook && hook->kind==FunctionKind::Native && hook->name && std::string_view(hook->name)==name,
                     "Audited Kirby cache boundary is missing from the native registry");
         }
         Kirby::VerifyWpadRegistrations();
         const auto* ios = TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::IosTransport);
-        Require(ios && ios->kind == FunctionKind::Native && ios->name == "KirbyIosSubmit",
+        Require(ios && ios->kind == FunctionKind::Native && ios->name && std::string_view(ios->name) == "KirbyIosSubmit",
                 "Audited Kirby IOS transport is missing from the native registry");
         const auto* restore = TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::RestoreInterrupts);
-        Require(restore && restore->kind == FunctionKind::Native && restore->name == "KirbyRestoreInterrupts",
+        Require(restore && restore->kind == FunctionKind::Native && restore->name && std::string_view(restore->name) == "KirbyRestoreInterrupts",
                 "Audited Kirby interrupt boundary is missing from the native registry");
         for (const auto [address, name] : {std::pair{KirbyBootConfig::SelectThread, "KirbySelectThread"},
                                           std::pair{KirbyBootConfig::LoadContext, "KirbyLoadContext"}}) {
             const auto* hook = TranslatedFunctionRegistry::FindByAddressPtr(address);
-            Require(hook && hook->kind == FunctionKind::Native && hook->name == name,
+            Require(hook && hook->kind == FunctionKind::Native && hook->name && std::string_view(hook->name) == name,
                     "Audited Kirby scheduler/context boundary is missing from the native registry");
         }
         const auto* entry = TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::Entry);

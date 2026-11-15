@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pages.h"
+#include "../platform.h"
 #include <imgui.h>
 
 namespace Launcher {
@@ -46,7 +47,7 @@ Action DrawDiagnostics(State& state) {
     if (ImGui::Button("Open Build Guide")) action = Action::BuildGuide;
     ImGui::Spacing();
     ImGui::SeparatorText("Shared settings");
-    ImGui::TextWrapped("%s", state.settingsFile.c_str());
+    ImGui::TextWrapped("%s", Utf8(state.settingsFile).c_str());
     if (ImGui::Button("Open Settings Folder")) action = Action::OpenSettings;
     ImGui::BeginDisabled(state.selfTest);
     if (ImGui::Button(state.settingsDirty ? "Discard changes and reload" : "Reload settings"))
@@ -58,7 +59,7 @@ Action DrawDiagnostics(State& state) {
     }
     ImGui::Spacing();
     ImGui::SeparatorText("Native executable");
-    ImGui::TextWrapped("%s", state.executable.c_str());
+    ImGui::TextWrapped("%s", Utf8(state.executable).c_str());
     ImGui::Spacing();
     ImGui::TextWrapped("WiiCompiled + Aurora. GPL-3.0-only and third-party licenses preserved.");
     return action;

@@ -12,7 +12,7 @@ import unittest
 class SharedSettingsTests(unittest.TestCase):
     def invoke_both(self, path):
         return [subprocess.run([os.environ[key], "--print-settings", str(path)],
-                               capture_output=True, text=True, timeout=15)
+                               capture_output=True, text=True, encoding="utf-8", timeout=15)
                 for key in ("KIRBY_NATIVE_TEST", "KIRBY_LAUNCHER_TEST")]
 
     def test_both_programs_read_the_same_settings_without_booting(self):
@@ -38,6 +38,21 @@ vsync = false
                 self.assertTrue(settings["kirby"]["gpu_resident_copies"])
                 self.assertNotIn("translated entry resolved", result.stdout)
             self.assertEqual(path.read_bytes(), before)
+
+    def test_unicode_config_and_data_arguments_are_preserved(self):
+        with tempfile.TemporaryDirectory(prefix="kirby 設定 ") as directory:
+            path = Path(directory) / "設定 'quoted' file.toml"
+            path.write_text('[kirby]\nschema_version = 1\n[paths]\ndvd_root = "資料 DATA"\n', encoding="utf-8")
+            for result in self.invoke_both(path):
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                settings = tomllib.loads(result.stdout)
+                self.assertEqual(Path(settings["paths"]["dvd_root"]), Path(directory) / "資料 DATA")
+            data = Path(directory) / "別の DATA"
+            result = subprocess.run([os.environ["KIRBY_NATIVE_TEST"], "--print-settings", str(path),
+                                     "--game-data", str(data)], capture_output=True,
+                                    text=True, encoding="utf-8", timeout=15)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(Path(tomllib.loads(result.stdout)["paths"]["dvd_root"]), data)
 
     def test_invalid_or_future_documents_are_reported_and_preserved(self):
         cases = ('[broken', '[kirby]\nschema_version = 2\n',

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "setup/job.h"
+#include "launcher_test_paths.h"
 #include <nlohmann/json.hpp>
 #include <chrono>
 #include <cerrno>
@@ -8,8 +9,15 @@
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#else
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace fs=std::filesystem;
 using Json=nlohmann::json;
@@ -32,7 +40,7 @@ int Child(const std::string& mode,const fs::path& workspace) {
         event["version"]=1;event["job_id"]=request.at("id");event["sequence"]=++sequence;
         std::cout << event.dump() << '\n' << std::flush;
     };
-    emit({{"stage","inspect"},{"state","started"},{"log_path","/tmp/source.log"}});
+    emit({{"stage","inspect"},{"state","started"},{"log_path",AbsoluteFixture("source.log")}});
     if (mode.starts_with("install-")) {
         Check(request.at("operation")=="install","Install client sent the wrong operation");
         if (mode=="install-late-cancel") {
@@ -41,12 +49,25 @@ int Child(const std::string& mode,const fs::path& workspace) {
         }
         emit({{"stage","compile"},{"state","started"}});
         const std::string id(64,'a');
-        Json result={{"source",request.at("source")},{"data_root","/tmp/export/DATA"},
+        Json result={{"source",request.at("source")},{"data_root",AbsoluteFixture("export/DATA")},
           {"installation_id",id},{"committed",true},{"build_reused",false},{"translation_reused",true},
-          {"executable",(mode=="install-wrong-path" ? fs::path("/different") : workspace/"installations"/id/"WiiCompiled").string()}};
+          {"executable",(mode=="install-wrong-path" ? fs::absolute("different") : workspace/"installations"/id/Launcher::GameExecutable).string()}};
         emit({{"stage","install"},{"state","complete"},{"result",result}});
         return mode=="install-nonzero" ? 7 : 0;
     }
+#ifdef _WIN32
+    if (mode=="tree") {
+        std::wstring executable(32768,L'\0');
+        executable.resize(GetModuleFileNameW(nullptr,executable.data(),static_cast<DWORD>(executable.size())));
+        auto command=L"\""+executable+L"\" --descendant \""+(workspace/"descendant-survived").wstring()+L"\"";
+        STARTUPINFOW startup{};startup.cb=sizeof(startup);PROCESS_INFORMATION child{};
+        Check(CreateProcessW(nullptr,command.data(),nullptr,nullptr,TRUE,CREATE_NO_WINDOW,nullptr,nullptr,&startup,&child),
+              "Cannot start cancellation descendant");
+        CloseHandle(child.hThread);CloseHandle(child.hProcess);
+        emit({{"stage","hash"},{"state","started"}});
+        std::this_thread::sleep_for(std::chrono::seconds(10));return 0;
+    }
+#endif
     if (mode=="hang") { std::this_thread::sleep_for(std::chrono::seconds(10));return 0; }
     if (mode=="cancel") {
         std::getline(std::cin,line);
@@ -58,8 +79,8 @@ int Child(const std::string& mode,const fs::path& workspace) {
     if (mode=="failure") { emit({{"stage","inspect"},{"state","failed"},{"error","Missing files"}});return 1; }
     if (mode=="missing-final") return 0;
     emit({{"stage","hash"},{"state","progress"},{"completed",128},{"total",512}});
-    Json result={{"source",mode=="wrong-source" ? "/different.wbfs" : request.at("source").get<std::string>()},
-                 {"source_kind","directory"},{"data_root","/tmp/export/DATA"},{"game_id","RK5E01"},
+    Json result={{"source",mode=="wrong-source" ? AbsoluteFixture("different.wbfs") : request.at("source").get<std::string>()},
+                 {"source_kind","directory"},{"data_root",AbsoluteFixture("export/DATA")},{"game_id","RK5E01"},
                  {"revision",0},{"dol_sha1","f4280a2b0709bfde4132be22e9f7fa8ecfa2a130"},
                  {"entry_point",2147500112u},{"asset_files",12},{"asset_bytes",1024},
                  {"validation","dol-sha1-and-data-layout"}};
@@ -70,9 +91,15 @@ int Child(const std::string& mode,const fs::path& workspace) {
 }
 }
 int main(int argc,char** argv) {
-    if (argc==4 && std::string(argv[2])=="--workspace") return Child(fs::path(argv[1]).filename().string(),argv[3]);
-    std::string directory=(fs::temp_directory_path()/"kirby's setup client.XXXXXX").string();
-    Check(mkdtemp(directory.data())!=nullptr,"Could not create test directory");
+#ifdef _WIN32
+    if (argc==3 && std::string(argv[1])=="--descendant") {
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));
+        std::ofstream(argv[2])<<"survived";return 0;
+    }
+#endif
+    // Job invokes Python with UTF-8/unbuffered options; this executable is its fixture replacement.
+    if (argc==7 && std::string(argv[5])=="--workspace") return Child(fs::path(argv[4]).filename().string(),argv[6]);
+    const auto directory=TemporaryLauncherDirectory("kirby's setup client ");
     struct Cleanup { fs::path path;~Cleanup() { fs::remove_all(path); } } cleanup{directory};
     const auto self=fs::canonical(argv[0]).string();
     const auto source=fs::path(directory)/"selected copy's folder";fs::create_directory(source);
@@ -82,15 +109,17 @@ int main(int argc,char** argv) {
     Check(!job.Start(fixture("failure"),source,directory,self),"Concurrent setup worker was started");
     const auto before=std::chrono::steady_clock::now();
     Finish(job);
-    Check(job.Current().status==Status::Ready && job.Current().result.has_value(),"Successful inspection was not accepted");
+    Check(job.Current().status==Status::Ready && job.Current().result.has_value(),job.Current().message.c_str());
     Check(std::chrono::steady_clock::now()-before>=std::chrono::milliseconds(140),"Result accepted before successful process exit");
     Check(job.Current().result->source==source,"Client substituted a different selected source");
+    #ifndef _WIN32
     const auto savedInput=dup(STDIN_FILENO);Check(savedInput>=0,"Could not preserve test stdin");
     close(STDIN_FILENO);
     const bool startedWithoutInput=job.Start(fixture("valid"),source,directory,self);
     dup2(savedInput,STDIN_FILENO);close(savedInput);
     Check(startedWithoutInput,"Launcher with closed stdin could not start setup");Finish(job);
     Check(job.Current().status==Status::Ready,"Closed parent stdin broke the worker control channel");
+    #endif
     for (const auto mode : {"bad-json","overflow","failure","missing-final","nonzero","wrong-source","late-event"}) {
         Check(job.Start(fixture(mode),source,directory,self),"Failure fixture did not start");Finish(job);
         Check(job.Current().status==Status::Failed && !job.Current().result && !job.Current().message.empty(),
@@ -101,6 +130,18 @@ int main(int argc,char** argv) {
         job.Cancel();Finish(job);
         Check(job.Current().status==Status::Cancelled && !job.Current().result,"Cancelled inspection changed the selection");
     }
+#ifdef _WIN32
+    Check(job.Start(fixture("tree"),source,directory,self),"Process-tree fixture did not start");
+    const auto treeStart=std::chrono::steady_clock::now();
+    while (job.Current().stage!="hash" && job.Current().Busy()) {
+        job.Poll();std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        Check(std::chrono::steady_clock::now()-treeStart<std::chrono::seconds(3),"Descendant did not start");
+    }
+    Check(job.Current().Busy(),"Process-tree fixture failed before cancellation");
+    job.Cancel();Finish(job);
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    Check(!fs::exists(directory/"descendant-survived"),"Cancelled worker left a running descendant");
+#endif
     for (const auto mode : {"install-ready","install-late-cancel","install-wrong-path","install-nonzero"}) {
         Check(job.Start(fixture(mode),source,directory,self,Operation::Install),"Install fixture did not start");
         if (std::string(mode)=="install-late-cancel") job.Cancel();
@@ -111,7 +152,9 @@ int main(int argc,char** argv) {
     }
     { Job owned(100);Check(owned.Start(fixture("hang"),source,directory,self),"Destructor fixture did not start"); }
     Check(!job.Start(fixture("failure"),source,directory,"/missing/python"),"Missing Python was accepted");
+    #ifndef _WIN32
     int status=0;errno=0;
     Check(waitpid(-1,&status,WNOHANG)==-1 && errno==ECHILD,"Setup client leaked a child or zombie");
+    #endif
     std::cout << "Setup client: asynchronous progress, actual source, exit validation, cancellation and cleanup verified\n";
 }

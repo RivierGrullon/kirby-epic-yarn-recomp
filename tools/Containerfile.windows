@@ -1,0 +1,15 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0-noble@sha256:e061190275058283f01e04b72556ffe8cbae5fab6dce00f772185687f258a58c
+ENV DEBIAN_FRONTEND=noninteractive DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git python3 cmake ninja-build pkg-config curl xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+# LLVM-MinGW release 20260616, LLVM 22.1.8. Keep its bundled licenses intact.
+RUN curl --fail --location --retry 3 \
+    https://github.com/mstorsjo/llvm-mingw/releases/download/20260616/llvm-mingw-20260616-ucrt-ubuntu-22.04-x86_64.tar.xz \
+    -o /tmp/llvm-mingw.tar.xz \
+    && echo '534b92e067b22a6b4441f48ae9240a3341b17825d04d577eab0cf85c44b4deda  /tmp/llvm-mingw.tar.xz' | sha256sum -c - \
+    && mkdir -p /opt/llvm-mingw \
+    && tar -xJf /tmp/llvm-mingw.tar.xz -C /opt/llvm-mingw --strip-components=1 \
+    && rm /tmp/llvm-mingw.tar.xz
+ENV PATH="/opt/llvm-mingw/bin:${PATH}"
+WORKDIR /workspace

@@ -1,6 +1,10 @@
 if(NOT DEFINED KIRBY_GENERATED_ROOT)
     set(KIRBY_GENERATED_ROOT "${KIRBY_PROJECT_ROOT}/generated")
 endif()
+if(WIN32 AND EXISTS "${DATA_INIT_BLOB_ASM}")
+    include("${KIRBY_PROJECT_ROOT}/cmake/windows-data.cmake")
+    kirby_use_windows_data_blob(mkw_game_data "${DATA_INIT_BLOB_ASM}")
+endif()
 
 # Bring-up requires Dawn validation even when translated code uses Release.
 # Upstream disables validation and robustness in this translation unit with NDEBUG.
@@ -12,6 +16,24 @@ set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp" APPEND PROPERTY
     COMPILE_DEFINITIONS main=KirbyLegacyMain)
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/app/main.cpp")
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/app/frame_log.cpp")
+add_executable(kirby_frame_log_test "${KIRBY_PROJECT_ROOT}/tests/unit/frame_log_test.cpp"
+    "${KIRBY_PROJECT_ROOT}/runtime/src/app/frame_log.cpp")
+target_compile_features(kirby_frame_log_test PRIVATE cxx_std_20)
+target_include_directories(kirby_frame_log_test PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/include")
+add_test(NAME kirby_frame_log COMMAND kirby_frame_log_test)
+add_executable(kirby_command_line_test "${KIRBY_PROJECT_ROOT}/tests/unit/command_line_test.cpp")
+target_compile_features(kirby_command_line_test PRIVATE cxx_std_20)
+target_include_directories(kirby_command_line_test PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/include")
+add_test(NAME kirby_command_line COMMAND kirby_command_line_test)
+if(WIN32)
+    target_link_libraries(WiiCompiled PRIVATE shell32)
+    target_link_libraries(kirby_command_line_test PRIVATE shell32)
+    # Kirby exposes master volume, not the upstream Mario Kart media-session
+    # ducking feature. Keep that optional integration out of this build so it
+    # does not require generated C++/WinRT SDK headers inside the toolchain.
+    set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/music_attenuation.cpp"
+        APPEND PROPERTY COMPILE_DEFINITIONS MKW_DISABLE_EXTERNAL_MEDIA_MONITOR)
+endif()
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/cache.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/native-src/graphics/cache.cpp")
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/devices/ax.cpp"
@@ -239,7 +261,7 @@ add_test(NAME kirby_build_info COMMAND kirby_build_info_test)
 add_executable(kirby_build_probe_test "${KIRBY_PROJECT_ROOT}/tests/unit/build_probe_test.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/build_probe.cpp")
 target_include_directories(kirby_build_probe_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
-target_link_libraries(kirby_build_probe_test PRIVATE kirby_build_info SDL3::SDL3-static)
+target_link_libraries(kirby_build_probe_test PRIVATE kirby_build_info ${AURORA_SDL3_TARGET})
 add_test(NAME kirby_build_probe COMMAND kirby_build_probe_test)
 set_tests_properties(kirby_build_probe PROPERTIES TIMEOUT 10)
 
@@ -255,6 +277,7 @@ target_include_directories(kirby_setup PUBLIC "${KIRBY_PROJECT_ROOT}/launcher"
 target_compile_features(kirby_setup PUBLIC cxx_std_20)
 target_compile_options(kirby_setup PRIVATE -Wall -Wextra -Werror)
 add_executable(kirby_setup_protocol_test "${KIRBY_PROJECT_ROOT}/tests/unit/setup_protocol_test.cpp")
+target_include_directories(kirby_setup_protocol_test PRIVATE "${KIRBY_PROJECT_ROOT}/vendor/json/single_include")
 target_link_libraries(kirby_setup_protocol_test PRIVATE kirby_setup)
 add_test(NAME kirby_setup_protocol COMMAND kirby_setup_protocol_test)
 add_executable(kirby_setup_job_test "${KIRBY_PROJECT_ROOT}/tests/unit/setup_job_test.cpp")
@@ -269,13 +292,16 @@ add_test(NAME kirby_setup_install_protocol COMMAND kirby_setup_install_protocol_
 add_executable(kirby_setup_installation_test "${KIRBY_PROJECT_ROOT}/tests/unit/setup_installation_test.cpp")
 target_include_directories(kirby_setup_installation_test PRIVATE "${KIRBY_PROJECT_ROOT}/vendor/json/single_include")
 target_link_libraries(kirby_setup_installation_test PRIVATE kirby_setup)
+if(WIN32)
+    target_link_libraries(kirby_setup_installation_test PRIVATE shell32)
+endif()
 add_test(NAME kirby_setup_installation COMMAND kirby_setup_installation_test)
 
 add_library(kirby_settings STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/app/settings.cpp")
 target_sources(kirby_settings PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/input/bindings.cpp")
 target_include_directories(kirby_settings PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/include"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${MKW_AURORA_DIR}/include")
-target_link_libraries(kirby_settings PRIVATE mkw::toml11 SDL3::SDL3-static)
+target_link_libraries(kirby_settings PRIVATE mkw::toml11 ${AURORA_SDL3_TARGET})
 target_compile_features(kirby_settings PUBLIC cxx_std_20)
 target_compile_definitions(kirby_settings PRIVATE TARGET_PC=1)
 target_compile_options(kirby_settings PRIVATE -Wall -Wextra -Werror)
@@ -289,7 +315,7 @@ add_test(NAME kirby_bindings COMMAND kirby_bindings_test)
 add_executable(kirby_binding_capture_test "${KIRBY_PROJECT_ROOT}/tests/unit/binding_capture_test.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/binding_capture.cpp")
 target_include_directories(kirby_binding_capture_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
-target_link_libraries(kirby_binding_capture_test PRIVATE kirby_settings SDL3::SDL3-static)
+target_link_libraries(kirby_binding_capture_test PRIVATE kirby_settings ${AURORA_SDL3_TARGET})
 add_test(NAME kirby_binding_capture COMMAND kirby_binding_capture_test)
 
 add_executable(kirby_launcher_input_test "${KIRBY_PROJECT_ROOT}/tests/unit/launcher_input_test.cpp"
@@ -332,5 +358,8 @@ target_sources(kirby-launcher PRIVATE
 target_include_directories(kirby-launcher PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
 target_compile_features(kirby-launcher PRIVATE cxx_std_20)
 target_compile_definitions(kirby-launcher PRIVATE SDL_MAIN_HANDLED)
-target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends SDL3::SDL3-static kirby_settings kirby_build_info kirby_setup)
+target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends ${AURORA_SDL3_TARGET} kirby_settings kirby_build_info kirby_setup mkw::cryptopp)
 set_target_properties(kirby-launcher PROPERTIES BUILD_RPATH "\$ORIGIN/../../local/host-libs")
+if(WIN32)
+    target_link_libraries(kirby-launcher PRIVATE shell32)
+endif()

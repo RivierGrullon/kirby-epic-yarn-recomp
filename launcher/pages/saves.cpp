@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pages.h"
+#include "../platform.h"
 #include <imgui.h>
 
 namespace Launcher {
@@ -8,7 +9,7 @@ Action DrawSaves(State& state) {
     std::error_code ec;
     const bool found = std::filesystem::is_regular_file(folder / "FLF.bin", ec);
     ImGui::TextUnformatted(found ? "Game save found" : "No game save yet");
-    ImGui::TextWrapped("%s", folder.c_str());
+    ImGui::TextWrapped("%s", Utf8(folder).c_str());
     ImGui::Spacing();
     const bool open = ImGui::Button("Open Saves");
     ImGui::Spacing();

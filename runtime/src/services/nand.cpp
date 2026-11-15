@@ -7,17 +7,40 @@
 #include <cerrno>
 #include <cstring>
 #include <cstdio>
-#include <fcntl.h>
-#include <dirent.h>
 #include <stdexcept>
 #include <string_view>
+#ifdef _WIN32
+#include "kirby/platform/windows_file.h"
+#else
+#include <fcntl.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/xattr.h>
 #include <unistd.h>
+#endif
 #include <vector>
 
 namespace Kirby {
 namespace {
+bool ValidPath(std::string_view path) {
+    if (path.size() < 2 || path.size() >= 64 || path[0] != '/' || path.back() == '/') return false;
+    size_t start = 1;
+    while (start < path.size()) {
+        const auto end = path.find('/', start);
+        const auto part = path.substr(start, end == path.npos ? path.size() - start : end - start);
+        if (part.empty() || part == "." || part == ".." || part.find('\0') != part.npos ||
+            part.find('\\') != part.npos || part.find(':') != part.npos) return false;
+#ifdef _WIN32
+        try {
+            if (!WindowsFile::Component(std::filesystem::path(std::u8string(part.begin(), part.end())).native())) return false;
+        } catch (const std::filesystem::filesystem_error&) { return false; }
+#endif
+        if (end == path.npos) break;
+        start = end + 1;
+    }
+    return true;
+}
+#ifndef _WIN32
 struct Fd {
     int value;
     ~Fd() { if (value >= 0) close(value); }
@@ -30,18 +53,6 @@ int32_t Error() {
     case ENOSPC: return -108;
     default: return -103;
     }
-}
-bool ValidPath(std::string_view path) {
-    if (path.size() < 2 || path.size() >= 64 || path[0] != '/' || path.back() == '/') return false;
-    size_t start = 1;
-    while (start < path.size()) {
-        const auto end = path.find('/', start);
-        const auto part = path.substr(start, end == path.npos ? path.size() - start : end - start);
-        if (part.empty() || part == "." || part == ".." || part.find('\0') != part.npos) return false;
-        if (end == path.npos) break;
-        start = end + 1;
-    }
-    return true;
 }
 void EnsureMetadata(int fd) {
     std::array<uint8_t,4> metadata{};
@@ -135,6 +146,7 @@ void CreateDefault(int root, const std::string& path, std::span<const uint8_t> b
         done += n;
     }
 }
+#endif
 std::vector<uint8_t> DefaultSysconf() {
     struct Entry { const char* name; uint8_t type; std::vector<uint8_t> value; };
     const std::array entries{
@@ -193,6 +205,9 @@ std::array<uint8_t,256> DefaultSettings() {
 }
 }
 
+#ifdef _WIN32
+#include "nand_windows.inc"
+#else
 NandStore::NandStore(const std::filesystem::path& root, uint64_t titleId) : titleId_(titleId) {
     char path[64];
     std::snprintf(path, sizeof(path), "/title/%08x/%08x/data", uint32_t(titleId >> 32), uint32_t(titleId));
@@ -359,4 +374,5 @@ int32_t NandFile::Seek(int32_t offset, uint32_t origin) {
     const auto result = lseek(fd_, target, SEEK_SET);
     return result < 0 ? Error() : int32_t(result);
 }
+#endif
 } // namespace Kirby

@@ -71,7 +71,7 @@ class BuildLayoutTests(unittest.TestCase):
     def test_rejects_a_mismatched_existing_layout_record(self):
         stage=self.root/'local/setup/builds/job';layout=BuildLayout(self.root,stage);layout.ensure()
         marker=stage/'.layout.json'
-        record=json.loads(marker.read_text());record['project_identity']['inode']+=1
+        record=json.loads(marker.read_text());record['project_identity']['token']='f'*32
         marker.write_text(json.dumps(record))
         with self.assertRaises(ValueError):
             layout.ensure()

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add a first-installation command with prerequisite checks, Docker/Podman
+  selection, toolchain preparation and verified launcher/game installation.
+- Add native Windows x86-64 build support with pinned LLVM-MinGW, DLL bundles,
+  Unicode paths, owned worker processes and NTFS save metadata. Windows gameplay
+  compatibility still needs validation on Windows hardware.
+- Make the build guide linear and move optional source inspection after the
+  first-build instructions; explain example filenames and existing DATA folders.
 - Derive an incomplete FIFO packet's length once while awaiting its payload,
   preserving CP format changes and nested display-list ordering.
 - Count texture-cache lookups, missing identities, evictions, retained-content

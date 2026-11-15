@@ -4,7 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <unistd.h>
+#include "filesystem_fixture.h"
 
 namespace fs = std::filesystem;
 namespace {
@@ -26,9 +26,7 @@ template<class F> void Reject(F&& action) {
 struct Directory {
     fs::path path;
     Directory() {
-        char name[] = "/tmp/kirby-settings-XXXXXX";
-        if (!mkdtemp(name)) throw std::runtime_error("Cannot create test directory");
-        path = name;
+        path = TestDirectory("kirby-settings-");
     }
     ~Directory() { std::error_code ec; fs::remove_all(path, ec); }
 };
@@ -36,7 +34,7 @@ struct Directory {
 int main() {
     Directory temp;
     const auto file = temp.path / "user/settings.toml";
-    const auto data = temp.path / "Kirby's DATA \"test\" \\ files";
+    const auto data = (temp.path / "Kirby's DATA \"test\" \\ files").lexically_normal();
     Kirby::Settings settings{data, 37.5f, false, true};
     Kirby::SaveSettings(file, settings);
     const auto loaded = Kirby::LoadSettings(file);
@@ -50,6 +48,23 @@ int main() {
     Check(updated.find("answer = 42") != std::string::npos &&
           updated.find("Keep custom values") != std::string::npos, "Unrelated values/comments were lost");
     Check(std::abs(Kirby::LoadSettings(file).masterVolume - 19) < 0.0001f, "New volume not persisted");
+#ifdef _WIN32
+    {
+        // A failed final commit must leave the old file intact and clean up its
+        // already-written temporary file. Deny delete/rename while allowing reads.
+        Kirby::WindowsFile::Handle locked(CreateFileW(file.c_str(), GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr));
+        Check(bool(locked), "Cannot lock settings for failed-commit test");
+        Reject([&] { Kirby::SaveSettings(file, settings); });
+        Check(Read(file) == updated, "Failed atomic replacement damaged settings");
+        Check(std::distance(fs::directory_iterator(file.parent_path()), fs::directory_iterator{}) == 1,
+              "Failed atomic replacement leaked a temporary file");
+    }
+#endif
+    const auto unicodeFile = temp.path / fs::path(u8"設定") / fs::path(u8"設定.toml");
+    Kirby::SaveSettings(unicodeFile, settings);
+    Check(Kirby::LoadSettings(unicodeFile).masterVolume == settings.masterVolume,
+          "Unicode settings path did not round-trip");
     const auto jump = static_cast<size_t>(Kirby::GameAction::Jump);
     Check(Kirby::Rebind(settings.controls, jump, Kirby::BindingDevice::Gamepad, "right_shoulder").status ==
           Kirby::RebindResult::Status::Applied, "Gamepad binding edit failed");
@@ -83,9 +98,20 @@ int main() {
     Check(migrated.gameData == temp.path / "relative DATA" && migrated.masterVolume == 62 &&
           !migrated.vsync && migrated.gpuResidentCopies, "Legacy settings were not migrated");
     Check(Read(legacy) == "relative DATA\n62\n0\n1\n", "Legacy file was modified");
+    const auto crlfLegacy = temp.path / "windows-launcher.cfg";
+    const auto crlfFile = temp.path / "windows-settings.toml";
+    std::ofstream(crlfLegacy, std::ios::binary) << "relative DATA\r\n62\r\n0\r\n1\r\n";
+    const auto crlf = Kirby::LoadOrMigrateSettings(crlfFile, crlfLegacy, temp.path);
+    Check(crlf.gameData == temp.path / "relative DATA" && crlf.masterVolume == 62 &&
+          !crlf.vsync && crlf.gpuResidentCopies, "Windows CRLF legacy settings were not migrated");
     Write(legacy, "other DATA\n25\n1\n0\n");
     Check(Kirby::LoadOrMigrateSettings(file, legacy, temp.path).masterVolume == 62,
           "Legacy file overwrote an existing TOML file");
+    fs::remove(file);
+    Write(legacy, "資料 DATA\n42\n1\n");
+    migrated = Kirby::LoadOrMigrateSettings(file, legacy, temp.path);
+    Check(migrated.gameData == temp.path / fs::path(u8"資料 DATA"),
+          "Legacy UTF-8 DATA path was corrupted during migration");
     fs::remove(file);
     Write(legacy, data.string() + "\n42\n1\n");
     migrated = Kirby::LoadOrMigrateSettings(file, legacy, temp.path);

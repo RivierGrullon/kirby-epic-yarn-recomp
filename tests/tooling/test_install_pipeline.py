@@ -16,7 +16,10 @@ from build_layout import BuildLayout
 from installer.installations import InstallationStore
 import installer.installations as installations
 from installer.jobs import Cancelled, Job
-from installer.pipeline import execute_install
+from installer.pipeline import execute_install, BuildTools
+from installer.container import ContainerResult
+import installer.pipeline as pipeline
+import stat
 from tooling.test_prepare import fixture
 
 
@@ -46,6 +49,14 @@ class Tools:
 
 
 class InstallPipelineTests(unittest.TestCase):
+    def test_compiler_parallelism_is_capped_by_container_machine_memory(self):
+        from installer.pipeline import BuildTools
+        from types import SimpleNamespace
+        tools=BuildTools(None,Path('/fixture'))
+        tools.image_id='a'*64
+        with patch('installer.pipeline.host_compile_jobs',return_value=4),patch('installer.pipeline.run_container',return_value=SimpleNamespace(output=b'1\n')):
+            self.assertEqual(tools.jobs(),1)
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(prefix='kirby-pipeline-');self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)
@@ -92,6 +103,19 @@ class InstallPipelineTests(unittest.TestCase):
             execute_install(job,self.root,self.source,services=self.tools)
         self.assertIsNone(self.store.read_active())
 
+    def test_launcher_preparation_failure_preserves_previous_selection(self):
+        with self.job('first') as job:
+            execute_install(job,self.root,self.source,services=self.tools)
+        previous=self.store.read_active()
+        self.tools.record['source_sha256']='d'*64
+        def fail_launcher(build,identity,image):
+            self.assertTrue((build/'WiiCompiled').is_file())
+            self.assertEqual(identity['source_sha256'],'d'*64)
+            raise ValueError('Launcher unavailable')
+        with self.job('launcher-failed') as job,self.assertRaisesRegex(ValueError,'Launcher unavailable'):
+            execute_install(job,self.root,self.source,services=self.tools,prepare_launcher=fail_launcher)
+        self.assertEqual(self.store.read_active(),previous)
+
     def test_cancel_before_selection_does_not_change_previous_build(self):
         with self.job('first') as job:execute_install(job,self.root,self.source,services=self.tools)
         previous=self.store.read_active();self.tools.record['source_sha256']='d'*64
@@ -137,6 +161,42 @@ class InstallPipelineTests(unittest.TestCase):
             result=execute_install(job,self.root,self.source,services=self.tools)
             job.check_cancel()
             self.assertTrue(result['committed'])
+
+    def test_windows_candidate_keeps_dlls_and_writable_temporary_files(self):
+        original=self.tools.run
+        def build(arguments):
+            result=original(arguments)
+            if 'tools/build_native.py' in arguments:
+                self.assertEqual(arguments[arguments.index('--target')+1],'windows')
+                stage=self.root/arguments[arguments.index('--stage-root')+1]
+                output=stage/'build'
+                (output/'WiiCompiled').rename(output/'WiiCompiled.exe')
+                (output/'dependency.DLL').write_bytes(b'Windows runtime dependency')
+            return result
+        def verify(executable,data,identity):
+            self.assertEqual(executable.name,'WiiCompiled.exe')
+            self.assertTrue(executable.stat().st_mode & stat.S_IWUSR)
+            self.assertEqual((executable.parent/'dependency.DLL').read_bytes(),b'Windows runtime dependency')
+            return dict(identity)
+        with (patch.object(self.tools,'run',side_effect=build),patch.object(self.tools,'verify',side_effect=verify),
+              patch.object(pipeline,'WINDOWS',True),patch.object(pipeline,'executable_name',return_value='WiiCompiled.exe'),
+              patch.object(installations,'WINDOWS',True),patch.object(installations,'executable_name',return_value='WiiCompiled.exe')):
+            with self.job('windows') as job:
+                result=execute_install(job,self.root,self.source,services=self.tools)
+            manifest=self.store.manifest(result['installation_id'])
+            self.assertEqual(manifest['executable']['file'],'WiiCompiled.exe')
+            self.assertEqual({resource['file'] for resource in manifest['resources']},{'dsp_coef.bin','dependency.DLL'})
+        self.assertEqual(list((self.root/'local/setup/staging').iterdir()),[])
+
+    def test_windows_provenance_uses_same_container_filesystem_view_as_compiler(self):
+        tools=BuildTools(None,self.root);tools.image_id='c'*64
+        record=self.tools.identity()
+        with (patch.object(pipeline,'WINDOWS',True),
+              patch.object(pipeline,'run_container',return_value=ContainerResult('c'*64,json.dumps(record).encode())) as run,
+              patch.object(pipeline.build_info,'collect',side_effect=AssertionError('Host filesystem modes differ'))):
+            self.assertEqual(tools.identity(),record)
+        self.assertEqual(run.call_args.kwargs['image_id'],'c'*64)
+        self.assertIn('build_info.collect',run.call_args.args[2][2])
 
     def test_worker_routes_install_and_emits_selection_only_after_success(self):
         output=io.StringIO()

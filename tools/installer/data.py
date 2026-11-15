@@ -10,6 +10,7 @@ import stat
 import struct
 
 import kirby
+from .platforms import WINDOWS, open_read
 
 # Same verified RK5E01 single-layer logical capacity as tools/kirby.py's profile.
 DISC_CAPACITY = 0x118240000
@@ -22,17 +23,20 @@ def _be(data, offset):
 
 class _DataFiles:
     def __init__(self, root):
-        self.fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        self.root = Path(root)
+        self.fd = open_read(root, directory=True)
 
     def close(self):
         os.close(self.fd)
 
     def open(self, path, *, directory=False):
+        parts = Path(path).parts
+        if not parts or Path(path).is_absolute() or any(p in (".", "..") for p in parts):
+            raise ValueError("Invalid DATA path")
+        if WINDOWS:
+            return open_read(self.root / path, directory=directory)
         fd = os.dup(self.fd)
         try:
-            parts = Path(path).parts
-            if not parts or Path(path).is_absolute() or any(p in (".", "..") for p in parts):
-                raise ValueError("Invalid DATA path")
             for index, part in enumerate(parts):
                 flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
                 if index + 1 < len(parts) or directory:
@@ -126,7 +130,7 @@ def inspect_data(selected, *, check_cancel=lambda: None):
             if end < 0:
                 raise ValueError("Unterminated FST name")
             name = os.fsdecode(fst[name_offset:end])
-            if not name or name in (".", "..") or "/" in name:
+            if not name or name in (".", "..") or "/" in name or "\\" in name or ":" in name:
                 raise ValueError("Invalid FST name")
             path = stack[-1][2] / name
             if path in seen:

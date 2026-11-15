@@ -1,14 +1,37 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Exclusive setup jobs and cancellable, shell-free external tools."""
-import fcntl
 import os
 from pathlib import Path
 import re
-import selectors
 import signal
 import subprocess
 import threading
 import time
+
+from .platforms import WINDOWS, is_link, readable, open_lock
+
+if not WINDOWS:
+    import fcntl
+
+
+def _lock_windows(fd):
+    """Lock byte zero using native errors; CRT locking can lose GetLastError."""
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+    class Overlapped(ctypes.Structure):
+        _fields_=[('internal',ctypes.c_size_t),('internal_high',ctypes.c_size_t),
+                  ('offset',wintypes.DWORD),('offset_high',wintypes.DWORD),('event',wintypes.HANDLE)]
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    kernel.LockFileEx.argtypes=[wintypes.HANDLE,wintypes.DWORD,wintypes.DWORD,
+                               wintypes.DWORD,wintypes.DWORD,ctypes.POINTER(Overlapped)]
+    kernel.LockFileEx.restype=wintypes.BOOL
+    position=Overlapped()
+    if not kernel.LockFileEx(msvcrt.get_osfhandle(fd),3,0,1,0,ctypes.byref(position)):
+        error=ctypes.get_last_error()
+        if error==33:  # ERROR_LOCK_VIOLATION
+            raise ValueError('Another setup job is running')
+        raise ctypes.WinError(error)
 
 
 class Cancelled(Exception):
@@ -30,20 +53,26 @@ class Job:
 
     def __enter__(self):
         self.workspace.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if self.workspace.is_symlink():
+        if is_link(self.workspace):
             raise ValueError("Setup workspace must not be a symlink")
-        self.lock_fd = os.open(self.workspace / "job.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        lock_path = self.workspace / "job.lock"
+        if is_link(lock_path):
+            raise ValueError("Setup lock must not be a link")
+        self.lock_fd = open_lock(lock_path)
         try:
-            try:
-                fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise ValueError("Another setup job is running") from None
+            if WINDOWS:
+                _lock_windows(self.lock_fd)
+            else:
+                try:
+                    fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise ValueError("Another setup job is running") from None
             for name in ("logs", "staging"):
                 path = self.workspace / name
                 path.mkdir(exist_ok=True, mode=0o700)
-                if path.is_symlink():
+                if is_link(path):
                     raise ValueError("Setup directories must not be symlinks")
-            fd = os.open(self.log_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_CLOEXEC, 0o600)
+            fd = os.open(self.log_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0), 0o600)
             self.log = os.fdopen(fd, "wb")
             return self
         except BaseException:
@@ -74,6 +103,7 @@ def run_process(job, command, *, capture_limit=0,timeout=None,cancellable=True,l
     started=time.monotonic()
     process=None
     stopping=None
+    tree=None
     def check():
         nonlocal stopping
         if cancellable:
@@ -83,55 +113,72 @@ def run_process(job, command, *, capture_limit=0,timeout=None,cancellable=True,l
         if process is not None and stop_when is not None:
             if stopping is None and stop_when():
                 stopping=time.monotonic()
-                try:os.killpg(process.pid,signal.SIGTERM)
-                except ProcessLookupError:pass
+                if WINDOWS:
+                    tree.stop()
+                else:
+                    try:os.killpg(process.pid,signal.SIGTERM)
+                    except ProcessLookupError:pass
             if stopping is not None and time.monotonic()-stopping>5 and process.poll() is None:
                 raise TimeoutError('Native startup probe did not stop after verification')
     check()
-    process = subprocess.Popen([os.fspath(arg) for arg in command], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, start_new_session=True,env=env,cwd=cwd)
+    if WINDOWS:
+        from .windows_process import ProcessTree
+        tree=ProcessTree()
     captured = bytearray()
     try:
-        os.set_blocking(process.stdout.fileno(), False)
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ)
-            while selector.get_map():
-                check()
-                for key, _ in selector.select(0.1):
-                    data = os.read(key.fd, 64 * 1024)
-                    if not data:
-                        selector.unregister(key.fileobj)
-                        continue
-                    if log_output:
-                        job.write_log(data)
-                    if on_output is not None:
-                        on_output(data)
-                    if capture_limit:
-                        if len(captured) + len(data) > capture_limit:
-                            raise ValueError("Setup tool output limit exceeded")
-                        captured.extend(data)
-            while process.poll() is None:
-                check()
-                time.sleep(0.05)
+        process = subprocess.Popen([os.fspath(arg) for arg in command], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, env=env, cwd=cwd,
+                                   **({'creationflags':0x204} if WINDOWS else {'start_new_session':True}))
+        if tree is not None:
+            tree.start(process)
+        while True:
+            check()
+            if not readable(process.stdout.fileno()):
+                continue
+            data = os.read(process.stdout.fileno(), 64 * 1024)
+            if not data:
+                break
+            if log_output:
+                job.write_log(data)
+            if on_output is not None:
+                on_output(data)
+            if capture_limit:
+                if len(captured) + len(data) > capture_limit:
+                    raise ValueError("Setup tool output limit exceeded")
+                captured.extend(data)
+        while process.poll() is None:
+            check()
+            time.sleep(0.05)
         check()
         if process.returncode:
             raise ValueError(f"{Path(command[0]).name} exited with code {process.returncode}; see {job.log_path}")
         return bytes(captured)
     except BaseException:
-        # Keep the leader unreaped until signalling, including when a tool forks.
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=1)
-        except subprocess.TimeoutExpired:
-            pass
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
+        if process is not None:
+            if WINDOWS:
+                # Also terminate an unassigned suspended process if assignment failed.
+                tree.stop()
+                if process.poll() is None:
+                    process.kill()
+                process.wait()
+            else:
+                # Keep the leader unreaped until signalling, including when a tool forks.
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    pass
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
         raise
     finally:
-        process.stdout.close()
+        if tree is not None:
+            tree.close()
+        if process is not None:
+            process.stdout.close()

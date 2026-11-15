@@ -15,7 +15,7 @@ body:
     id: system
     attributes:
       label: System and settings
-      description: "Linux version, CPU, GPU, driver, controller, VSync and Experimental performance mode."
+      description: "Windows version or Linux distribution; CPU, GPU, driver, controller, VSync and Experimental performance mode. For setup problems, include Python version and Docker/Podman version."
     validations:
       required: true
   - type: textarea

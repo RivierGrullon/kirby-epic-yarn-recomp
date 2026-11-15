@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "protocol.h"
+#include "../platform.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <stdexcept>
@@ -21,7 +22,7 @@ uint64_t Number(const Json& object,const char* key) {
     return item.get<uint64_t>();
 }
 std::filesystem::path Path(const Json& object,const char* key) {
-    const std::filesystem::path value=Text(object,key);
+    const std::filesystem::path value=FromUtf8(Text(object,key));
     if (!value.is_absolute()) throw std::runtime_error("Setup event requires an absolute path");
     return value;
 }
@@ -87,10 +88,10 @@ Event ParseEvent(std::string_view line,std::string_view identifier,uint64_t sequ
     return event;
 }
 std::string InspectRequest(std::string_view identifier,const std::filesystem::path& source) {
-    return Json{{"version",1},{"id",identifier},{"operation","inspect"},{"source",source.string()}}.dump()+"\n";
+    return Json{{"version",1},{"id",identifier},{"operation","inspect"},{"source",Utf8(source)}}.dump()+"\n";
 }
 std::string InstallRequest(std::string_view identifier,const std::filesystem::path& source) {
-    return Json{{"version",1},{"id",identifier},{"operation","install"},{"source",source.string()}}.dump()+"\n";
+    return Json{{"version",1},{"id",identifier},{"operation","install"},{"source",Utf8(source)}}.dump()+"\n";
 }
 std::string CancelRequest(std::string_view identifier) {
     return Json{{"version",1},{"id",identifier},{"operation","cancel"}}.dump()+"\n";

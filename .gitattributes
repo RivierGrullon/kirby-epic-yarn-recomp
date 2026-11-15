@@ -1,2 +1,3 @@
 # Unified patches preserve the leading space on blank context lines.
+* text=auto eol=lf
 *.patch whitespace=-blank-at-eol

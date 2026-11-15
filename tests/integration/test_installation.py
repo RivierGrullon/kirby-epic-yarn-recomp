@@ -12,6 +12,7 @@ import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
 from installer.installations import InstallationStore,DSP_COEF_SHA256,canonical
+from installer.platforms import WINDOWS,executable_name
 
 
 @unittest.skipUnless(os.environ.get('KIRBY_INSTALLATION_TEST'),'Set KIRBY_INSTALLATION_TEST to kirby_setup_installation_test')
@@ -22,28 +23,28 @@ class InstallationReaderTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)
         self.store=InstallationStore(self.root)
-        candidate=self.root/'candidate';candidate.mkdir()
+        candidate=self.candidate=self.root/'candidate';candidate.mkdir()
         self.body=b'synthetic artifact bytes, never executed'
-        (candidate/'WiiCompiled').write_bytes(self.body)
+        (candidate/executable_name()).write_bytes(self.body)
         shutil.copyfile(self.program.parent/'dsp_coef.bin',candidate/'dsp_coef.bin')
         self.manifest=dict(version=1,game_id='RK5E01',revision=0,
             dol_sha1='f4280a2b0709bfde4132be22e9f7fa8ecfa2a130',data_root=str(self.root/'own DATA'),
             project_sha256='a'*64,translation_key='b'*64,toolchain_image_id='c'*64,
-            executable=dict(file='WiiCompiled',sha256=hashlib.sha256(self.body).hexdigest(),size=len(self.body)),
+            executable=dict(file=executable_name(),sha256=hashlib.sha256(self.body).hexdigest(),size=len(self.body)),
             verification=['bootstrap','init','disc','es','video'],
             resources=[dict(file='dsp_coef.bin',sha256=DSP_COEF_SHA256,size=4096)])
         self.identifier=self.store.publish(candidate,self.manifest)
         self.store.activate(self.identifier)
 
     def read(self):
-        return subprocess.run([self.program,'--read',self.root],capture_output=True,text=True,timeout=10)
+        return subprocess.run([self.program,'--read',self.root],capture_output=True,text=True,encoding="utf-8",timeout=10)
 
     def test_canonical_unicode_manifest_and_same_size_corruption(self):
         result=self.read();self.assertEqual(result.returncode,0,result.stderr)
         selected=json.loads(result.stdout)
         self.assertEqual(selected['id'],self.identifier)
         self.assertEqual(selected['data_root'],self.manifest['data_root'])
-        self.assertEqual(selected['executable'],str(self.store.executable(self.identifier)))
+        self.assertEqual(Path(selected['executable']),self.store.executable(self.identifier))
         executable=self.store.executable(self.identifier);executable.chmod(0o700)
         executable.write_bytes(bytes([self.body[0]^1])+self.body[1:])
         result=self.read();self.assertEqual(result.returncode,1,result.stdout)
@@ -53,6 +54,30 @@ class InstallationReaderTests(unittest.TestCase):
         data=resource.read_bytes();resource.write_bytes(bytes([data[0]^1])+data[1:])
         result=self.read();self.assertEqual(result.returncode,1,result.stdout)
         self.assertIn('digest mismatch',result.stderr)
+
+    @unittest.skipUnless(WINDOWS,'Windows DLL resources apply only to Windows builds')
+    def test_windows_dll_manifest_roundtrip_and_same_size_corruption(self):
+        dependencies={'webgpu_dawn.dll':b'synthetic graphics DLL, never loaded',
+                      'libc++.dll':b'synthetic C++ runtime DLL, never loaded'}
+        for name,body in dependencies.items():
+            (self.candidate/name).write_bytes(body)
+            self.manifest['resources'].append(dict(file=name,sha256=hashlib.sha256(body).hexdigest(),size=len(body)))
+        self.identifier=self.store.publish(self.candidate,self.manifest)
+        self.store.activate(self.identifier)
+        result=self.read();self.assertEqual(result.returncode,0,result.stderr)
+        selected=json.loads(result.stdout)
+        self.assertEqual(selected['id'],self.identifier)
+        self.assertEqual(selected['data_root'],self.manifest['data_root'])
+        self.assertEqual(Path(selected['executable']),self.store.executable(self.identifier))
+        directory=self.store.executable(self.identifier).parent
+        for name,body in dependencies.items():
+            with self.subTest(dependency=name):
+                resource=directory/name;resource.chmod(0o600)
+                resource.write_bytes(bytes([body[0]^1])+body[1:])
+                result=self.read();self.assertEqual(result.returncode,1,result.stdout)
+                self.assertIn('digest mismatch',result.stderr)
+                resource.write_bytes(body)
+                result=self.read();self.assertEqual(result.returncode,0,result.stderr)
 
     def test_self_consistent_manifest_with_missing_startup_checks_is_rejected(self):
         self.manifest['verification'].pop()
