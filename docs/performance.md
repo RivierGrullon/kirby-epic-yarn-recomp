@@ -103,6 +103,16 @@ successful pixels or a profiler-enabled log alone do not satisfy the test. It
 failed with zero GPU rows before the repair. This is a diagnostic correction,
 not evidence of improved gameplay frame pacing. Default builds keep Tracy off.
 
+A separate five-second hidden Fountain Gardens capture on the Acer/RTX 3050
+produced 4,704 GPU zones after the repair. Its 358 GPU batches included 284 normal
+presentation submissions and 74 readback submissions. Batch time averaged
+3.204 ms, with p95 5.101 ms and a 9.101 ms maximum. These batches are not displayed
+frames. The instrumented runtime used `cbb71d6` with the readback profiling repair,
+zero gain and dummy audio; GPU clocks ranged from 322 to 405 MHz at the sampled
+endpoints. Tracy adds CPU overhead, and an unmapped window does not establish
+visible frame pacing or listening quality. Evidence remains local in
+`build-logs/stage93-*` in the profiling worktree.
+
 Use a renderer test built with `TRACY_ENABLE=ON`, `TRACY_ON_DEMAND=ON`,
 `TRACY_ONLY_LOCALHOST=ON` and `TRACY_NO_BROADCAST=ON`, together with capture and
 CSV-export tools built from the same fetched Tracy version:
