@@ -2,6 +2,7 @@
 // Native desktop frontend using the project's existing SDL3 and Dear ImGui libraries.
 #include <SDL3/SDL.h>
 #include "kirby/settings.h"
+#include "kirby/boot/validate_input.h"
 #include "kirby/platform/command_line.h"
 #include "kirby/app/build_info.h"
 #include "pages/pages.h"
@@ -45,6 +46,12 @@ bool Verify(const fs::path& data, std::string& status) {
     for (const char* entry : {"sys/main.dol", "sys/boot.bin", "sys/fst.bin", "ticket.bin", "tmd.bin", "files"}) {
         if (!fs::exists(data / entry)) { status = std::string("Missing ") + entry; return false; }
     }
+#ifdef _WIN32
+    try {
+        Kirby::ValidateWindowsInput(data);
+        status = "RK5E01 Rev 0 (USA) verified"; return true;
+    } catch (const std::exception& error) { status = error.what(); return false; }
+#else
     std::ifstream input(data/"sys/main.dol",std::ios::binary);
     CryptoPP::SHA1 hash;std::array<char,65536> buffer{};
     while (input) {
@@ -57,6 +64,7 @@ bool Verify(const fs::path& data, std::string& status) {
     const bool valid=input.eof() && digest==ExpectedSha1;
     status = valid ? "RK5E01 Rev 0 (USA) verified" : "Wrong revision or SHA-1 verification failed";
     return valid;
+#endif
 }
 std::string LocalUrl(const fs::path& path) {
     const auto generic=fs::absolute(path).generic_u8string();
@@ -76,7 +84,37 @@ std::string LocalUrl(const fs::path& path) {
 void OpenFolder(const fs::path& path) {
     fs::create_directories(path);SDL_OpenURL(LocalUrl(path).c_str());
 }
-SDL_Process* StartGame(const fs::path& executable,const fs::path& settings,const fs::path& root) {
+#ifdef _WIN32
+using GameProcess = void;
+GameProcess* StartGame(const fs::path& executable,const fs::path& settings,const fs::path& root) {
+    fs::create_directories(root / "build-logs");
+    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+    HANDLE log = CreateFileW((root / "build-logs/launcher-game.log").c_str(), FILE_APPEND_DATA,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, &attributes, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (log == INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot open game log");
+    STARTUPINFOW startup{}; startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdOutput = startup.hStdError = log;
+    startup.hStdInput = nullptr;
+    PROCESS_INFORMATION child{};
+    std::wstring command = L"\"" + executable.wstring() + L"\" --video --config \"" + settings.wstring() + L"\"";
+    const bool started = CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, TRUE,
+        CREATE_NO_WINDOW, nullptr, root.c_str(), &startup, &child);
+    CloseHandle(log);
+    if (!started) { SDL_SetError("Could not start the native executable"); return nullptr; }
+    CloseHandle(child.hThread);
+    return child.hProcess;
+}
+bool PollGame(GameProcess* game, int* result) {
+    DWORD status = 0;
+    if (GetExitCodeProcess(game, &status) && status == STILL_ACTIVE) return false;
+    *result = static_cast<int>(status);
+    return true;
+}
+void CloseGame(GameProcess* game) { CloseHandle(game); }
+#else
+using GameProcess = SDL_Process;
+GameProcess* StartGame(const fs::path& executable,const fs::path& settings,const fs::path& root) {
     fs::create_directories(root/"build-logs");
     const auto logPath=Launcher::Utf8(root/"build-logs/launcher-game.log");
     auto* log=SDL_IOFromFile(logPath.c_str(),"ab");
@@ -104,6 +142,9 @@ SDL_Process* StartGame(const fs::path& executable,const fs::path& settings,const
     if (environment) SDL_DestroyEnvironment(environment);
     return process;
 }
+bool PollGame(GameProcess* game, int* result) { return SDL_WaitProcess(game, false, result); }
+void CloseGame(GameProcess* game) { SDL_DestroyProcess(game); }
+#endif
 }
 
 int main(int argc, char** argv) {
@@ -212,7 +253,7 @@ int main(int argc, char** argv) {
     auto& valid = state.dataVerified;
     auto& status = state.dataStatus;
     if (!selfTest) valid = Verify(data, status);
-    SDL_Process* game=nullptr;
+    GameProcess* game=nullptr;
     Launcher::Setup::Job setupJob;
     bool setupApplied=false;
     std::string setupSelectionError;
@@ -278,8 +319,8 @@ int main(int argc, char** argv) {
         }
         if (game!=nullptr) {
             int result = 0;
-            if (SDL_WaitProcess(game,false,&result)) {
-                SDL_DestroyProcess(game);game=nullptr; SDL_ShowWindow(window); SDL_RaiseWindow(window);
+            if (PollGame(game,&result)) {
+                CloseGame(game);game=nullptr; SDL_ShowWindow(window); SDL_RaiseWindow(window);
                 state.gameStatus = result == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
                 refreshBuild();
             }
@@ -295,6 +336,8 @@ int main(int argc, char** argv) {
         }
         const bool focused = SDL_GetKeyboardFocus() == window &&
             !(SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED);
+        if (!focused || page != Launcher::Page::Controls || state.bindingCapture.Busy())
+            state.motionPreview.Close();
         state.bindingCapture.Tick(SDL_GetTicks(), focused);
         io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard);
         if (!state.bindingCapture.Blocks(Kirby::BindingDevice::Gamepad)) io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
@@ -377,7 +420,8 @@ int main(int argc, char** argv) {
     }
     if (settingsDirty && !saveSettings()) std::fprintf(stderr,"Settings: %s\n",settingsError.c_str());
     buildProbe.Cancel();
-    if (game) SDL_DestroyProcess(game);
+    if (game) CloseGame(game);
+    state.motionPreview.Close();
     ImGui_ImplSDLRenderer3_Shutdown(); ImGui_ImplSDL3_Shutdown(); ImGui::DestroyContext();
     SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
     return 0;

@@ -89,6 +89,29 @@ notices. This review imports no source. Any later source reuse must preserve
 the applicable license and attribution. NSMB PAL addresses, REL modules,
 small-data bases and memory layouts must never be treated as RK5E01 defaults.
 
+## Additional performance implementations
+
+[WitherBlitz/NSMB-Wii-Recompilation's GX-thread change](https://github.com/WitherBlitz/NSMB-Wii-Recompilation/commit/84d90c9ee91d3996dfc41fafd2a53d81b1c589b0)
+belongs to a different NSMB project. It hands ordered command buffers to a GX
+decoder worker, snapshots indexed XF sources and synchronizes direct decoded-state
+access. Its [texture creation change](https://github.com/WitherBlitz/NSMB-Wii-Recompilation/commit/cd2cba433135e5e06b961f2bb0917ef28aa4ddc5)
+also moves texture materialization and bind-group creation to the frame worker
+to avoid waiting for Dawn's device lock on the game thread.
+
+[Monster Hunter Tri's frame-packet change](https://github.com/Grarak/mh3-wii/commit/8ebf0199c2fa8953f6ad58d9ed4086d2de52207d)
+records model, material, UI and scene operations for a separate GL render thread.
+It separates logical state and defers resource retirement until pending packets
+cannot reference it. This is an architectural reference, not a compatible Vulkan
+patch or a source of Kirby addresses.
+
+Kirby already has Aurora's FIFO and frame-worker infrastructure, but its hardware
+FIFO bridge synchronously calls `GxRenderer::Feed`, whose parser, RAM validation
+and draw preparation run on the guest thread. Reusing a worker requires ordered
+state updates and stable texture, vertex and matrix sources. Simply queuing the
+current guest RAM pointers would violate the existing CPU-edit/readback tests.
+These upstream implementations were inspected without building their games or
+importing their code. Their reported performance gains are not Kirby benchmarks.
+
 ## Shared AXFX reverb reference
 
 Reviewed [Petari's recovered `AXFXReverbHiExpCallback`](https://github.com/SMGCommunity/Petari/blob/56d012bff9ee9f1f4a9b6d4ffc0bde1755d7f717/src/RVL_SDK/axfx/AXFXReverbHiExp.c)

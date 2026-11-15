@@ -8,7 +8,12 @@
 #include <sys/xattr.h>
 #endif
 #include <stdexcept>
-#include "../filesystem_fixture.h"
+#include <unistd.h>
+#include "../../windows_fixtures.h"
+#ifdef _WIN32
+#define setxattr WindowsTest::SetAttr
+#define getxattr WindowsTest::GetAttr
+#endif
 namespace {
 std::array<uint8_t,65536> ram{};
 unsigned checks;
@@ -18,7 +23,14 @@ uint32_t Get(uint32_t a) { return uint32_t(ram[a])<<24|uint32_t(ram[a+1])<<16|ui
 void Check(bool v,const char* why) { ++checks;if(!v)throw std::runtime_error(why); }
 }
 int main() {
-    const auto root = TestDirectory("kirby-ios-nand-");
+#ifdef _WIN32
+    const auto root = WindowsTest::TemporaryDirectory();
+#else
+    char pattern[]="/tmp/kirby-ios-nand-test-XXXXXX";
+    const auto* temp=mkdtemp(pattern);
+    if(!temp)return 1;
+    const std::filesystem::path root(temp);
+#endif
     try {
         Kirby::IosServices ios(Resolve);
         ios.ConfigureNand(root,0x00010000524B3545ull);
@@ -59,28 +71,7 @@ int main() {
         Check(create("/shared2/new")==0 && std::filesystem::is_directory(root/"shared2/new"),
               "create-directory ioctl creates a real local directory");
         std::array<uint8_t,4> metadata{};
-        Kirby::NandStore metadataStore(root, 0x00010000524B3545ull);
-        const auto getMetadata = [&](const std::filesystem::path& path, uint8_t* output) {
-            std::array<uint8_t,4> bytes{};
-            if (metadataStore.Attributes("/" + path.lexically_relative(root).generic_string(), bytes)) return -1;
-            std::copy(bytes.begin(), bytes.end(), output); return 4;
-        };
-        const auto setMetadata = [&](const std::filesystem::path& path, const uint8_t* bytes) {
-#ifdef _WIN32
-            Kirby::WindowsFile::Handle node(CreateFileW(path.c_str(), FILE_WRITE_EA, FILE_SHARE_READ | FILE_SHARE_WRITE |
-                FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
-            struct Record { ULONG next = 0; UCHAR flags = 0, length = 10; USHORT valueLength = 4;
-                char bytes[15] = {'K','I','R','B','Y','.','I','S','F','S',0}; } record;
-            std::memcpy(record.bytes + 11, bytes, 4);
-            IO_STATUS_BLOCK result{};
-            using Set = NTSTATUS (NTAPI*)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG);
-            const auto set = Kirby::WindowsFile::Function<Set>("NtSetEaFile");
-            return node && Kirby::WindowsFile::Status(set(node.value, &result, &record, offsetof(Record, bytes) + 15)) ? 0 : -1;
-#else
-            return setxattr(path.c_str(), "user.kirby.isfs", bytes, 4, 0);
-#endif
-        };
-        Check(getMetadata(root/"shared2/new", metadata.data())==4 &&
+        Check(getxattr((root/"shared2/new").c_str(),"user.kirby.isfs",metadata.data(),4)==4 &&
               metadata==std::array<uint8_t,4>{3,1,0,7},"directory permissions and attributes persist as metadata");
         Check(create("/shared2/new")==-105,"existing directory is not silently recreated");
         Check(create("/missing/new")==-106,"create does not invent missing parents");
@@ -92,7 +83,7 @@ int main() {
         Check(create("/shared2/new/save.bin",9)==0 && std::filesystem::file_size(root/"shared2/new/save.bin")==0,
               "create-file ioctl creates an empty local save file");
         Check(submit()==-105,"create-file does not truncate an existing file");
-        Check(getMetadata(root/"shared2/new/save.bin", metadata.data())==4 &&
+        Check(getxattr((root/"shared2/new/save.bin").c_str(),"user.kirby.isfs",metadata.data(),4)==4 &&
               metadata==std::array<uint8_t,4>{3,1,0,7},"file permission metadata is persistent");
         const auto save=open("/shared2/new/save.bin",3);
         Check(save>=0,"created save file opens for native read/write");
@@ -117,18 +108,20 @@ int main() {
         Check(submit()==-101,"GetAttr rejects short output");
         Put(60,0x4C);Put(56,65534);Check(submit()==-101,"GetAttr validates output mapping before access");
         Check(attributes("/../outside")==-101,"GetAttr rejects path traversal");
+
 #ifdef _WIN32
-        TestJunction(root/"shared2/sys", root/"escape");
+        WindowsTest::FileLink("/etc/passwd",root/"escape");
 #else
         std::filesystem::create_symlink("/etc/passwd",root/"escape");
 #endif
+
         Check(attributes("/escape")==-102,"GetAttr does not follow symlinks");
         const std::array<uint8_t,4> invalidMetadata{4,1,0,7};
-        Check(setMetadata(root/"shared2/new/save.bin", invalidMetadata.data())==0,
+        Check(setxattr((root/"shared2/new/save.bin").c_str(),"user.kirby.isfs",invalidMetadata.data(),4,0)==0,
               "test can corrupt a local permission record");
         Check(attributes("/shared2/new/save.bin")==-103 && ram[1024]==0xCD,
               "GetAttr rejects corrupt metadata without inventing permissions");
-        Check(setMetadata(root/"shared2/new/save.bin", metadata.data())==0,
+        Check(setxattr((root/"shared2/new/save.bin").c_str(),"user.kirby.isfs",metadata.data(),4,0)==0,
               "test restores the permission record");
         std::ofstream(root/"shared2/plain") << "x";
         Check(attributes("/shared2/plain")==-103,"unregistered host files do not gain fabricated Wii attributes");
@@ -159,11 +152,13 @@ int main() {
         Check(rename("/shared2/moved/save.bin","/missing/save.bin")==-106,
               "rename does not invent destination parents");
         Check(rename("/../outside","/shared2/moved/save.bin")==-101,"rename rejects traversal");
+
 #ifdef _WIN32
-        TestJunction(root/"shared2/sys", root/"linked");
+        WindowsTest::Junction("/etc",root/"linked");
 #else
         std::filesystem::create_directory_symlink("/etc",root/"linked");
 #endif
+
         Check(rename("/shared2/moved/save.bin","/linked/save.bin")==-102,"rename cannot traverse host symlinks");
         rename("/missing","/shared2/moved/missing");Put(52,127);
         Check(submit()==-101,"rename validates both complete path fields");

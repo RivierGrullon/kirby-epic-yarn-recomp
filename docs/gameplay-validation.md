@@ -49,3 +49,26 @@ visible frame pacing, audible sound, physical controllers or Legion Go hardware.
 Framebuffer inspection interrupts execution and is excluded from performance
 measurements. See [performance measurements](performance.md) for those separate
 checks and their limitations.
+
+## Flower Fields: partial traversal
+
+A separate native run on the same Acer used clean runtime `699f568` and an
+isolated copy of the Fountain Gardens clear save after placing the Butterfly
+patch. Grass Land displayed the Flower Fields door and selection screen. The
+loaded stage was `(2, 102, 1)`, matching the stage/resource IDs in Swiftshine's
+`src/fluff/stage/StageInfo.h`.
+
+Observed controls included movement in both directions, jumps, yarn attacks,
+an upward yarn grab on a flower, swinging and jumping from that grab to cross
+the first high wall. The subsequent pool activated Submarine transformation
+`1`, matching `PlayerBase.h`; horizontal and upward movement were observed.
+The run reached x=198.575 in section 1. Coordinates and progression flags were
+only read, never edited.
+
+The pool exit, later transformations and level clear remain unverified. Stopping
+at the pool does not establish a runtime or collision failure; the traversal
+route still needs work. The test process was closed, and the original player's
+save and settings retained their prior hashes. This was another hidden Vulkan
+functional test with GPU-resident copies, VSync off, dummy audio and volume zero.
+Debugger-assisted framebuffer captures were inspected locally and are excluded
+from performance claims. Evidence remains under ignored `build-logs/stage103-*`.

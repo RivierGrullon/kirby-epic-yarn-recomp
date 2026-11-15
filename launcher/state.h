@@ -4,6 +4,7 @@
 #include "binding_capture.h"
 #include "kirby/app/build_info.h"
 #include "setup/job.h"
+#include "motion_preview.h"
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -29,6 +30,7 @@ struct State {
     bool choosingSource=false;
     bool closing=false;
     std::string installationId,installationError;
+    MotionPreview motionPreview;
 };
 
 enum class Action {

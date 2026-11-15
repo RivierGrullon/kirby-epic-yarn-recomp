@@ -7,6 +7,8 @@
 #include "gx/gx.hpp"
 #include "gx/fifo.hpp"
 #include "gx/texture.hpp"
+#include "window.hpp"
+#include "webgpu/gpu.hpp"
 #include <dolphin/gx.h>
 #include <bit>
 #include <iostream>
@@ -62,6 +64,20 @@ void GpuXfb(bool startHidden = false, bool waitForTrace = false) {
         Check(TracyCIsConnected, "Tracy collector connects before GPU readbacks");
 #endif
     }
+    int windowWidth = 0, windowHeight = 0;
+    Check(SDL_GetWindowSize(aurora_get_window(), &windowWidth, &windowHeight) &&
+          windowWidth == 960 && windowHeight == 540,
+          "game window starts at 960x540 widescreen");
+    float aspect = 0;
+    Check(aurora::window::get_present_aspect_ratio(aspect) && aspect == 16.f / 9.f,
+          "presentation uses widescreen rather than the guest XFB pixel dimensions");
+    const auto wide = aurora::webgpu::calculate_present_viewport_for_aspect(960, 540, aspect);
+    const auto standard = aurora::webgpu::calculate_present_viewport_for_aspect(640, 480, aspect);
+    const auto ultrawide = aurora::webgpu::calculate_present_viewport_for_aspect(1280, 540, aspect);
+    Check(wide.left == 0 && wide.top == 0 && wide.width == 960 && wide.height == 540 &&
+          standard.left == 0 && standard.top == 60 && standard.width == 640 && standard.height == 360 &&
+          ultrawide.left == 160 && ultrawide.top == 0 && ultrawide.width == 960 && ultrawide.height == 540,
+          "presentation fits 16:9, 4:3 and ultrawide windows without distorting or cropping");
     renderer.SetTextureSnapshotReuse(true);
     if (startHidden) {
         int count = 0;

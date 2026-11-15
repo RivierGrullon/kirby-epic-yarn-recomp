@@ -3,6 +3,7 @@
 #include "kirby/graphics/gx_fifo.h"
 #include "kirby/app/events.h"
 #include <aurora/aurora.h>
+#include <dolphin/vi.h>
 #include "gx/command_processor.hpp"
 #include "gx/regs.hpp"
 #include <filesystem>
@@ -46,7 +47,7 @@ void GxRenderer::OpenWindow(bool startHidden, bool vsync) {
     config.appName = "Kirby's Epic Yarn - native development";
     config.userPath = userPath_.c_str(); config.cachePath = cachePath_.c_str();
     config.resourcesPath = userPath_.c_str();
-    config.windowWidth = 640; config.windowHeight = 480;
+    config.windowWidth = 960; config.windowHeight = 540;
     config.desiredBackend = BACKEND_VULKAN;
     config.logCallback = Log; config.logLevel = LOG_INFO;
     config.vsync = vsync;
@@ -55,6 +56,10 @@ void GxRenderer::OpenWindow(bool startHidden, bool vsync) {
     if (info.initializationStatus != AURORA_INITIALIZATION_SUCCESS)
         throw std::runtime_error(info.initializationError ? info.initializationError : "Aurora initialization failed");
     initialized_ = true;
+    // DefaultSysconf advertises widescreen (IPL.AR = 1). The guest XFB has
+    // non-square pixels, so its dimensions are not the intended display ratio.
+    // Fit the final image to 16:9 without changing GX's native framebuffer.
+    VILockAspectRatio(16, 9);
     // Bring-up must not silently skip EFB clear/draw operations while their
     // pipelines compile. GX readback observes the resulting pixels immediately.
     aurora::gx::g_gxState.drawsBlocking = true;

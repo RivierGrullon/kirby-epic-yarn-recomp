@@ -72,7 +72,7 @@ class SetupJobsTests(unittest.TestCase):
         while status.exists():
             try:
                 state = status.read_text().split(") ", 1)[1][0]
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
                 break
             if state == "Z":
                 break

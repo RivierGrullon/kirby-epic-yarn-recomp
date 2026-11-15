@@ -62,7 +62,8 @@ void ApplyConfiguredControlBindings() {
                     binding.input.control = PhysicalInput::GamepadAxis{
                         static_cast<SDL_GamepadAxis>(PADAxisButtonAxis(native)),
                         PADAxisButtonNegative(native) ? Direction::Negative : Direction::Positive};
-                    binding.threshold = PADAxisButtonThreshold(native) / 100.f;
+                    const bool trigger = PADAxisButtonAxis(native) >= SDL_GAMEPAD_AXIS_LEFT_TRIGGER;
+                    binding.threshold = trigger ? configuredBindings->triggerActivation : configuredBindings->stickActivation;
                 } else binding.input.control = PhysicalInput::GamepadButton{static_cast<SDL_GamepadButton>(native)};
                 bindings.push_back(std::move(binding));
             }

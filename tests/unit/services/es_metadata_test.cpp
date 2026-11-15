@@ -6,6 +6,10 @@
 #include <iostream>
 #include <stdexcept>
 #include <unistd.h>
+#include "../../windows_fixtures.h"
+#ifdef _WIN32
+#define setxattr WindowsTest::SetAttr
+#endif
 namespace {
 unsigned checks;
 void Check(bool value, const char* why) { ++checks; if (!value) throw std::runtime_error(why); }
@@ -24,10 +28,14 @@ std::array<uint8_t,8192> ram{};
 uint8_t* Resolve(uint32_t at, uint32_t size) { return at && uint64_t(at)+size<=ram.size()?ram.data()+at:nullptr; }
 }
 int main() {
+#ifdef _WIN32
+    const auto root = WindowsTest::TemporaryDirectory();
+#else
     char pattern[]="/tmp/kirby-es-test-XXXXXX";
     const auto* temp=mkdtemp(pattern);
     if (!temp) return 1;
     const std::filesystem::path root(temp);
+#endif
     try {
         constexpr uint64_t title=0x00010000524B3545ull;
         std::vector<uint8_t> ticket(0x2A4,0),tmd(0x208,0);

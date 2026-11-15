@@ -7,40 +7,24 @@
 #include <cerrno>
 #include <cstring>
 #include <cstdio>
+#include <fcntl.h>
+#ifndef _WIN32
+#include <dirent.h>
+#endif
 #include <stdexcept>
 #include <string_view>
-#ifdef _WIN32
-#include "kirby/platform/windows_file.h"
-#else
-#include <fcntl.h>
-#include <dirent.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <sys/xattr.h>
-#include <unistd.h>
 #endif
+#include <unistd.h>
 #include <vector>
+#ifdef _WIN32
+#include "kirby/services/windows_fs.h"
+#endif
 
 namespace Kirby {
 namespace {
-bool ValidPath(std::string_view path) {
-    if (path.size() < 2 || path.size() >= 64 || path[0] != '/' || path.back() == '/') return false;
-    size_t start = 1;
-    while (start < path.size()) {
-        const auto end = path.find('/', start);
-        const auto part = path.substr(start, end == path.npos ? path.size() - start : end - start);
-        if (part.empty() || part == "." || part == ".." || part.find('\0') != part.npos ||
-            part.find('\\') != part.npos || part.find(':') != part.npos) return false;
-#ifdef _WIN32
-        try {
-            if (!WindowsFile::Component(std::filesystem::path(std::u8string(part.begin(), part.end())).native())) return false;
-        } catch (const std::filesystem::filesystem_error&) { return false; }
-#endif
-        if (end == path.npos) break;
-        start = end + 1;
-    }
-    return true;
-}
-#ifndef _WIN32
 struct Fd {
     int value;
     ~Fd() { if (value >= 0) close(value); }
@@ -53,6 +37,18 @@ int32_t Error() {
     case ENOSPC: return -108;
     default: return -103;
     }
+}
+bool ValidPath(std::string_view path) {
+    if (path.size() < 2 || path.size() >= 64 || path[0] != '/' || path.back() == '/') return false;
+    size_t start = 1;
+    while (start < path.size()) {
+        const auto end = path.find('/', start);
+        const auto part = path.substr(start, end == path.npos ? path.size() - start : end - start);
+        if (part.empty() || part == "." || part == ".." || part.find('\0') != part.npos || part.find('\\') != part.npos || part.find(':') != part.npos) return false;
+        if (end == path.npos) break;
+        start = end + 1;
+    }
+    return true;
 }
 void EnsureMetadata(int fd) {
     std::array<uint8_t,4> metadata{};
@@ -133,6 +129,7 @@ void CreateDefault(int root, const std::string& path, std::span<const uint8_t> b
         throw std::runtime_error("Cannot create NAND default " + path);
     }
     try { EnsureMetadata(file.value); } catch (...) {
+        close(file.value); file.value = -1;
         unlinkat(parent.value,leaf.c_str(),0); throw;
     }
     size_t done = 0;
@@ -140,13 +137,13 @@ void CreateDefault(int root, const std::string& path, std::span<const uint8_t> b
         const auto n = write(file.value, bytes.data()+done, bytes.size()-done);
         if (n < 0 && errno == EINTR) continue;
         if (n <= 0) {
+            close(file.value); file.value = -1;
             unlinkat(parent.value, leaf.c_str(), 0);
             throw std::runtime_error("Cannot write NAND default " + path);
         }
         done += n;
     }
 }
-#endif
 std::vector<uint8_t> DefaultSysconf() {
     struct Entry { const char* name; uint8_t type; std::vector<uint8_t> value; };
     const std::array entries{
@@ -205,9 +202,6 @@ std::array<uint8_t,256> DefaultSettings() {
 }
 }
 
-#ifdef _WIN32
-#include "nand_windows.inc"
-#else
 NandStore::NandStore(const std::filesystem::path& root, uint64_t titleId) : titleId_(titleId) {
     char path[64];
     std::snprintf(path, sizeof(path), "/title/%08x/%08x/data", uint32_t(titleId >> 32), uint32_t(titleId));
@@ -275,7 +269,9 @@ int32_t NandStore::Create(const std::string& path, std::array<uint8_t,4> metadat
         O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600)};
     if (node.value<0 && !directory) return errno==EEXIST ? -105 : Error();
     if (node.value<0 || fsetxattr(node.value,"user.kirby.isfs",metadata.data(),metadata.size(),0)<0) {
-        const auto result=Error(); unlinkat(parent.value,leaf.c_str(),directory ? AT_REMOVEDIR : 0); return result;
+        const auto result=Error();
+        if (node.value >= 0) { close(node.value); node.value = -1; }
+        unlinkat(parent.value,leaf.c_str(),directory ? AT_REMOVEDIR : 0); return result;
     }
     return 0;
 }
@@ -374,5 +370,4 @@ int32_t NandFile::Seek(int32_t offset, uint32_t origin) {
     const auto result = lseek(fd_, target, SEEK_SET);
     return result < 0 ? Error() : int32_t(result);
 }
-#endif
 } // namespace Kirby

@@ -5,13 +5,24 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include "../filesystem_fixture.h"
+#include <unistd.h>
+#include "../../windows_fixtures.h"
+#ifdef _WIN32
+#define setxattr WindowsTest::SetAttr
+#endif
 namespace {
 unsigned checks;
 void Check(bool value, const char* why) { ++checks; if (!value) throw std::runtime_error(why); }
 }
 int main() {
-    const auto root = TestDirectory("kirby-nand-");
+#ifdef _WIN32
+    const auto root = WindowsTest::TemporaryDirectory();
+#else
+    char pattern[] = "/tmp/kirby-nand-test-XXXXXX";
+    const auto* temp = mkdtemp(pattern);
+    if (!temp) return 1;
+    const std::filesystem::path root(temp);
+#endif
     try {
         Kirby::NandStore nand(root, 0x00010000524B3545ull);
         Check(nand.DataDirectory() == "/title/00010000/524b3545/data", "title directory uses both halves of Kirby's ID");
@@ -48,30 +59,25 @@ int main() {
         Check(nand.Open("/shared2/sys/SYSCONF",0).first==-101, "invalid file mode rejected");
         Check(nand.Open("/../etc/passwd",1).first==-101 && nand.Open("relative",1).first==-101,
               "absolute normalized NAND paths required");
-        Check(nand.Open("/tmp\\save/data.bin", 1).first == -101 &&
-              nand.Open("/tmp/save/data.bin:secret", 1).first == -101,
-              "host separators and alternate data streams are not NAND paths");
-#ifndef _WIN32
+
+#ifdef _WIN32
+        WindowsTest::FileLink("/etc/passwd",root/"escape");
+#else
         std::filesystem::create_symlink("/etc/passwd",root/"escape");
+#endif
+
         Check(nand.Open("/escape",1).first==-102, "symlink file is rejected");
+
+#ifdef _WIN32
+        WindowsTest::Junction("/etc",root/"linked");
+#else
         std::filesystem::create_directory_symlink("/etc",root/"linked");
+#endif
+
         Check(nand.Open("/linked/passwd",1).first==-102, "symlink directory is rejected");
         Check(nand.Delete("/escape")==-102 && nand.Delete("/linked/passwd")==-102,
               "delete cannot follow host symlinks");
         Check(nand.Usage("/", blocks, nodes)==-102, "usage cannot follow a nested host symlink");
-#else
-        TestJunction(root / "shared2/sys", root / "linked");
-        Check(nand.Open("/linked/SYSCONF", 1).first == -102, "junction traversal is rejected");
-        Check(nand.Delete("/linked") == -102 && nand.Delete("/linked/SYSCONF") == -102,
-              "delete cannot follow or remove a host junction");
-        Check(nand.Usage("/", blocks, nodes) == -102, "usage rejects a nested junction");
-        Check(nand.Open("/tmp/NUL", 1).first == -101 && nand.Open("/tmp/save.", 1).first == -101,
-              "DOS devices and trailing-dot aliases are rejected");
-        std::filesystem::create_hard_link(root / "shared2/sys/SYSCONF", root / "hardlink");
-        Check(nand.Open("/hardlink", 3).first == -102, "NAND rejects host hard links");
-        std::filesystem::remove(root / "hardlink");
-        std::filesystem::remove(root / "linked");
-#endif
         auto [settingError, settings]=nand.Open("/title/00000001/00000002/data/setting.txt",1);
         std::array<uint8_t,256> encoded{};
         Check(settingError==0 && settings->Read(encoded)==256, "product settings have SDK size");

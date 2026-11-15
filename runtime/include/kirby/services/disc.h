@@ -22,11 +22,7 @@ public:
     uint64_t BytesRead() const { return bytesRead_; }
 private:
     struct Extent { uint64_t start, size, paddedEnd; std::filesystem::path path; };
-#ifdef _WIN32
-    intptr_t rootFd_ = -1;
-#else
     int rootFd_ = -1;
-#endif
     std::vector<Extent> extents_;
     size_t fileCount_ = 0;
     uint64_t reads_ = 0, bytesRead_ = 0;

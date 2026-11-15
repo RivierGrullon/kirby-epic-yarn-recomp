@@ -4,39 +4,18 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
-#ifdef _WIN32
-#include "kirby/platform/windows_file.h"
-#else
 #include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <sys/stat.h>
+#include <unistd.h>
+#ifdef _WIN32
+#include "kirby/services/windows_fs.h"
+#endif
 
 namespace Kirby {
 namespace {
-#ifdef _WIN32
-using FileHandle = intptr_t;
-struct Fd {
-    FileHandle value;
-    explicit Fd(FileHandle fd) : value(fd) {}
-    ~Fd() { if (value != -1) CloseHandle(reinterpret_cast<HANDLE>(value)); }
-    Fd(const Fd&) = delete;
-    Fd& operator=(const Fd&) = delete;
-};
-FileHandle Open(FileHandle root, const std::filesystem::path& path) {
-    const auto file = WindowsFile::Walk(reinterpret_cast<HANDLE>(root), path, FILE_READ_DATA);
-    if (file == INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot securely open extracted disc file: " + path.string());
-    return reinterpret_cast<FileHandle>(file);
-}
-uint64_t Size(FileHandle fd) { return WindowsFile::Size(reinterpret_cast<HANDLE>(fd)); }
-void ReadFile(FileHandle fd, uint64_t offset, std::span<uint8_t> output) {
-    WindowsFile::ReadAt(reinterpret_cast<HANDLE>(fd), offset, output);
-}
-#else
-using FileHandle = int;
 struct Fd {
     int value;
     explicit Fd(int fd) : value(fd) {}
@@ -44,6 +23,12 @@ struct Fd {
     Fd(const Fd&) = delete;
     Fd& operator=(const Fd&) = delete;
 };
+uint32_t Be(const uint8_t* p) {
+    return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
+}
+void Put(uint8_t* p, uint32_t value) {
+    for (unsigned i = 0; i < 4; ++i) p[i] = value >> (24 - i * 8);
+}
 int Open(int root, const std::filesystem::path& path) {
     if (path.empty() || path.is_absolute()) throw std::runtime_error("Invalid extracted disc path");
     Fd directory(dup(root));
@@ -77,14 +62,7 @@ void ReadFile(int fd, uint64_t offset, std::span<uint8_t> output) {
         done += count;
     }
 }
-#endif
-uint32_t Be(const uint8_t* p) {
-    return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
-}
-void Put(uint8_t* p, uint32_t value) {
-    for (unsigned i = 0; i < 4; ++i) p[i] = value >> (24 - i * 8);
-}
-std::vector<uint8_t> Load(FileHandle root, const char* path, size_t limit) {
+std::vector<uint8_t> Load(int root, const char* path, size_t limit) {
     Fd fd(Open(root, path));
     const auto size = Size(fd.value);
     if (size > limit) throw std::runtime_error("Oversized disc metadata");
@@ -105,11 +83,7 @@ void ExtractedDisc::Add(uint64_t start, const std::filesystem::path& path, uint6
 
 ExtractedDisc::ExtractedDisc(const std::filesystem::path& root, uint64_t capacity) : capacity_(capacity) {
     if (!capacity) throw std::runtime_error("Disc capacity must be supplied by the verified game profile");
-#ifdef _WIN32
-    rootFd_ = reinterpret_cast<intptr_t>(WindowsFile::Root(root));
-#else
     rootFd_ = open(root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-#endif
     if (rootFd_ < 0) throw std::runtime_error("Cannot open extracted DATA directory");
     try {
         const auto boot = Load(rootFd_, "sys/boot.bin", 0x440);
@@ -162,9 +136,9 @@ ExtractedDisc::ExtractedDisc(const std::filesystem::path& root, uint64_t capacit
                 throw std::runtime_error("Overlapping extracted disc extents");
             previous.paddedEnd = std::min(previous.paddedEnd, extents_[i].start);
         }
-    } catch (...) { Fd closeRoot(rootFd_); rootFd_ = -1; throw; }
+    } catch (...) { close(rootFd_); rootFd_ = -1; throw; }
 }
-ExtractedDisc::~ExtractedDisc() { Fd closeRoot(rootFd_); }
+ExtractedDisc::~ExtractedDisc() { if (rootFd_ >= 0) close(rootFd_); }
 
 void ExtractedDisc::Read(uint64_t offset, std::span<uint8_t> output) {
     if (output.empty()) return;

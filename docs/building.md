@@ -13,8 +13,8 @@ Install these **before** running setup:
 - On Windows: the [Microsoft Visual C++ v14 Redistributable (x64)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist),
   required by the bundled Dawn graphics library. Setup reports missing runtime DLLs
   before compiling. Windows 10/11 x86-64 is the native desktop target.
-- **Docker or Podman**, installed and running. Either is sufficient. On Windows,
-  use Docker Desktop in Linux-container mode or a running Podman machine.
+- For Linux and the optional Windows container workflow: **Docker or Podman**,
+  installed and running. Native Windows builds use the tools in [Windows x64](#windows-x64).
 - For a disc image: Dolphin's `dolphin-tool` (Linux) or `DolphinTool.exe`
   (Windows), available on PATH. The installed Dolphin Flatpak also works on Linux.
   An already extracted DATA folder does not need Dolphin.
@@ -23,7 +23,7 @@ Install these **before** running setup:
 - A desktop graphics session and a supported graphics driver for native startup
   verification and play. Linux uses Vulkan; Windows uses Aurora's Windows backends.
 - On Windows, keep the checkout and saves on **NTFS** so Wii file-permission
-  metadata can be preserved with Windows extended attributes.
+  metadata can be preserved with Windows named streams.
 - At least 3 GiB available RAM for compilation and several GB of free disk space.
   Image extraction needs additional space for a full DATA export.
 
@@ -33,7 +33,62 @@ See the [Podman installation guide](https://podman.io/docs/installation) or
 [Docker installation guide](https://docs.docker.com/engine/install/) for your OS.
 Setup reports missing prerequisites; it does not run sudo or install host packages.
 
-## First installation: one command
+## Windows x64
+
+Use a 64-bit LLVM-MinGW Clang toolchain, Python 3.12 or newer, Git, .NET SDK 8,
+CMake 3.25 or newer, Ninja, and Windows SDK C++/WinRT headers. Put `clang`,
+`clang++`, `dotnet`, `cmake`, `ninja`, `git` and `python` on the current shell's
+PATH. The tested environment used Clang 23.1.5, Python 3.14.6, CMake 4.3.4,
+Ninja 1.13.2 and Windows SDK 10.0.26100.0. MSVC is not the exercised compiler.
+Use NTFS for the writable runtime directory and a working hardware Vulkan driver.
+
+From this repository's root in PowerShell:
+
+```powershell
+python tools/bootstrap.py
+# Supply a complete DATA folder extracted from your own supported disc.
+python tools/kirby.py translate --dol "D:/Games/Kirby/DATA/sys/main.dol" --threads 2
+python tools/build_native.py --jobs 2 --translated-jobs 2
+.\build\native\kirby-launcher.exe
+```
+
+Select the extracted DATA folder in the launcher. A direct launch uses:
+
+```powershell
+.\build\native\WiiCompiled.exe --video --game-data "D:/Games/Kirby/DATA"
+```
+
+These are source-tree commands, not a verified clean-machine installer. The
+Windows exercise reused pinned dependency checkouts and an existing verified
+extraction. The Linux `container.sh` and extraction helper are not required for
+the native Windows build; extract with your own suitable DolphinTool separately.
+`--dol` selects translation input and does not copy or relocate the DATA folder.
+
+The build helper detects C++/WinRT headers in the installed Windows SDK and uses
+directory junctions for its generated-source link, avoiding symlink privileges.
+It selects Aurora's configured SDL target and copies runtime DLLs beside the
+executables. Keep the source-tree layout; the launcher locates its root from
+`build/native`. Close the game and launcher before replacing their binaries.
+
+Game startup and launcher verification check the boot ID/revision, DOL size and
+SHA-256 on Windows. Wrong inputs stop before translated game execution. Windows
+NAND metadata is stored in NTFS named streams; preserve them when backing up
+saves. Settings writes are flushed and atomically replaced on the same volume.
+
+Build and run the project's unit targets:
+
+```powershell
+cmake --build build/native --target kirby_tests --parallel 2
+ctest --test-dir build/native -R '^kirby_' --output-on-failure
+python -m unittest discover -s tests -v
+```
+
+The `kirby_` filter excludes separate upstream `mkw_*` targets that the
+`kirby_tests` build does not produce. See [Contributing](../CONTRIBUTING.md#tests)
+for optional Windows executable checks. No game data is needed by the tooling
+tests or synthetic storage fixtures.
+
+## First installation: container workflow
 
 Clone the source, or open a terminal in your existing checkout:
 

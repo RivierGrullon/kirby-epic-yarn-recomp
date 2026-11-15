@@ -23,6 +23,16 @@ class StagedBuildTests(unittest.TestCase):
         self.root=Path(self.temp.name)
         self.layout=BuildLayout(self.root,self.root/'local/setup/builds/job-01')
 
+    def test_dawn_profile_rejects_nonstaged_and_windows_builds_before_writing(self):
+        for arguments in (['--profile-dawn-calls'],
+                          ['--profile-dawn-calls', '--target', 'windows',
+                           '--stage-root', str(self.layout.stage)]):
+            with self.subTest(arguments=arguments), patch.object(build_native, 'ROOT', self.root), \
+                    patch.object(sys, 'argv', ['build_native.py', *arguments]), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(build_native.main(), 1)
+                self.assertEqual(list(self.root.iterdir()), [])
+
     def test_function_map_and_logs_stay_in_the_stage(self):
         output=io.StringIO()
         command=[sys.executable,'-c',"print('tool output')"]

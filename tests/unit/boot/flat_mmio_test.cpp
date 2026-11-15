@@ -3,7 +3,11 @@
 #include "guest_abi/memory_access.h"
 #include <iostream>
 #include <stdexcept>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/mman.h>
+#endif
 
 namespace {
 unsigned slowReads = 0;
@@ -31,13 +35,22 @@ int main() {
     catch (const std::runtime_error&) { rejected = true; }
     if (!rejected || slowReads != 6) return 2;
     auto* expected = MKW_FLAT_GUEST_BASE + 0x80000000;
+#ifdef _WIN32
+    void* page = VirtualAlloc(expected, 65536, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (page != expected) return 3;
+#else
     void* page = mmap(expected, 4096, PROT_READ | PROT_WRITE,
                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
     if (page == MAP_FAILED) return 3;
+#endif
     MemoryInline::FlatStore<uint32_t>(0x80000000, 0x12345678);
     const bool ramCorrect = MemoryInline::FlatRead32(0x80000000) == 0x12345678 && slowReads == 6 &&
                             expected[0] == 0x12 && expected[1] == 0x34 && expected[2] == 0x56 && expected[3] == 0x78;
+#ifdef _WIN32
+    VirtualFree(page, 0, MEM_RELEASE);
+#else
     munmap(page, 4096);
+#endif
     if (!ramCorrect) return 4;
     std::cout << "Flat MMIO reads reach device handlers; RAM stays direct and big endian\n";
 }

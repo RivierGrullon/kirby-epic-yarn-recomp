@@ -128,6 +128,71 @@ python3 -m unittest tests.integration.test_gpu_trace -v
 This synthetic check requires a working Vulkan session, creates no visible game
 window and needs no disc data. It does not measure displayed FPS or audible audio.
 
+### Optional Linux WebGPU call timings
+
+An isolated diagnostic build can time WebGPU resource creation, queue writes,
+command submission, surface acquisition/presentation and Aurora's frame-worker
+wait. This helps distinguish CPU work inside an API call from a blocked thread.
+It uses linker `--wrap` with the pinned Dawn declarations, without editing Aurora.
+Normal builds disable it and contain no logging wrappers. The managed build helper
+requires a Linux target and `--stage-root`; build identity records
+`KIRBY_PROFILE_DAWN_CALLS=ON` so captures cannot be mistaken for ordinary builds.
+
+After preparing and translating an isolated stage as described in
+[Building](building.md#build-separately-from-the-runnable-version):
+
+```bash
+stage_root="local/setup/builds/dawn-profile"
+bash tools/container.sh python3 tools/build_native.py \
+  --stage-root "$stage_root" --profile-dawn-calls --jobs 2
+
+SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
+KIRBY_DAWN_RESOURCE_LOG="$PWD/build-logs/resources.csv" \
+  "$stage_root/build/WiiCompiled" --video --volume 0 \
+  --game-data "$PWD/disc/DATA" --frame-log build-logs/submissions.csv \
+  --presentation-log build-logs/presentations.csv
+
+python3 tools/dawn_stats.py build-logs/resources.csv --start 120 --end 180
+```
+
+Choose the SDL-clock interval from the frame log for the actual level segment;
+120–180 seconds is only an example. The resource CSV uses the same `SDL_GetTicksNS`
+epoch, thread IDs and per-thread CPU time. Sequence numbers follow logging order,
+not start time. Files are created exclusively with mode 0600; existing paths and
+symlinks are preserved. Exit normally or send SIGTERM to flush the final events.
+No texture pixels, shaders, audio or game code are written to this trace.
+
+The analyzer reports fully contained calls and per-operation wall/CPU
+distributions. It infers the guest thread from the full trace's `FrameWorkerWait`
+events, or accepts `--guest-tid`. Overlap with another thread's `QueueSubmit` uses
+the union of intervals, including submissions crossing the selected boundary.
+Overlap is evidence of concurrency, not proof of a particular Dawn mutex wait.
+These are host call timings, not GPU execution time or displayed FPS. Clock
+queries and CSV logging add overhead; do not certify release performance with
+this instrumented build. Reconfigure without `--profile-dawn-calls` to remove it.
+
+The opt-in Vulkan check needs no disc and keeps playback silent:
+
+```bash
+bash tools/container.sh cmake --build "$stage_root/build" \
+  --target kirby_gx_renderer_test --parallel 2
+KIRBY_DAWN_PROFILE_TEST="$PWD/$stage_root/build/kirby_gx_renderer_test" \
+SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  python3 -m unittest tests.integration.test_dawn_profile -v
+```
+
+A 60-second hidden moving Fountain Gardens capture on the Acer/RTX 3050 used
+baseline `6cd8623` with these wrappers, Tracy off, warm pipelines, GPU-resident
+copies, VSync off and zero-gain dummy playback. It measured 59.940 native VI
+submissions/s, p95 17.470 ms, p99 17.673 ms and a 19.013 ms maximum. None of
+9,949 guest resource calls overlapped another thread's queue submission. Guest
+texture creation peaked at 0.691 ms and guest bind-group creation at 0.062 ms.
+No shader modules or render pipelines were created in the selected interval.
+This did not reproduce the earlier visible pauses or justify applying the
+[NSMB lazy-resource change](https://github.com/WitherBlitz/NSMB-Wii-Recompilation/commit/cd2cba433135e5e06b961f2bb0917ef28aa4ddc5)
+to this runtime. Hidden submission cadence does not establish visible pacing.
+Evidence remains local in `build-logs/stage102-*`; visible correlation is pending.
+
 ### Experimental Wayland presentation feedback
 
 `--presentation-log FILE.csv` requests `wp_presentation` feedback for the game's
@@ -156,15 +221,51 @@ duplicate presentation timestamps/sequences. Hardware timestamp/completion flags
 must be inspected before making physical scanout claims. Outputs are created
 exclusively with private permissions, and unresolved requests are bounded at 128.
 
-Current validation covers the CSV writer, rejected modes, compilation against
-Wayland client 1.22.0/protocols 1.45, and real compositor registry/clock binding
-plus request cleanup on an unmapped SDL surface. The visible-game feedback test
-is still pending: the desktop locked before it could run. No visible cadence,
-physical FPS, rendering speedup or refresh-rate fix is established by these checks.
-The regression ran 162 Python tests (161 passed, the visible feedback case skipped)
-and passed 32 owned CTest cases.
-The observed test panel was 1920x1080 at 144 Hz without VRR; that is a condition
-for the next comparison, not an established cause of the reported stutter.
+Validation covers the CSV writer, rejected modes, real registry/clock binding and
+unmapped request cleanup. The visible startup test now also passes against the
+real Wayland compositor. The build uses Wayland client 1.22.0/protocols 1.45.
+
+#### Visible moving Fountain Gardens capture
+
+A separate 60-second moving test used the release runtime at `699f568`, with
+Tracy disabled, experimental GPU copies enabled, VSync disabled and Mailbox
+presentation. The Acer/RTX 3050 panel remained at 1920x1080/144 Hz without VRR.
+An isolated save and ordinary virtual-controller movement, jumping and yarn
+actions exercised x=39.878 to 76.316. No debugger remained attached during the
+measurement. All audio stayed silent at zero gain with SDL dummy output.
+
+| Measurement | Rate | p95 interval | p99 interval | Maximum interval |
+| --- | ---: | ---: | ---: | ---: |
+| Native VI submissions | 57.573/s | 18.855 ms | 34.203 ms | 82.643 ms |
+| Distinct compositor presentation timestamps | 57.534/s | 27.776 ms | 41.665 ms | 118.051 ms |
+
+The selected native window contains 3,455 submissions; 134 intervals exceed
+25 ms. The compositor window contains 3,451 distinct presented timestamps,
+203 intervals over 25 ms and two discarded requests. Feedback flags were 7
+(VSync, hardware clock and hardware completion), but every sequence field was
+zero. Analysis therefore used timestamps rather than treating equal sequence
+values as duplicate frames. Most display intervals occupied two or three
+144 Hz refresh periods. This does not account for the larger pauses already
+present in the native submission stream.
+
+The longest native gap included 77.695 ms waiting for the render worker. Other
+long intervals included 30-48 ms between native submissions. Mean main-thread
+CPU time was 9.693 ms/submission and runqueue time 0.097 ms/submission. No queued
+pipelines appeared in the sampled frame rows; that does not exclude compilation
+between samples. Package temperature ranged from 83 to 96 C, and CPU0's package
+thermal-throttle counter increased by 2,816. Background host load was uncontrolled,
+so this is a reproduced stutter capture, not a controlled optimization comparison.
+
+The matching pre-gain audio window produced 31,991.591 stereo frames per host
+second. Eight of twelve reference windows matched `STRM101`; the fitted source
+tempo was 0.999692 source seconds/host second, with a 5.300 ms maximum residual.
+No all-zero stereo span reached 20 ms. This characterizes source generation only;
+dummy output cannot establish speaker playback or complete audiovisual sync.
+
+Evidence is local under `build-logs/stage94-*`, including the raw submission and
+presentation CSVs, motion/thermal observations, source WAV and derived summaries.
+The game and virtual controller exited normally afterward. These findings do not
+establish stable 30/60 FPS or Legion Go performance.
 
 ### Silent real-backend transport check
 
