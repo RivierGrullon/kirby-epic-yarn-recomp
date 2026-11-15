@@ -1541,3 +1541,49 @@ KIRBY_NATIVE_TEST="$PWD/build/native/WiiCompiled" \
 Compare identical scenes, camera, inputs, settings and warm caches, with several
 runs and frame-time distributions. Report visible/hidden runs separately and check
 game speed. Synthetic GPU checks establish correctness, not gameplay performance.
+
+
+## Snapshot reuse across GPU overwrites: rejected experiment
+
+A visible 90.042-second moving Fountain Gardens run of the source at `45b9947`
+recorded 59.928 native VI submissions/s, p95 17.493 ms, p99 17.698 ms and a
+34.136 ms maximum interval. Mean main-thread CPU time was 7.502 ms/submission.
+These are native submission timings, not compositor scanout measurements. Audio
+used dummy output and zero gain; DMA counters do not verify waveform continuity.
+
+A separate 30-second moving CPU profile collected 2,600 samples with none lost.
+Memory copying accounted for 11.19% of sampled user cycles. Of 289 copy samples,
+143 included texture-binding snapshot assignment and 53 came directly from
+`GxRenderer::CopyTexture`. Sampling identifies costs, not the cause or duration
+of an individual long frame.
+
+The candidate reused an existing immutable copy-validation snapshot after a full
+byte comparison proved that destination RAM remained identical. Changed bytes or
+sizes still required a fresh capture. Its regression failed before implementation
+and passed afterward; all 442 synthetic Vulkan XFB checks passed, including new
+checks for unchanged RAM reuse and renewed capture after a CPU edit. Correct
+pixels alone did not establish a performance benefit.
+
+Separate hidden runs then repeated sixty seconds of ordinary virtual-controller
+movement, jumping and yarn input in Fountain Gardens section 1:
+
+| Build | Snapshot bytes/submission | Native submissions/s | Main CPU ms/submission | p95 interval | p99 interval |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous implementation | 1,320,167 | 47.768 | 14.705 | 34.500 ms | 40.494 ms |
+| Reused validation snapshots | 33,695 | 40.320 | 16.729 | 49.056 ms | 66.832 ms |
+
+Copied snapshot demand fell 97.45%, but delivery did not improve. Draw demand
+also differed: approximately 816 versus 877 draws/submission. Both runs loaded
+302 pipelines before measurement and 304 afterward; empty sampled queues do not
+exclude intervening compilation. CPU temperature endpoints ranged from 73 to
+77 C, and the inspected CPU0 throttle counters did not increase. Background host
+activity was uncontrolled. These runs do not isolate a causal regression, and
+they provide no evidence for publishing the candidate as a fluency improvement.
+
+The experiment was discarded. The installed executable was unchanged, and the
+source retains fresh validation captures. The patch and native candidate remain
+local for diagnosis. Evidence is under ignored `build-logs/stage78-*` and
+`build-logs/stage78r3-*`, including `stage78-experiment-decision.json`, the CPU
+profile, per-run frame/state logs and thermal endpoints. Incomplete automated
+starts were excluded; input replay now waits for the first flushed frame-log row
+before pressing through the boot screens.
