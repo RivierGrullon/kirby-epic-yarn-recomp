@@ -88,6 +88,73 @@ the private source WAV under ignored `build-logs/`.
 
 ## Per-frame diagnostics
 
+### Experimental Wayland presentation feedback
+
+`--presentation-log FILE.csv` requests `wp_presentation` feedback for the game's
+own SDL Wayland surface. It is optional and requires `--video`; hidden/headless
+modes are rejected. It does not change game clocks, VSync, display mode or refresh
+rate. The build enables it when the Wayland client development files, protocol XML
+and scanner are available; other builds report an explicit unsupported diagnostic.
+
+```bash
+SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  build/native/WiiCompiled --video --volume 0 --game-data "$PWD/disc/DATA" \
+  --frame-log build-logs/submissions.csv --presentation-log build-logs/presentations.csv
+```
+
+The CSV distinguishes compositor `presented` and `discarded` events from requests
+still `pending` at shutdown. A `clock` row samples the compositor's POSIX clock
+between two SDL timestamps for alignment with the frame log. Presentation times,
+refresh periods, sequence counters and feedback flags are preserved without
+interpolation. The callback timestamp measures event delivery to the client,
+which can happen later than presentation; it is not the display timestamp.
+
+Requests are queued after native submissions for the next surface commit. Their
+indices are diagnostic labels, not certified one-to-one game-frame identities.
+Several feedback requests can refer to the same commit; analyses must handle
+duplicate presentation timestamps/sequences. Hardware timestamp/completion flags
+must be inspected before making physical scanout claims. Outputs are created
+exclusively with private permissions, and unresolved requests are bounded at 128.
+
+Current validation covers the CSV writer, rejected modes, compilation against
+Wayland client 1.22.0/protocols 1.45, and real compositor registry/clock binding
+plus request cleanup on an unmapped SDL surface. The visible-game feedback test
+is still pending: the desktop locked before it could run. No visible cadence,
+physical FPS, rendering speedup or refresh-rate fix is established by these checks.
+The regression ran 162 Python tests (161 passed, the visible feedback case skipped)
+and passed 32 owned CTest cases.
+The observed test panel was 1920x1080 at 144 Hz without VRR; that is a condition
+for the next comparison, not an established cause of the reported stutter.
+
+### Silent real-backend transport check
+
+A separate hidden Fountain Gardens test used the real PulseAudio/PipeWire backend
+with native gain zero and the existing mixer mute/volume preserved. The native
+source remained stereo 32 kHz; PulseAudio reported the owned stream as S16LE stereo
+44.1 kHz and the sink as 48 kHz. These are different resampling stages, not by
+themselves evidence of changed music speed.
+
+During a 30.122-second ordinary movement/jump/yarn interval, the native DMA
+produced 120,490 blocks (about 32,000.461 stereo frames per host second), with zero
+additional skipped blocks and a false SDL queue-overflow flag at both endpoints.
+The same owned stream/node identity persisted. PipeWire reported the node running
+at both ends, with an error counter of zero. An earlier one-iteration `pw-top`
+read only captured initial discovery state and was excluded; three iterations
+were required to obtain running-node data.
+
+The surrounding 89.858-second pre-gain recording, including movement and a
+stationary tail, matched `STRM101` in 15 of 18 selected windows. Fitted source
+tempo was 1.000004 reference seconds per host second, with a 2.467 ms maximum
+residual using interpolated clock checkpoints. It had no all-zero span of at
+least 20 ms. The alternate `STRM101B` reference matched none of the 18 windows.
+
+These checks establish source timing and limited transport observations. They do
+not detect every possible SDL starvation event or validate audible output, A/V
+sync or long-session behavior. The system and application remained muted; no
+microphone or another application's waveform was recorded. Local evidence is
+`stage80audio2-{delivery,wave-analysis}.json` and the private recording under
+ignored `build-logs/`.
+
 Use the native executable's optional CSV recorder to separate presentation work
 from the time between submissions:
 
