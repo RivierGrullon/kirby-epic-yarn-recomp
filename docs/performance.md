@@ -56,9 +56,10 @@ SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
 A native Release build with Clang 18.1.3 completed a 60.012-second ordinary
 gamepad sequence in Fountain Gardens section 1, moving through x49.130–80.713 and
 y22.796–28.674 with jumps and yarn actions. The window was hidden, playback used
-the SDL dummy driver, CLI volume stayed zero, and saves were isolated. This test
-started after the worktree's builds and GPU checks finished; no debugger was
-attached during the recorded movement.
+the SDL dummy driver, CLI volume stayed zero, and saves were isolated. Experimental
+GPU-resident copies were enabled and VSync was disabled. This test started after
+the worktree's builds and GPU checks finished; no debugger was attached during
+the recorded movement.
 
 The selected 66.816-second DMA recording, including the surrounding stationary
 tail, produced 31,999.970 stereo frames per host second and had no all-zero span

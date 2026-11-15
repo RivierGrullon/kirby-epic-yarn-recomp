@@ -9,6 +9,7 @@
 | [aurora-wiicompiled](https://github.com/patchzyy/aurora-wiicompiled) | WiiCompiled's pinned graphics/input dependency | `vendor/wiicompiled/aurora-main/LICENSE` (MIT, copyright Luke Street) |
 | [JSON for Modern C++](https://github.com/nlohmann/json/tree/55f93686c01528224f448c19128836e7df245f72) | Bounded setup protocol parsing and request serialization in the launcher | `vendor/json/LICENSE.MIT` (MIT, copyright Niels Lohmann) |
 | [NSMBWiicompiled](https://github.com/ral1009/NSMBWiicompiled/tree/0c01832a26aa2559ffd6b6ca489decf22f05c306) | Native GX binding/copy coherence, presentation instrumentation and public documentation reference; no source imported | Upstream `LICENSE` (GPL-3.0); Aurora retains its MIT license |
+| [Petari](https://github.com/SMGCommunity/Petari/tree/56d012bff9ee9f1f4a9b6d4ffc0bde1755d7f717) | Recovered AXFX reverb callback and structure reference; no runtime source imported | Upstream `LICENSE` (CC0-1.0), retained with the ignored local reference |
 | [Dolphin](https://github.com/dolphin-emu/dolphin/tree/db2afcbdf8f5175a6b8414d9f5e21c978775f651/Source/Core/Core/HW) | Interrupt registers, EXI immediate transfers, absent-device responses, IPL/EUART framing, SRAM layout, VI/SI registers and DI configuration reference | GPL-2.0-or-later; source headers credit the Dolphin Emulator Project |
 
 Exact source commits are recorded in `dependencies.json`. Sources are fetched locally
