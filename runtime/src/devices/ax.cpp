@@ -9,6 +9,8 @@
 #include "ppc_runtime.h"
 #include "audio_backend.h"
 #include "timebase_contract.h"
+#include "../audio/pcm_trace.h"
+#include <SDL3/SDL_timer.h>
 #include <array>
 #include <cstring>
 #include <iostream>
@@ -17,8 +19,10 @@ namespace {
 std::array<uint8_t, 0x2000> expectedCode{};
 bool initialized = false;
 bool audioOpen = false;
+Kirby::PcmTrace* audioTrace = nullptr;
 bool PushAudio(const uint8_t* data, uint32_t bytes) {
     if (!audioOpen) audioOpen = AudioBackend::Instance().Init(32000, 2);
+    if (audioTrace) audioTrace->Write({data,bytes},SDL_GetTicksNS());
     return audioOpen && AudioBackend::Instance().PushWiiAiSamplesBE16(data, bytes);
 }
 uint64_t Ticks() {
@@ -49,6 +53,7 @@ bool ReadMail(uint32_t& mail) {
 }
 }
 namespace Kirby {
+void SetAudioTrace(PcmTrace* trace) { audioTrace=trace; }
 void ShutdownAx() {
     if (audioOpen) { AudioBackend::Instance().Shutdown(); audioOpen = false; }
     if (!initialized) return;

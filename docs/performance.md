@@ -9,6 +9,82 @@ settings. The 30/60 FPS selector remains deferred until both modes preserve the
 original logic cadence and audio tempo. A performance drop must be diagnosed at
 its source; lowering a frame cap is not a fix for game slowdown.
 
+## Silent audio-source diagnostics
+
+`--audio-log FILE.wav` records the actual Wii audio DMA source before SDL applies
+master gain. Use zero volume and dummy playback to diagnose production without
+making sound or changing saved settings:
+
+```bash
+SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  build/native/WiiCompiled --video-hidden --volume 0 \
+  --game-data /path/to/DATA --audio-log build-logs/audio-source.wav
+```
+
+Exit normally or send SIGTERM to finalize the WAV header and clock index. The
+option requires a video mode, refuses existing files and symlinks, and creates
+private output. Audio is stereo 32 kHz signed PCM16, converted from Wii right/left
+big-endian DMA data to WAV left/right little-endian samples without scaling.
+Recording uses a 64 KiB buffer and stops with an error before the RIFF size limit.
+With recording disabled, the DMA sink performs no capture allocation or file I/O.
+
+A trailing `kTIM` RIFF chunk aligns the captured stereo-frame indices with
+`SDL_GetTicksNS`, the same host clock used by the frame log. Its payload begins
+with little-endian uint32 version `1` and record stride `16`, followed by pairs
+of little-endian uint64 `(frame_index, host_nanoseconds)`. Checkpoints describe
+the first DMA write and writes at least 4,096 frames apart. They are recorded at
+input-block boundaries. Ordinary WAV readers can ignore this extra chunk.
+
+The file contains the DMA producer's samples, including when playback gain is
+zero. It does not establish what the SDL output device consumed, queue underruns,
+speaker timing, musical tempo or A/V synchronization by itself. Compare recorded
+waveforms with the game's source audio and the host-clock checkpoints before
+making those claims. Keep these game-derived recordings local and outside Git.
+
+The opt-in integration check runs the real native program with zero gain and
+dummy playback, checks exclusive output creation, then reads the finalized WAV
+with Python's independent `wave` reader:
+
+```bash
+SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  KIRBY_NATIVE_AUDIO_TEST="$PWD/build/native/WiiCompiled" \
+  python3 -m unittest discover -s tests/integration -p test_audio_trace.py -v
+```
+
+### Fountain Gardens source-audio check
+
+A native Release build with Clang 18.1.3 completed a 60.012-second ordinary
+gamepad sequence in Fountain Gardens section 1, moving through x49.130–80.713 and
+y22.796–28.674 with jumps and yarn actions. The window was hidden, playback used
+the SDL dummy driver, CLI volume stayed zero, and saves were isolated. This test
+started after the worktree's builds and GPU checks finished; no debugger was
+attached during the recorded movement.
+
+The selected 66.816-second DMA recording, including the surrounding stationary
+tail, produced 31,999.970 stereo frames per host second and had no all-zero span
+of at least 20 ms. Independent FFmpeg decoding and normalized correlation against
+the dump's `STRM101.brstm` matched 10 of 14 1.5-second windows at an absolute
+correlation threshold of 0.8. Their fitted source-time slopes were 1.000001 per
+recorded PCM second and 0.999986 per host second. The latter fit's maximum residual
+was 1.144 ms, using interpolation between the recorded clock checkpoints; this is
+not a bound on actual output latency. `STRM101B` matched none of the 14 windows.
+Control recordings with normal and deliberately halved host-clock speed were
+distinguished before applying the analysis to gameplay.
+
+The accompanying 59.661-second frame-log interval measured 59.922 native VI
+submissions/s, p95 17.462 ms, p99 17.700 ms and a 33.135 ms maximum, with one
+interval above 25 ms. These are hidden-window submission timings, not compositor
+scanout. This change adds diagnostics and establishes no rendering speedup,
+speaker-output validation, A/V certification, level completion or Legion Go result.
+
+The build passed 31 owned CTest cases, 159 Python tests with native/launcher/video/
+audio/installation/Podman checks enabled, and 440 synthetic hidden Vulkan checks.
+The first Python run used the launcher's temporary build output and failed two
+launcher-location checks; the canonical `build/native` deployment passed all 159.
+Local evidence is `stage79-{audio-integration,python-canonical,ctest,gpu}.log`,
+`stage79-{audio-analysis,frame-analysis,motion-summary}.json`, the frame CSV and
+the private source WAV under ignored `build-logs/`.
+
 ## Per-frame diagnostics
 
 Use the native executable's optional CSV recorder to separate presentation work

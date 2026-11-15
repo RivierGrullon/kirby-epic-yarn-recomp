@@ -12,6 +12,14 @@ set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp" APPEND PROPERTY
     COMPILE_DEFINITIONS main=KirbyLegacyMain)
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/app/main.cpp")
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/app/frame_log.cpp")
+add_library(kirby_pcm_trace STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/audio/pcm_trace.cpp")
+target_include_directories(kirby_pcm_trace PUBLIC "${KIRBY_PROJECT_ROOT}/runtime/src/audio")
+target_compile_features(kirby_pcm_trace PUBLIC cxx_std_20)
+target_compile_options(kirby_pcm_trace PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(WiiCompiled PRIVATE kirby_pcm_trace)
+add_executable(kirby_pcm_trace_test "${KIRBY_PROJECT_ROOT}/tests/unit/audio/pcm_trace_test.cpp")
+target_link_libraries(kirby_pcm_trace_test PRIVATE kirby_pcm_trace)
+add_test(NAME kirby_pcm_trace COMMAND kirby_pcm_trace_test)
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/cache.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/native-src/graphics/cache.cpp")
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/devices/ax.cpp"
