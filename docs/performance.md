@@ -156,15 +156,51 @@ duplicate presentation timestamps/sequences. Hardware timestamp/completion flags
 must be inspected before making physical scanout claims. Outputs are created
 exclusively with private permissions, and unresolved requests are bounded at 128.
 
-Current validation covers the CSV writer, rejected modes, compilation against
-Wayland client 1.22.0/protocols 1.45, and real compositor registry/clock binding
-plus request cleanup on an unmapped SDL surface. The visible-game feedback test
-is still pending: the desktop locked before it could run. No visible cadence,
-physical FPS, rendering speedup or refresh-rate fix is established by these checks.
-The regression ran 162 Python tests (161 passed, the visible feedback case skipped)
-and passed 32 owned CTest cases.
-The observed test panel was 1920x1080 at 144 Hz without VRR; that is a condition
-for the next comparison, not an established cause of the reported stutter.
+Validation covers the CSV writer, rejected modes, real registry/clock binding and
+unmapped request cleanup. The visible startup test now also passes against the
+real Wayland compositor. The build uses Wayland client 1.22.0/protocols 1.45.
+
+#### Visible moving Fountain Gardens capture
+
+A separate 60-second moving test used the release runtime at `699f568`, with
+Tracy disabled, experimental GPU copies enabled, VSync disabled and Mailbox
+presentation. The Acer/RTX 3050 panel remained at 1920x1080/144 Hz without VRR.
+An isolated save and ordinary virtual-controller movement, jumping and yarn
+actions exercised x=39.878 to 76.316. No debugger remained attached during the
+measurement. All audio stayed silent at zero gain with SDL dummy output.
+
+| Measurement | Rate | p95 interval | p99 interval | Maximum interval |
+| --- | ---: | ---: | ---: | ---: |
+| Native VI submissions | 57.573/s | 18.855 ms | 34.203 ms | 82.643 ms |
+| Distinct compositor presentation timestamps | 57.534/s | 27.776 ms | 41.665 ms | 118.051 ms |
+
+The selected native window contains 3,455 submissions; 134 intervals exceed
+25 ms. The compositor window contains 3,451 distinct presented timestamps,
+203 intervals over 25 ms and two discarded requests. Feedback flags were 7
+(VSync, hardware clock and hardware completion), but every sequence field was
+zero. Analysis therefore used timestamps rather than treating equal sequence
+values as duplicate frames. Most display intervals occupied two or three
+144 Hz refresh periods. This does not account for the larger pauses already
+present in the native submission stream.
+
+The longest native gap included 77.695 ms waiting for the render worker. Other
+long intervals included 30-48 ms between native submissions. Mean main-thread
+CPU time was 9.693 ms/submission and runqueue time 0.097 ms/submission. No queued
+pipelines appeared in the sampled frame rows; that does not exclude compilation
+between samples. Package temperature ranged from 83 to 96 C, and CPU0's package
+thermal-throttle counter increased by 2,816. Background host load was uncontrolled,
+so this is a reproduced stutter capture, not a controlled optimization comparison.
+
+The matching pre-gain audio window produced 31,991.591 stereo frames per host
+second. Eight of twelve reference windows matched `STRM101`; the fitted source
+tempo was 0.999692 source seconds/host second, with a 5.300 ms maximum residual.
+No all-zero stereo span reached 20 ms. This characterizes source generation only;
+dummy output cannot establish speaker playback or complete audiovisual sync.
+
+Evidence is local under `build-logs/stage94-*`, including the raw submission and
+presentation CSVs, motion/thermal observations, source WAV and derived summaries.
+The game and virtual controller exited normally afterward. These findings do not
+establish stable 30/60 FPS or Legion Go performance.
 
 ### Silent real-backend transport check
 
