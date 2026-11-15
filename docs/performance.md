@@ -9,7 +9,151 @@ settings. The 30/60 FPS selector remains deferred until both modes preserve the
 original logic cadence and audio tempo. A performance drop must be diagnosed at
 its source; lowering a frame cap is not a fix for game slowdown.
 
+## Silent audio-source diagnostics
+
+`--audio-log FILE.wav` records the actual Wii audio DMA source before SDL applies
+master gain. Use zero volume and dummy playback to diagnose production without
+making sound or changing saved settings:
+
+```bash
+SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  build/native/WiiCompiled --video-hidden --volume 0 \
+  --game-data /path/to/DATA --audio-log build-logs/audio-source.wav
+```
+
+Exit normally or send SIGTERM to finalize the WAV header and clock index. The
+option requires a video mode, refuses existing files and symlinks, and creates
+private output. Audio is stereo 32 kHz signed PCM16, converted from Wii right/left
+big-endian DMA data to WAV left/right little-endian samples without scaling.
+Recording uses a 64 KiB buffer and stops with an error before the RIFF size limit.
+With recording disabled, the DMA sink performs no capture allocation or file I/O.
+
+A trailing `kTIM` RIFF chunk aligns the captured stereo-frame indices with
+`SDL_GetTicksNS`, the same host clock used by the frame log. Its payload begins
+with little-endian uint32 version `1` and record stride `16`, followed by pairs
+of little-endian uint64 `(frame_index, host_nanoseconds)`. Checkpoints describe
+the first DMA write and writes at least 4,096 frames apart. They are recorded at
+input-block boundaries. Ordinary WAV readers can ignore this extra chunk.
+
+The file contains the DMA producer's samples, including when playback gain is
+zero. It does not establish what the SDL output device consumed, queue underruns,
+speaker timing, musical tempo or A/V synchronization by itself. Compare recorded
+waveforms with the game's source audio and the host-clock checkpoints before
+making those claims. Keep these game-derived recordings local and outside Git.
+
+The opt-in integration check runs the real native program with zero gain and
+dummy playback, checks exclusive output creation, then reads the finalized WAV
+with Python's independent `wave` reader:
+
+```bash
+SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  KIRBY_NATIVE_AUDIO_TEST="$PWD/build/native/WiiCompiled" \
+  python3 -m unittest discover -s tests/integration -p test_audio_trace.py -v
+```
+
+### Fountain Gardens source-audio check
+
+A native Release build with Clang 18.1.3 completed a 60.012-second ordinary
+gamepad sequence in Fountain Gardens section 1, moving through x49.130–80.713 and
+y22.796–28.674 with jumps and yarn actions. The window was hidden, playback used
+the SDL dummy driver, CLI volume stayed zero, and saves were isolated. Experimental
+GPU-resident copies were enabled and VSync was disabled. This test started after
+the worktree's builds and GPU checks finished; no debugger was attached during
+the recorded movement.
+
+The selected 66.816-second DMA recording, including the surrounding stationary
+tail, produced 31,999.970 stereo frames per host second and had no all-zero span
+of at least 20 ms. Independent FFmpeg decoding and normalized correlation against
+the dump's `STRM101.brstm` matched 10 of 14 1.5-second windows at an absolute
+correlation threshold of 0.8. Their fitted source-time slopes were 1.000001 per
+recorded PCM second and 0.999986 per host second. The latter fit's maximum residual
+was 1.144 ms, using interpolation between the recorded clock checkpoints; this is
+not a bound on actual output latency. `STRM101B` matched none of the 14 windows.
+Control recordings with normal and deliberately halved host-clock speed were
+distinguished before applying the analysis to gameplay.
+
+The accompanying 59.661-second frame-log interval measured 59.922 native VI
+submissions/s, p95 17.462 ms, p99 17.700 ms and a 33.135 ms maximum, with one
+interval above 25 ms. These are hidden-window submission timings, not compositor
+scanout. This change adds diagnostics and establishes no rendering speedup,
+speaker-output validation, A/V certification, level completion or Legion Go result.
+
+The build passed 31 owned CTest cases, 159 Python tests with native/launcher/video/
+audio/installation/Podman checks enabled, and 440 synthetic hidden Vulkan checks.
+The first Python run used the launcher's temporary build output and failed two
+launcher-location checks; the canonical `build/native` deployment passed all 159.
+Local evidence is `stage79-{audio-integration,python-canonical,ctest,gpu}.log`,
+`stage79-{audio-analysis,frame-analysis,motion-summary}.json`, the frame CSV and
+the private source WAV under ignored `build-logs/`.
+
 ## Per-frame diagnostics
+
+### Experimental Wayland presentation feedback
+
+`--presentation-log FILE.csv` requests `wp_presentation` feedback for the game's
+own SDL Wayland surface. It is optional and requires `--video`; hidden/headless
+modes are rejected. It does not change game clocks, VSync, display mode or refresh
+rate. The build enables it when the Wayland client development files, protocol XML
+and scanner are available; other builds report an explicit unsupported diagnostic.
+
+```bash
+SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  build/native/WiiCompiled --video --volume 0 --game-data "$PWD/disc/DATA" \
+  --frame-log build-logs/submissions.csv --presentation-log build-logs/presentations.csv
+```
+
+The CSV distinguishes compositor `presented` and `discarded` events from requests
+still `pending` at shutdown. A `clock` row samples the compositor's POSIX clock
+between two SDL timestamps for alignment with the frame log. Presentation times,
+refresh periods, sequence counters and feedback flags are preserved without
+interpolation. The callback timestamp measures event delivery to the client,
+which can happen later than presentation; it is not the display timestamp.
+
+Requests are queued after native submissions for the next surface commit. Their
+indices are diagnostic labels, not certified one-to-one game-frame identities.
+Several feedback requests can refer to the same commit; analyses must handle
+duplicate presentation timestamps/sequences. Hardware timestamp/completion flags
+must be inspected before making physical scanout claims. Outputs are created
+exclusively with private permissions, and unresolved requests are bounded at 128.
+
+Current validation covers the CSV writer, rejected modes, compilation against
+Wayland client 1.22.0/protocols 1.45, and real compositor registry/clock binding
+plus request cleanup on an unmapped SDL surface. The visible-game feedback test
+is still pending: the desktop locked before it could run. No visible cadence,
+physical FPS, rendering speedup or refresh-rate fix is established by these checks.
+The regression ran 162 Python tests (161 passed, the visible feedback case skipped)
+and passed 32 owned CTest cases.
+The observed test panel was 1920x1080 at 144 Hz without VRR; that is a condition
+for the next comparison, not an established cause of the reported stutter.
+
+### Silent real-backend transport check
+
+A separate hidden Fountain Gardens test used the real PulseAudio/PipeWire backend
+with native gain zero and the existing mixer mute/volume preserved. The native
+source remained stereo 32 kHz; PulseAudio reported the owned stream as S16LE stereo
+44.1 kHz and the sink as 48 kHz. These are different resampling stages, not by
+themselves evidence of changed music speed.
+
+During a 30.122-second ordinary movement/jump/yarn interval, the native DMA
+produced 120,490 blocks (about 32,000.461 stereo frames per host second), with zero
+additional skipped blocks and a false SDL queue-overflow flag at both endpoints.
+The same owned stream/node identity persisted. PipeWire reported the node running
+at both ends, with an error counter of zero. An earlier one-iteration `pw-top`
+read only captured initial discovery state and was excluded; three iterations
+were required to obtain running-node data.
+
+The surrounding 89.858-second pre-gain recording, including movement and a
+stationary tail, matched `STRM101` in 15 of 18 selected windows. Fitted source
+tempo was 1.000004 reference seconds per host second, with a 2.467 ms maximum
+residual using interpolated clock checkpoints. It had no all-zero span of at
+least 20 ms. The alternate `STRM101B` reference matched none of the 18 windows.
+
+These checks establish source timing and limited transport observations. They do
+not detect every possible SDL starvation event or validate audible output, A/V
+sync or long-session behavior. The system and application remained muted; no
+microphone or another application's waveform was recorded. Local evidence is
+`stage80audio2-{delivery,wave-analysis}.json` and the private recording under
+ignored `build-logs/`.
 
 Use the native executable's optional CSV recorder to separate presentation work
 from the time between submissions:
@@ -1541,3 +1685,49 @@ KIRBY_NATIVE_TEST="$PWD/build/native/WiiCompiled" \
 Compare identical scenes, camera, inputs, settings and warm caches, with several
 runs and frame-time distributions. Report visible/hidden runs separately and check
 game speed. Synthetic GPU checks establish correctness, not gameplay performance.
+
+
+## Snapshot reuse across GPU overwrites: rejected experiment
+
+A visible 90.042-second moving Fountain Gardens run of the source at `45b9947`
+recorded 59.928 native VI submissions/s, p95 17.493 ms, p99 17.698 ms and a
+34.136 ms maximum interval. Mean main-thread CPU time was 7.502 ms/submission.
+These are native submission timings, not compositor scanout measurements. Audio
+used dummy output and zero gain; DMA counters do not verify waveform continuity.
+
+A separate 30-second moving CPU profile collected 2,600 samples with none lost.
+Memory copying accounted for 11.19% of sampled user cycles. Of 289 copy samples,
+143 included texture-binding snapshot assignment and 53 came directly from
+`GxRenderer::CopyTexture`. Sampling identifies costs, not the cause or duration
+of an individual long frame.
+
+The candidate reused an existing immutable copy-validation snapshot after a full
+byte comparison proved that destination RAM remained identical. Changed bytes or
+sizes still required a fresh capture. Its regression failed before implementation
+and passed afterward; all 442 synthetic Vulkan XFB checks passed, including new
+checks for unchanged RAM reuse and renewed capture after a CPU edit. Correct
+pixels alone did not establish a performance benefit.
+
+Separate hidden runs then repeated sixty seconds of ordinary virtual-controller
+movement, jumping and yarn input in Fountain Gardens section 1:
+
+| Build | Snapshot bytes/submission | Native submissions/s | Main CPU ms/submission | p95 interval | p99 interval |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous implementation | 1,320,167 | 47.768 | 14.705 | 34.500 ms | 40.494 ms |
+| Reused validation snapshots | 33,695 | 40.320 | 16.729 | 49.056 ms | 66.832 ms |
+
+Copied snapshot demand fell 97.45%, but delivery did not improve. Draw demand
+also differed: approximately 816 versus 877 draws/submission. Both runs loaded
+302 pipelines before measurement and 304 afterward; empty sampled queues do not
+exclude intervening compilation. CPU temperature endpoints ranged from 73 to
+77 C, and the inspected CPU0 throttle counters did not increase. Background host
+activity was uncontrolled. These runs do not isolate a causal regression, and
+they provide no evidence for publishing the candidate as a fluency improvement.
+
+The experiment was discarded. The installed executable was unchanged, and the
+source retains fresh validation captures. The patch and native candidate remain
+local for diagnosis. Evidence is under ignored `build-logs/stage78-*` and
+`build-logs/stage78r3-*`, including `stage78-experiment-decision.json`, the CPU
+profile, per-run frame/state logs and thermal endpoints. Incomplete automated
+starts were excluded; input replay now waits for the first flushed frame-log row
+before pressing through the boot screens.

@@ -22,6 +22,9 @@
 #include "kirby/settings.h"
 #include "kirby/platform/command_line.h"
 #include "audio_backend.h"
+#include "../audio/pcm_trace.h"
+#include "presentation_log.h"
+#include "wayland_presentation.h"
 #include <memory>
 #include "timebase_contract.h"
 
@@ -158,6 +161,8 @@ int main(int argc, char** argv) {
     bool explicitConfig = false;
     Kirby::ControlBindings controlBindings;
     std::filesystem::path frameLogPath;
+    std::filesystem::path audioLogPath;
+    std::filesystem::path presentationLogPath;
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument = argv[i];
         if (argument == "--print-settings" && i + 1 < argc && argv[i+1][0]) {
@@ -178,6 +183,8 @@ int main(int argc, char** argv) {
             gpuResidentCopies = argument == "--gpu-resident-copies"; copiesOverride = true;
         }
         else if (argument == "--frame-log" && i + 1 < argc && argv[i+1][0]) frameLogPath=Kirby::CommandLinePath(argv[++i]);
+        else if (argument == "--audio-log" && i + 1 < argc && argv[i+1][0]) audioLogPath=Kirby::CommandLinePath(argv[++i]);
+        else if (argument == "--presentation-log" && i + 1 < argc && argv[i+1][0]) presentationLogPath=Kirby::CommandLinePath(argv[++i]);
         else if (argument == "--game-data" && i + 1 < argc && argv[i+1][0]) {
             dataRoot = Kirby::CommandLinePath(argv[++i]); dataOverride = true;
         }
@@ -187,7 +194,7 @@ int main(int argc, char** argv) {
                  argument == "--probe-audio-clock" || argument == "--probe-dsp-init" ||
                  argument == "--probe-ipc-client" || argument == "--probe-stm-init" || argument == "--probe-system-config" || argument == "--probe-disc" || argument == "--probe-es-metadata" || argument == "--probe-ave") mode = argument;
         else {
-            std::cerr << "Usage: WiiCompiled [--headless|--video|--video-hidden|--probe-alarms|--probe-ax-task|--probe-thread-fault|--probe-threads|--probe-wpad|--probe-sdl-controller|--monitor-controller|--probe-video-retrace|--verify-bootstrap|--probe-init|--probe-interrupt-init|--probe-exi-init|--probe-si-init|--probe-sram-init|--probe-boot-memory|--probe-audio-clock|--probe-dsp-init|--probe-ipc-client|--probe-stm-init|--probe-system-config|--probe-disc|--probe-es-metadata|--probe-ave] [--game-data DATA] [--volume 0..100] [--no-vsync] [--gpu-resident-copies] [--frame-log CSV]\n";
+            std::cerr << "Usage: WiiCompiled [--headless|--video|--video-hidden|--probe-alarms|--probe-ax-task|--probe-thread-fault|--probe-threads|--probe-wpad|--probe-sdl-controller|--monitor-controller|--probe-video-retrace|--verify-bootstrap|--probe-init|--probe-interrupt-init|--probe-exi-init|--probe-si-init|--probe-sram-init|--probe-boot-memory|--probe-audio-clock|--probe-dsp-init|--probe-ipc-client|--probe-stm-init|--probe-system-config|--probe-disc|--probe-es-metadata|--probe-ave] [--game-data DATA] [--volume 0..100] [--no-vsync] [--gpu-resident-copies] [--frame-log CSV] [--audio-log WAV] [--presentation-log CSV]\n";
             std::cerr << "Settings: [--config TOML] or --print-settings TOML; CLI values override saved settings.\n";
             std::cerr << "Build identity: --build-info (no game or device startup).\n";
             return 2;
@@ -213,6 +220,12 @@ int main(int argc, char** argv) {
         std::cerr << "--frame-log requires --video or --video-hidden\n";
         return 2;
     }
+    if (!audioLogPath.empty() && mode != "--video" && mode != "--video-hidden") {
+        std::cerr << "--audio-log requires --video or --video-hidden\n"; return 2;
+    }
+    if (!presentationLogPath.empty() && mode != "--video") {
+        std::cerr << "--presentation-log requires --video on an unlocked Wayland desktop\n"; return 2;
+    }
 
     if (mode == "--probe-configured-controls" && !explicitConfig) {
         std::cerr << "--probe-configured-controls requires --config TOML\n"; return 2;
@@ -226,13 +239,34 @@ int main(int argc, char** argv) {
     cpu = {};
     CpuContextScope cpuScope(&cpu);
     std::unique_ptr<Kirby::GxRenderer> renderer;
+    std::unique_ptr<Kirby::PcmTrace> audioTrace;
+    std::unique_ptr<Kirby::PresentationLog> presentationLog;
+    std::unique_ptr<Kirby::WaylandPresentationTrace> presentationTrace;
+    const auto finishDiagnosticLogs=[&] {
+        if (renderer) renderer->ObservePresentation({});
+        if (presentationTrace) presentationTrace->Finish();
+        if (presentationLog) presentationLog->Finish();
+        Kirby::SetAudioTrace(nullptr);
+        if (audioTrace) audioTrace->Finish();
+    };
     // Release owned audio streams before Aurora tears down SDL globally.
-    struct StackCleanup { ~StackCleanup() {
-        Kirby::ObserveDataCache({}); Kirby::ShutdownAx(); Kirby::ShutdownThreadStacks();
-    } } stackCleanup;
+    struct StackCleanup {
+        std::unique_ptr<Kirby::GxRenderer>& renderer;
+        ~StackCleanup() {
+            if (renderer) renderer->ObservePresentation({});
+            Kirby::Devices().ObserveVideo({});
+            Kirby::SetAudioTrace(nullptr);
+            Kirby::ObserveDataCache({}); Kirby::ShutdownAx(); Kirby::ShutdownThreadStacks();
+        }
+    } stackCleanup{renderer};
     try {
         std::shared_ptr<Kirby::FrameLog> frameLog;
         if (!frameLogPath.empty()) frameLog=std::make_shared<Kirby::FrameLog>(frameLogPath);
+        if (!audioLogPath.empty()) {
+            audioTrace=std::make_unique<Kirby::PcmTrace>(audioLogPath);
+            Kirby::SetAudioTrace(audioTrace.get());
+        }
+        if (!presentationLogPath.empty()) presentationLog=std::make_unique<Kirby::PresentationLog>(presentationLogPath);
         const auto* originalEntry = TranslatedFunctionRegistry::FindByAddressPtr(KirbyBootConfig::Entry);
         const auto originalInvoker = originalEntry ? originalEntry->rawCpuInvoker : nullptr;
         // Neither native nor handwritten "translated" foreign hooks may win.
@@ -757,7 +791,14 @@ int main(int argc, char** argv) {
                 renderer->SetGpuResidentTextureCopies(gpuResidentCopies);
                 renderer->SetGpuResidentDisplayCopies(gpuResidentCopies);
                 renderer->SetTextureSnapshotReuse(gpuResidentCopies);
-                if (frameLog) renderer->ObservePresentation([frameLog](const auto& sample) { frameLog->Write(sample); });
+                if (presentationLog) {
+                    presentationTrace=std::make_unique<Kirby::WaylandPresentationTrace>(aurora_get_window(),*presentationLog);
+                    presentationTrace->Request(1);
+                }
+                if (frameLog || presentationTrace) renderer->ObservePresentation([frameLog,trace=presentationTrace.get()](const auto& sample) {
+                    if (frameLog) frameLog->Write(sample);
+                    if (trace) trace->Request(sample.sequence+1);
+                });
                 if (gpuResidentCopies) std::cout << "[kirby] experimental GPU-resident texture and display copies enabled\n";
                 Kirby::SetWpadWindowActive(true);
             }
@@ -785,9 +826,12 @@ int main(int argc, char** argv) {
             return 0;
         }
         std::cout << "[kirby] __start returned; no graphical milestone is implied\n";
+        finishDiagnosticLogs();
         return 0;
     } catch (const Kirby::ExitRequested&) {
         std::cout << "[kirby] host exit requested; shutting down native runtime\n";
+        try { finishDiagnosticLogs(); }
+        catch (const std::exception& error) { std::cerr << "[kirby] diagnostic log: " << error.what() << '\n';return 1; }
         return 0;
     } catch (const Memory::AccessViolation& error) {
         std::cerr << "[kirby] blocked: guest memory access 0x" << std::hex << error.address()

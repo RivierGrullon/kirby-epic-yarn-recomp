@@ -88,3 +88,21 @@ The root license is GPL-3.0; Aurora has its own MIT license and third-party
 notices. This review imports no source. Any later source reuse must preserve
 the applicable license and attribution. NSMB PAL addresses, REL modules,
 small-data bases and memory layouts must never be treated as RK5E01 defaults.
+
+## Shared AXFX reverb reference
+
+Reviewed [Petari's recovered `AXFXReverbHiExpCallback`](https://github.com/SMGCommunity/Petari/blob/56d012bff9ee9f1f4a9b6d4ffc0bde1755d7f717/src/RVL_SDK/axfx/AXFXReverbHiExp.c)
+at commit `56d012bff9ee9f1f4a9b6d4ffc0bde1755d7f717`, together with its
+[structure definitions](https://github.com/SMGCommunity/Petari/blob/56d012bff9ee9f1f4a9b6d4ffc0bde1755d7f717/libs/RVL_SDK/include/revolution/axfx.h)
+and [CC0-1.0 license](https://github.com/SMGCommunity/Petari/blob/56d012bff9ee9f1f4a9b6d4ffc0bde1755d7f717/LICENSE).
+The callback has the three-channel, 96-sample loop and reverb fields already
+identified in Kirby's audited `0x80681680` routine. The later moving-gameplay
+profile attributed 4.24% of main-thread self samples to that translated routine.
+This is a reuse candidate, not a measured speedup or an enabled native replacement.
+
+The source, header and license remain in the ignored local reference directory;
+their exact Git blob identities were checked. No source was imported into the
+runtime. Directly using the host struct would change pointer width and byte order.
+Any adaptation must preserve Kirby's bus modes, PCM conversion, delay-line state,
+ring positions and PPC floating-point behavior, with equivalence checked against
+the original translated callback. No Mario Galaxy address or hook was adopted.

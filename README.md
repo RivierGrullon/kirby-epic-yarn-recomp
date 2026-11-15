@@ -15,7 +15,7 @@ not stable frame pacing or full-game compatibility.*
 
 > [!IMPORTANT]
 > **Development source preview, not a finished release.** The main menu, Patch
-> Castle completion, save reload and Fountain Gardens movement/jumping have been
+> Castle and Fountain Gardens completion, plus save reload, have been
 > observed. The full game, physical controllers and sustained performance still
 > need validation. There is no ready-to-play binary package.
 >
@@ -23,7 +23,8 @@ not stable frame pacing or full-game compatibility.*
 > code, saves and shader caches are not included. Other revisions are rejected.
 
 [Build from source](docs/building.md) · [Known limitations](#known-limitations) ·
-[Performance](docs/performance.md) · [Contributing](CONTRIBUTING.md) ·
+[Gameplay checks](docs/gameplay-validation.md) · [Performance](docs/performance.md) ·
+[Contributing](CONTRIBUTING.md) ·
 [Changelog](CHANGELOG.md)
 
 ## Requirements
@@ -121,7 +122,7 @@ reconnection/cooperative play still need implementation or validation.
 
 | Area | Current status |
 | --- | --- |
-| Game progression | Menu, Patch Castle and Fountain Gardens observed; whole-game completion unverified |
+| Game progression | Menu, Patch Castle and Fountain Gardens clears observed; whole-game completion unverified |
 | Performance | Scene dependent; experimental optimizations are available, but stable 30/60 FPS is not guaranteed |
 | Audio | Music tempo verified in a three-minute Fountain Gardens clip; long-session quality and broader synchronization remain unverified |
 | Input | Virtual mappings tested; physical controllers and Legion Go controls need validation |
