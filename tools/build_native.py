@@ -44,8 +44,12 @@ def main():
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--translated-jobs", type=int, default=2)
     parser.add_argument("--stage-root",type=Path,help="Use isolated outputs below local/setup/builds/JOB")
+    parser.add_argument("--profile-dawn-calls", action="store_true",
+                        help="Instrument Linux WebGPU calls; requires an isolated --stage-root")
     args = parser.parse_args()
     try:
+        if args.profile_dawn_calls and (args.stage_root is None or args.target != 'linux'):
+            raise ValueError("--profile-dawn-calls requires a Linux build with --stage-root")
         stage = args.stage_root
         if args.target == 'windows' and stage is None:
             stage = ROOT/'local/setup/builds/windows-developer'
@@ -100,6 +104,7 @@ def main():
                                 f"-DAURORA_SDL3_LINKAGE={'shared' if args.target == 'windows' else 'static'}",
                                 f"-DKIRBY_PROJECT_ROOT={ROOT}",
                                 f"-DKIRBY_GENERATED_ROOT={layout.generated}",
+                                f"-DKIRBY_PROFILE_DAWN_CALLS={'ON' if args.profile_dawn_calls else 'OFF'}",
                                 f"-DCMAKE_PROJECT_mkw_recompiled_INCLUDE={ROOT / 'cmake/native_project.cmake'}",
                                 f"-DMKW_AURORA_DIR={aurora}",
                                 f"-DMKW_TRANSLATED_SHARD_MANIFEST={layout.generated / 'build_shards/shards.cmake'}",

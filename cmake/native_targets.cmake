@@ -285,6 +285,7 @@ target_include_directories(kirby_cache_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 target_compile_features(kirby_cache_test PRIVATE cxx_std_20)
 add_test(NAME kirby_cache COMMAND kirby_cache_test)
 
+include("${KIRBY_PROJECT_ROOT}/cmake/dawn-profile.cmake")
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(kirby_build_info_header "${CMAKE_CURRENT_BINARY_DIR}/kirby-generated/KirbyBuildInfo.h")
 string(TOUPPER "${CMAKE_BUILD_TYPE}" kirby_build_configuration)
@@ -293,7 +294,7 @@ add_custom_target(kirby_build_record
         --source "${KIRBY_PROJECT_ROOT}" --output "${kirby_build_info_header}"
         "--compiler=${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
         "--build-type=${CMAKE_BUILD_TYPE}"
-        "--compiler-options=${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${kirby_build_configuration}}"
+        "--compiler-options=${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${kirby_build_configuration}}${kirby_profile_compiler_options}"
     BYPRODUCTS "${kirby_build_info_header}" VERBATIM)
 add_library(kirby_build_info STATIC "${KIRBY_PROJECT_ROOT}/runtime/src/app/build_info.cpp")
 add_dependencies(kirby_build_info kirby_build_record)

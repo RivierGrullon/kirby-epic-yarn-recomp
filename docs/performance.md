@@ -128,6 +128,71 @@ python3 -m unittest tests.integration.test_gpu_trace -v
 This synthetic check requires a working Vulkan session, creates no visible game
 window and needs no disc data. It does not measure displayed FPS or audible audio.
 
+### Optional Linux WebGPU call timings
+
+An isolated diagnostic build can time WebGPU resource creation, queue writes,
+command submission, surface acquisition/presentation and Aurora's frame-worker
+wait. This helps distinguish CPU work inside an API call from a blocked thread.
+It uses linker `--wrap` with the pinned Dawn declarations, without editing Aurora.
+Normal builds disable it and contain no logging wrappers. The managed build helper
+requires a Linux target and `--stage-root`; build identity records
+`KIRBY_PROFILE_DAWN_CALLS=ON` so captures cannot be mistaken for ordinary builds.
+
+After preparing and translating an isolated stage as described in
+[Building](building.md#build-separately-from-the-runnable-version):
+
+```bash
+stage_root="local/setup/builds/dawn-profile"
+bash tools/container.sh python3 tools/build_native.py \
+  --stage-root "$stage_root" --profile-dawn-calls --jobs 2
+
+SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
+KIRBY_DAWN_RESOURCE_LOG="$PWD/build-logs/resources.csv" \
+  "$stage_root/build/WiiCompiled" --video --volume 0 \
+  --game-data "$PWD/disc/DATA" --frame-log build-logs/submissions.csv \
+  --presentation-log build-logs/presentations.csv
+
+python3 tools/dawn_stats.py build-logs/resources.csv --start 120 --end 180
+```
+
+Choose the SDL-clock interval from the frame log for the actual level segment;
+120–180 seconds is only an example. The resource CSV uses the same `SDL_GetTicksNS`
+epoch, thread IDs and per-thread CPU time. Sequence numbers follow logging order,
+not start time. Files are created exclusively with mode 0600; existing paths and
+symlinks are preserved. Exit normally or send SIGTERM to flush the final events.
+No texture pixels, shaders, audio or game code are written to this trace.
+
+The analyzer reports fully contained calls and per-operation wall/CPU
+distributions. It infers the guest thread from the full trace's `FrameWorkerWait`
+events, or accepts `--guest-tid`. Overlap with another thread's `QueueSubmit` uses
+the union of intervals, including submissions crossing the selected boundary.
+Overlap is evidence of concurrency, not proof of a particular Dawn mutex wait.
+These are host call timings, not GPU execution time or displayed FPS. Clock
+queries and CSV logging add overhead; do not certify release performance with
+this instrumented build. Reconfigure without `--profile-dawn-calls` to remove it.
+
+The opt-in Vulkan check needs no disc and keeps playback silent:
+
+```bash
+bash tools/container.sh cmake --build "$stage_root/build" \
+  --target kirby_gx_renderer_test --parallel 2
+KIRBY_DAWN_PROFILE_TEST="$PWD/$stage_root/build/kirby_gx_renderer_test" \
+SDL_AUDIO_DRIVER=dummy LD_LIBRARY_PATH="$PWD/local/host-libs" \
+  python3 -m unittest tests.integration.test_dawn_profile -v
+```
+
+A 60-second hidden moving Fountain Gardens capture on the Acer/RTX 3050 used
+baseline `6cd8623` with these wrappers, Tracy off, warm pipelines, GPU-resident
+copies, VSync off and zero-gain dummy playback. It measured 59.940 native VI
+submissions/s, p95 17.470 ms, p99 17.673 ms and a 19.013 ms maximum. None of
+9,949 guest resource calls overlapped another thread's queue submission. Guest
+texture creation peaked at 0.691 ms and guest bind-group creation at 0.062 ms.
+No shader modules or render pipelines were created in the selected interval.
+This did not reproduce the earlier visible pauses or justify applying the
+[NSMB lazy-resource change](https://github.com/WitherBlitz/NSMB-Wii-Recompilation/commit/cd2cba433135e5e06b961f2bb0917ef28aa4ddc5)
+to this runtime. Hidden submission cadence does not establish visible pacing.
+Evidence remains local in `build-logs/stage102-*`; visible correlation is pending.
+
 ### Experimental Wayland presentation feedback
 
 `--presentation-log FILE.csv` requests `wp_presentation` feedback for the game's
