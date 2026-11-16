@@ -119,6 +119,29 @@ class WindowsBoundaryTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == 'nt', 'Requires real Win32 pipes, locks and Job Objects')
 class WindowsIntegrationTests(unittest.TestCase):
+    def test_layout_accepts_short_checkout_path(self):
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        kernel.GetShortPathNameW.restype = wintypes.DWORD
+        with tempfile.TemporaryDirectory(prefix='kirby long checkout name ') as directory:
+            buffer = ctypes.create_unicode_buffer(32768)
+            length = kernel.GetShortPathNameW(directory, buffer, len(buffer))
+            if not length or length >= len(buffer):
+                raise ctypes.WinError(ctypes.get_last_error())
+            root = Path(buffer.value)
+            if root == Path(directory).resolve():
+                self.skipTest('This volume does not provide 8.3 short path aliases')
+            for exists in (False, True):
+                stage = root / 'local/setup/builds' / ('existing' if exists else 'new')
+                if exists:
+                    stage.mkdir(parents=True)
+                layout = BuildLayout(root, stage)
+                layout.ensure()
+                self.assertEqual(layout.stage, stage.resolve())
+                BuildLayout(Path(directory).resolve(), stage).ensure()
+
     def test_native_lock_pipe_output_and_cancellation(self):
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory) / 'setup'
@@ -200,5 +223,21 @@ class WindowsIntegrationTests(unittest.TestCase):
             self.assertEqual(result.returncode,0,result.stderr)
             try:
                 with self.assertRaises(ValueError): open_read(junction / 'file')
+                # Resolving a stage must not hide a junction in the supplied
+                # stage path or one of its ancestors.
+                base = root / 'local/setup/builds'
+                base.mkdir(parents=True)
+                stage_link = base / 'linked'
+                result = subprocess.run(['cmd.exe', '/c', 'mklink', '/J', str(stage_link), str(real)],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                try:
+                    with self.assertRaisesRegex(ValueError, 'symlinks'):
+                        BuildLayout(root, stage_link).ensure()
+                    with self.assertRaisesRegex(ValueError, 'symlinks'):
+                        BuildLayout(root, stage_link / 'child').ensure()
+                    self.assertEqual(list(real.iterdir()), [real / 'file'])
+                finally:
+                    stage_link.rmdir()
             finally:
                 junction.rmdir()
