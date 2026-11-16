@@ -55,6 +55,10 @@ class RequestReader:
 
 
 def main():
+    if len(sys.argv)>2 and sys.argv[1]=='--launch-appimage':
+        from installer.appimage import launch_appimage
+        launch_appimage(sys.argv[2],sys.argv[3:])
+        return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, default=ROOT / "local/setup")
     selection = parser.add_mutually_exclusive_group()

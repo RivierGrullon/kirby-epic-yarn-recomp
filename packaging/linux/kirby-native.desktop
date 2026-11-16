@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kirby Native
+Comment=Prepare and play Kirby's Epic Yarn from your own game copy
+Exec=AppRun
+Icon=kirby-native
+Categories=Game;
+Terminal=false

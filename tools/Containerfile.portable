@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Developer-only packaging environment. Players do not need a container engine.
+ARG TOOLCHAIN_IMAGE=localhost/kirby-native-toolchain:stage1
+FROM ${TOOLCHAIN_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    proot p7zip-full python3-venv liblzo2-dev liblz4-dev liblzma-dev \
+    libbz2-dev libzstd-dev libpugixml-dev libmbedtls-dev libcurl4-openssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN python3 -m venv /opt/freeze \
+    && /opt/freeze/bin/pip install --no-cache-dir pyinstaller==6.11.1
+# Build only the official disc utility, not an emulator frontend.
+# Keep the corresponding source and its license in the exported toolchain.
+RUN git clone --depth 1 --branch 2603 --recurse-submodules --shallow-submodules \
+      https://github.com/dolphin-emu/dolphin.git /opt/dolphin-source \
+    && test "$(git -C /opt/dolphin-source rev-parse HEAD)" = d8558142ead21b3fa39809c4aedb982fbfc85feb
+# GCC 13 provides the C++23 std::expected used by this Dolphin revision.
+# Kirby's translated game remains compiled by Clang through build_native.py.
+RUN cmake -S /opt/dolphin-source -B /opt/dolphin-build -G Ninja \
+      -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Release \
+      -DENABLE_QT=OFF -DENABLE_NOGUI=OFF -DENABLE_TESTS=OFF -DENABLE_CLI_TOOL=ON \
+      -DENABLE_ALSA=OFF -DENABLE_PULSEAUDIO=OFF -DENABLE_CUBEB=OFF -DENABLE_LLVM=OFF \
+      -DUSE_UPNP=OFF -DUSE_MGBA=OFF -DUSE_DISCORD_PRESENCE=OFF -DUSE_RETRO_ACHIEVEMENTS=OFF \
+      -DENABLE_SDL=OFF -DENABLE_EVDEV=OFF -DENABLE_HWDB=OFF -DENCODE_FRAMEDUMPS=OFF \
+    && cmake --build /opt/dolphin-build --target dolphin-tool --parallel 2 \
+    && cp /opt/dolphin-build/Binaries/dolphin-tool /usr/bin/dolphin-tool \
+    && rm -rf /opt/dolphin-build
+# PyInstaller needs Python's shared library, not only the interpreter and venv.
+RUN apt-get update && apt-get install -y --no-install-recommends python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+# Ubuntu's PRoot 5.1 does not translate fchmodat2. CMake/libarchive uses it to
+# restore symlink metadata when unpacking dependencies on modern Linux kernels.
+RUN apt-get update && apt-get install -y --no-install-recommends libtalloc-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch v5.5.0 --recurse-submodules --shallow-submodules \
+      https://github.com/proot-me/proot.git /opt/proot-source \
+    && test "$(git -C /opt/proot-source rev-parse HEAD)" = 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1 \
+    && make -C /opt/proot-source/src --jobs=2 WITHOUT_PYTHON=1 \
+    && cp /opt/proot-source/src/proot /usr/bin/proot \
+    && /usr/bin/proot --version
+WORKDIR /workspace
