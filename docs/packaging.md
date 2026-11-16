@@ -15,6 +15,8 @@ Windows portable ZIP preparation and validation are still outstanding.
 The image includes the launcher, an isolated setup worker, PRoot and a private
 Linux build environment with DolphinTool. PRoot is used for build and extraction
 commands. The resulting game and its startup checks run on the host.
+Build subprocesses use a private runtime directory inside the writable temporary
+storage, so .NET mutexes do not depend on the host desktop's `/run/user` paths.
 
 The AppImage mount stays read-only. Authored sources are prepared under:
 

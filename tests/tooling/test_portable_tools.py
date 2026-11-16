@@ -69,6 +69,16 @@ class PortableToolsTests(unittest.TestCase):
         self.assertNotIn('/bad-libraries', env['LD_LIBRARY_PATH'])
         self.assertEqual(env['GIT_CONFIG_VALUE_0'], '/workspace')
 
+    def test_dotnet_has_a_writable_private_runtime_directory_inside_the_guest(self):
+        tools = self.bundle()
+        tools.command(['dotnet', '--help'])
+        env = tools.environment({'XDG_RUNTIME_DIR': '/run/user/12345'})
+        self.assertEqual(env['XDG_RUNTIME_DIR'], '/tmp/kirby-runtime')
+        directory = self.root/'local/setup/portable-tmp/kirby-runtime'
+        self.assertTrue(directory.is_dir())
+        self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+        (directory/'mutex-probe').write_text('writable')
+
 
 if __name__ == '__main__':
     unittest.main()

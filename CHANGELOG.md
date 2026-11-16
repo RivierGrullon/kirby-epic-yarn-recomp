@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Give bundled .NET tools a private runtime directory for named mutexes, and
+  keep the packaged toolchain link out of source identity checks.
+
 - Start full installation when a game source is selected, support bundled setup
   workers and private Linux build tools, and add experimental AppDir/AppImage
   packaging with writable per-user build storage. Packaged installation and

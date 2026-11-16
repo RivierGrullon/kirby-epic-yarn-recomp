@@ -57,6 +57,11 @@ class PortableTools:
         temporary.mkdir(parents=True, exist_ok=True, mode=0o700)
         if temporary.is_symlink():
             raise ValueError('Portable temporary directory must not be a symlink')
+        runtime = temporary/'kirby-runtime'
+        if runtime.is_symlink():
+            raise ValueError('Portable runtime directory must not be a symlink')
+        runtime.mkdir(exist_ok=True, mode=0o700)
+        runtime.chmod(0o700)
         paths = [(self.root, '/workspace'), (self.root, str(self.root)),
                  (temporary, '/tmp')]
         for path in binds:
@@ -81,6 +86,7 @@ class PortableTools:
                 env.pop(name, None)
         env.update(PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
                    LD_LIBRARY_PATH=str(self.base/'lib'), HOME='/tmp/kirby-build-home',
-                   TMPDIR='/tmp', DOTNET_CLI_TELEMETRY_OPTOUT='1', DOTNET_NOLOGO='1',
+                   TMPDIR='/tmp', XDG_RUNTIME_DIR='/tmp/kirby-runtime',
+                   DOTNET_CLI_TELEMETRY_OPTOUT='1', DOTNET_NOLOGO='1',
                    GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='safe.directory', GIT_CONFIG_VALUE_0='/workspace')
         return env
