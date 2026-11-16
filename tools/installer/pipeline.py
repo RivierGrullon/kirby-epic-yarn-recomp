@@ -17,23 +17,28 @@ from .installations import InstallationStore, VERIFICATION, canonical, file_dige
 from .jobs import run_process
 from .verification import verify_native
 from .platforms import WINDOWS, executable_name, is_link
+from .portable import PortableTools
 
 
 class BuildTools:
     def __init__(self, job, root):
         self.job, self.root = job, root
         self.image_id = None
+        self.portable = PortableTools.find(root)
 
     def bootstrap(self):
+        if self.portable is not None:
+            self.run(['python3', 'tools/bootstrap.py'])
+            return
         recover_containers(self.job)
         run_process(self.job, [sys.executable, self.root/'tools/bootstrap.py'], cwd=self.root)
 
     def image(self):
-        self.image_id = toolchain_image(self.job)
+        self.image_id = self.portable.image_id if self.portable is not None else toolchain_image(self.job)
         return self.image_id
 
     def identity(self):
-        if WINDOWS:
+        if WINDOWS or self.portable is not None:
             command = ['python3', '-c', "import sys,json;sys.path.insert(0,'tools');import build_info;"
                        "print(json.dumps(build_info.collect('.',compiler='pending',build_type='Release')))"]
             record = json.loads(run_container(self.job, self.root, command,

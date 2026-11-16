@@ -17,8 +17,9 @@ from audits import wpad as wpad_audit
 from audits import audio as audio_audit
 from audits import cache as cache_audit
 from audits import matrix as matrix_audit
+from project_paths import project_root
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = project_root()
 EXPECTED_SHA1 = "f4280a2b0709bfde4132be22e9f7fa8ecfa2a130"
 MEM1_BASE, MEM1_END = 0x80000000, 0x81800000
 

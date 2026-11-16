@@ -23,7 +23,7 @@ Action DrawInstall(State& state) {
     Action action = Action::None;
     auto& setup=state.setup;
     ImGui::TextWrapped("Import your own RK5E01 Rev 0 (USA) copy.");
-    ImGui::TextWrapped("Choose a WBFS, ISO, RVZ, 7z archive or an extracted DATA folder.");
+    ImGui::TextWrapped("Choose a WBFS, ISO, RVZ, 7z archive or an extracted DATA folder. Setup prepares and checks the native game automatically.");
     ImGui::Spacing();
     ImGui::BeginDisabled(state.selfTest || state.gameRunning || setup.Busy() || state.choosingSource);
     if (ImGui::Button("Choose disc image")) action=Action::ChooseImage;
@@ -68,7 +68,10 @@ Action DrawInstall(State& state) {
     ImGui::BeginDisabled(state.selfTest || state.gameRunning || setup.Busy() || state.choosingSource || !state.dataVerified);
     if (ImGui::Button("Build / update native game")) action=Action::BuildGame;
     ImGui::EndDisabled();
-    ImGui::TextWrapped("First-time setup prepares the build tools. For a fresh checkout, follow the Build Guide before building. First builds can take several minutes.");
+    if (std::filesystem::exists(state.root/"tools/runtime/toolchain.json"))
+        ImGui::TextWrapped("Build tools are included. The first preparation needs internet access and can take several minutes. Your game files stay on this computer.");
+    else
+        ImGui::TextWrapped("Developer checkout: prepare the build tools using the Build Guide. Application packages include their own tools.");
     if (ImGui::Button("Open Build Guide")) action = Action::BuildGuide;
     return action;
 }

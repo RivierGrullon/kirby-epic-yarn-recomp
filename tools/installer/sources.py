@@ -11,6 +11,8 @@ import tempfile
 from .data import DISC_CAPACITY, inspect_data
 from .jobs import run_process
 from .platforms import WINDOWS, is_link
+from .portable import PortableTools
+from kirby import ROOT
 
 
 def _stamp(path):
@@ -62,6 +64,9 @@ def archive_member(listing):
 
 
 def _dolphin(source, output):
+    portable = PortableTools.find(ROOT)
+    if portable is not None:
+        return portable.command(['dolphin-tool'], binds=[source, output])
     native = shutil.which("DolphinTool.exe") if WINDOWS else shutil.which("dolphin-tool")
     if native:
         return [native]
@@ -105,10 +110,16 @@ def inspect_source(selected, job):
         image = source
         needed = DISC_CAPACITY  # Conservative DATA export allowance, not a progress total.
         if source.suffix.lower() == ".7z":
-            sevenzip = shutil.which("7z") or shutil.which("7zz")
+            portable = PortableTools.find(ROOT)
+            sevenzip = portable.command(['7z'], binds=[source]) if portable else None
+            if sevenzip is None:
+                found = shutil.which("7z") or shutil.which("7zz")
+                sevenzip = [found] if found else None
             if not sevenzip:
                 raise ValueError("7z or 7zz is required for archive imports")
-            listing = run_process(job, [sevenzip, "l", "-slt", "-ba", "--", source], capture_limit=2 * 1024 * 1024)
+            environment = portable.environment() if portable else None
+            listing = run_process(job, [*sevenzip, "l", "-slt", "-ba", "--", source],
+                                  env=environment, capture_limit=2 * 1024 * 1024)
             name, size = archive_member(listing.decode("utf-8", errors="strict"))
             needed += size
             if shutil.disk_usage(staging).free < needed:
@@ -117,7 +128,7 @@ def inspect_source(selected, job):
             images.mkdir(mode=0o700)
             job.emit(dict(stage="unpack", state="started"))
             # -spd disables wildcard expansion; -- ends switch parsing for filenames.
-            run_process(job, [sevenzip, "x", "-y", "-spd", f"-o{images}", "--", source, name])
+            run_process(job, [*sevenzip, "x", "-y", "-spd", f"-o{images}", "--", source, name], env=environment)
             image = images / name
             if (not image.resolve().is_relative_to(images.resolve())
                     or any(is_link(images / Path(*PurePosixPath(name).parts[:i]))
@@ -130,7 +141,9 @@ def inspect_source(selected, job):
         output = staging / "export"
         output.mkdir(mode=0o700)
         job.emit(dict(stage="extract", state="started"))
-        run_process(job, [*_dolphin(image, output), "extract", "-i", image, "-o", output, "-g", "-q"])
+        portable = PortableTools.find(ROOT)
+        run_process(job, [*_dolphin(image, output), "extract", "-i", image, "-o", output, "-g", "-q"],
+                    env=portable.environment() if portable else None)
         job.emit(dict(stage="extract", state="complete"))
         job.emit(dict(stage="validate", state="started", cached=False))
         result = inspect_data(output, check_cancel=job.check_cancel)

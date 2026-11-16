@@ -99,6 +99,7 @@ int main(int argc,char** argv) {
 #endif
     // Job invokes Python with UTF-8/unbuffered options; this executable is its fixture replacement.
     if (argc==7 && std::string(argv[5])=="--workspace") return Child(fs::path(argv[4]).filename().string(),argv[6]);
+    if (argc==3 && std::string(argv[1])=="--workspace") return Child("valid",argv[2]);
     const auto directory=TemporaryLauncherDirectory("kirby's setup client ");
     struct Cleanup { fs::path path;~Cleanup() { fs::remove_all(path); } } cleanup{directory};
     const auto self=fs::canonical(argv[0]).string();
@@ -112,6 +113,9 @@ int main(int argc,char** argv) {
     Check(job.Current().status==Status::Ready && job.Current().result.has_value(),job.Current().message.c_str());
     Check(std::chrono::steady_clock::now()-before>=std::chrono::milliseconds(140),"Result accepted before successful process exit");
     Check(job.Current().result->source==source,"Client substituted a different selected source");
+    Check(job.Start(self,source,directory,""),"Bundled native worker required a host Python interpreter");
+    Finish(job);
+    Check(job.Current().status==Status::Ready,"Bundled native worker did not complete the real setup protocol");
     #ifndef _WIN32
     const auto savedInput=dup(STDIN_FILENO);Check(savedInput>=0,"Could not preserve test stdin");
     close(STDIN_FILENO);

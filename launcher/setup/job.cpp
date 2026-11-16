@@ -73,8 +73,10 @@ bool Job::Start(const std::filesystem::path& worker,const std::filesystem::path&
             close(pair[i]);pair[i]=replacement;
         }
         Nonblocking(input[0]);Nonblocking(output[0]);Nonblocking(error[0]);
-        std::vector<std::string> arguments{python,"-X","utf8","-u",std::filesystem::absolute(worker).string(),"--workspace",
-                                            std::filesystem::absolute(workspace).string()};
+        std::vector<std::string> arguments;
+        if (!python.empty()) arguments={python,"-X","utf8","-u"};
+        arguments.insert(arguments.end(),{std::filesystem::absolute(worker).string(),"--workspace",
+                                         std::filesystem::absolute(workspace).string()});
         std::vector<char*> argv;for (auto& argument : arguments) argv.push_back(argument.data());argv.push_back(nullptr);
         posix_spawn_file_actions_t actions;posix_spawn_file_actions_init(&actions);
         posix_spawn_file_actions_adddup2(&actions,input[1],STDIN_FILENO);
@@ -84,7 +86,7 @@ bool Job::Start(const std::filesystem::path& worker,const std::filesystem::path&
         posix_spawnattr_t attributes;posix_spawnattr_init(&attributes);
         posix_spawnattr_setflags(&attributes,POSIX_SPAWN_SETPGROUP);
         posix_spawnattr_setpgroup(&attributes,0);
-        const int code=posix_spawnp(&pid_,python.c_str(),&actions,&attributes,argv.data(),environ);
+        const int code=posix_spawnp(&pid_,argv.front(),&actions,&attributes,argv.data(),environ);
         posix_spawnattr_destroy(&attributes);posix_spawn_file_actions_destroy(&actions);
         if (code) { pid_=-1;throw std::runtime_error("Cannot start setup worker: "+std::string(std::strerror(code))); }
         input_=input[0];output_=output[0];error_=error[0];input[0]=output[0]=error[0]=-1;
@@ -148,13 +150,14 @@ void Job::StartWindows(const std::filesystem::path& worker,const std::filesystem
     startup.StartupInfo.dwFlags=STARTF_USESTDHANDLES;
     startup.StartupInfo.hStdInput=childInput.value;startup.StartupInfo.hStdOutput=childOutput.value;
     startup.StartupInfo.hStdError=childError.value;
-    auto command=Quote(FromUtf8(python).wstring())+L" -X utf8 -u "+Quote(std::filesystem::absolute(worker).wstring())+
-                 L" --workspace "+Quote(std::filesystem::absolute(workspace).wstring());
+    auto command=(python.empty() ? std::wstring{} : Quote(FromUtf8(python).wstring())+L" -X utf8 -u ")+
+                 Quote(std::filesystem::absolute(worker).wstring())+L" --workspace "+
+                 Quote(std::filesystem::absolute(workspace).wstring());
     PROCESS_INFORMATION information{};
     if (!CreateProcessW(nullptr,command.data(),nullptr,nullptr,TRUE,
                         EXTENDED_STARTUPINFO_PRESENT|CREATE_NO_WINDOW|CREATE_SUSPENDED,
                         nullptr,nullptr,&startup.StartupInfo,&information))
-        throw std::runtime_error("Cannot start setup worker. Install Python 3 and make python available on PATH (Windows error "+std::to_string(GetLastError())+")");
+        throw std::runtime_error("Cannot start setup worker (Windows error "+std::to_string(GetLastError())+")");
     process_=information.hProcess;Handle thread{information.hThread};
     if (!AssignProcessToJobObject(processGroup_,process_) || ResumeThread(thread.value)==static_cast<DWORD>(-1)) {
         TerminateProcess(process_,1);WaitForSingleObject(process_,INFINITE);

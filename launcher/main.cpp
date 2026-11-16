@@ -176,7 +176,8 @@ int main(int argc, char** argv) {
         Launcher::Setup::Job job;
         std::signal(SIGINT,[](int) { sourceCancelled=1; });
         std::signal(SIGTERM,[](int) { sourceCancelled=1; });
-        job.Start(root/"tools/install.py",Launcher::FromUtf8(argv[2]),root/"local/setup");
+        const auto worker=Launcher::FindSetupWorker(root);
+        job.Start(worker.file,Launcher::FromUtf8(argv[2]),root/"local/setup",worker.interpreter);
         while (job.Current().Busy()) {
             if (sourceCancelled) job.Cancel();
             job.Poll();SDL_Delay(1);
@@ -260,7 +261,8 @@ int main(int argc, char** argv) {
     const auto startSetup=[&](const fs::path& source,Launcher::Setup::Operation operation=Launcher::Setup::Operation::Inspect) {
         if (game!=nullptr || setupJob.Current().Busy() || state.closing) return;
         setupApplied=false;setupSelectionError.clear();
-        setupJob.Start(root/"tools/install.py",source,root/"local/setup",Launcher::PythonExecutable,operation);
+        const auto worker=Launcher::FindSetupWorker(root);
+        setupJob.Start(worker.file,source,root/"local/setup",worker.interpreter,operation);
         state.setup=setupJob.Current();
     };
     Launcher::BuildProbe buildProbe;
@@ -289,7 +291,10 @@ int main(int argc, char** argv) {
           state.choosingSource=selection->pending;
           if (selection->ready) { selectedSource=selection->path;selectionError=selection->error;selection->ready=false; } }
         if (!selectionError.empty()) setupSelectionError="Could not open source chooser: "+selectionError;
-        if (!selectedSource.empty() && !selfTest) startSetup(Launcher::FromUtf8(selectedSource));
+        if (!selectedSource.empty() && !selfTest) {
+            try { startSetup(Launcher::FromUtf8(selectedSource),Launcher::Setup::Operation::Install); }
+            catch (const std::exception& error) { setupSelectionError=error.what(); }
+        }
         if (!selfTest) {
             setupJob.Poll();state.setup=setupJob.Current();
             if (state.setup.status==Launcher::Setup::Status::Ready && !setupApplied && !state.closing) {
