@@ -236,10 +236,18 @@ dependency parser can lose filenames containing apostrophes and rebuild them
 on every invocation. Original image/archive filenames are preserved. Use the
 container workflow above so compiler source/output paths use `/workspace`.
 
+Windows builds discover LLVM-MinGW from `x86_64-w64-mingw32-clang` on `PATH`.
+Add the installation's `bin` directory to `PATH`, or pass
+`--llvm-mingw-root PATH` to `tools/build_native.py`. Compilation and runtime DLL
+collection use this same installation. Direct CMake toolchain users can override
+discovery with `-DKIRBY_LLVM_MINGW_ROOT=PATH`.
+
 Staged .NET compilation uses a private temporary artifacts directory and retains
 the runnable translator binaries in the stage. This avoids .NET 8 item-transform
 failures with apostrophes in output paths, while keeping dependency `bin/` and
-`obj/` trees unchanged. Later translation commands may use
+`obj/` trees unchanged. The temporary directory follows Python's platform defaults
+and `TMPDIR`, `TEMP`, or `TMP`; select a writable location without apostrophes.
+Later translation commands may use
 `--translator-dll "$stage_root/translator/bin/Translator.Cli/release/Translator.Cli.dll"`
 to reuse that explicitly built tool.
 

@@ -435,7 +435,11 @@ def translator(existing=None, *, layout=None):
         # .NET 8's reference-copy item transform breaks when OutDir contains an
         # apostrophe. Build in owned scratch, then retain the runnable binaries
         # under the requested stage. Source checkouts and their obj/ stay intact.
-        with tempfile.TemporaryDirectory(prefix='kirby-translator-',dir='/tmp') as scratch:
+        scratch_root = Path(tempfile.gettempdir()).resolve()
+        if "'" in str(scratch_root):
+            raise ValueError("The .NET temporary artifacts path must not contain apostrophes; "
+                             "set TMPDIR, TEMP or TMP to a writable directory without apostrophes")
+        with tempfile.TemporaryDirectory(prefix='kirby-translator-',dir=scratch_root) as scratch:
             run_logged("translator-build",[*command,"--artifacts-path",scratch],layout=layout)
             shutil.copytree(Path(scratch)/'bin',layout.translator_artifacts/'bin',dirs_exist_ok=True)
         assembly=layout.translator_artifacts/'bin/Translator.Cli/release/Translator.Cli.dll'

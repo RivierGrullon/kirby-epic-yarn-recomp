@@ -1,7 +1,14 @@
 # Windows x86-64 products from Linux or native Windows hosts.
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR AMD64)
-set(KIRBY_LLVM_MINGW_ROOT "/opt/llvm-mingw" CACHE PATH "LLVM-MinGW installation")
+if(NOT KIRBY_LLVM_MINGW_ROOT)
+    find_program(kirby_mingw_clang NAMES x86_64-w64-mingw32-clang
+        PATHS ENV PATH NO_DEFAULT_PATH NO_CACHE REQUIRED)
+    get_filename_component(kirby_mingw_bin "${kirby_mingw_clang}" DIRECTORY)
+    get_filename_component(KIRBY_LLVM_MINGW_ROOT "${kirby_mingw_bin}" DIRECTORY)
+endif()
+set(KIRBY_LLVM_MINGW_ROOT "${KIRBY_LLVM_MINGW_ROOT}" CACHE PATH "LLVM-MinGW installation")
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES KIRBY_LLVM_MINGW_ROOT)
 set(kirby_tool_suffix "")
 if(CMAKE_HOST_WIN32)
     set(kirby_tool_suffix ".exe")
