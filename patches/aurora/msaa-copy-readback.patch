@@ -1,0 +1,153 @@
+--- a/aurora/lib/webgpu/gpu.cpp
++++ b/aurora/lib/webgpu/gpu.cpp
+@@ -271,8 +271,9 @@
+   }
+   const wgpu::TextureDescriptor textureDescriptor{
+       .label = "Render texture",
+-      .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc |
+-               wgpu::TextureUsage::CopyDst,
++      .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding |
++               (sampleCount == 1 ? wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst
++                                 : wgpu::TextureUsage::None),
+       .dimension = wgpu::TextureDimension::e2D,
+       .size = size,
+       .format = format,
+--- a/aurora/lib/gfx/readback/gpu.cpp
++++ b/aurora/lib/gfx/readback/gpu.cpp
+@@ -85,10 +85,6 @@
+     Log.info("Asynchronous readback is unavailable without core WebGPU features");
+     return;
+   }
+-  if (webgpu::g_graphicsConfig.msaaSamples > 1) {
+-    Log.info("Asynchronous readback is unavailable with MSAA");
+-    return;
+-  }
+   initialize_efb_gather();
+   initialize_copy_pack();
+   set_supported(true);
+--- a/aurora/lib/gfx/readback/efb_gather.cpp
++++ b/aurora/lib/gfx/readback/efb_gather.cpp
+@@ -100,12 +100,18 @@
+   source += efb_wgsl::z24();
+   source += efb_wgsl::Color;
+   source += ShaderBody;
++  if (webgpu::g_graphicsConfig.msaaSamples > 1) {
++    // Color comes from the resolved attachment; depth retains sample zero,
++    // matching Aurora's existing multisampled depth snapshot convention.
++    const std::string type = "texture_depth_2d";
++    source.replace(source.find(type), type.size(), "texture_depth_multisampled_2d");
++  }
+   return source;
+ }
+ } // namespace
+ 
+ void initialize_efb_gather() {
+-  constexpr std::array entries{
++  const std::array entries{
+       wgpu::BindGroupLayoutEntry{
+           .binding = 0,
+           .visibility = wgpu::ShaderStage::Compute,
+@@ -113,6 +119,7 @@
+               wgpu::TextureBindingLayout{
+                   .sampleType = wgpu::TextureSampleType::Depth,
+                   .viewDimension = wgpu::TextureViewDimension::e2D,
++                  .multisampled = webgpu::g_graphicsConfig.msaaSamples > 1,
+               },
+       },
+       wgpu::BindGroupLayoutEntry{
+--- a/aurora/lib/gfx/tex_copy_conv.hpp
++++ b/aurora/lib/gfx/tex_copy_conv.hpp
+@@ -30,6 +30,7 @@
+   Range uniformRange;        // Uniforms
+   TextureHandle dst;         // Destination texture
+   SampleFilter sampleFilter = SampleFilter::Nearest;
++  uint32_t sourceSamples = 1;
+ };
+ 
+ bool needs_conversion(GXTexFmt fmt);
+--- a/aurora/lib/gfx/encoding.cpp
++++ b/aurora/lib/gfx/encoding.cpp
+@@ -266,9 +266,6 @@
+     const bool needsScaling = dstSize.width != static_cast<uint32_t>(passInfo.resolveRect.width) ||
+                               dstSize.height != static_cast<uint32_t>(passInfo.resolveRect.height);
+     const bool isDepth = gx::is_depth_format(passInfo.resolveFormat);
+-    if (isDepth && passInfo.msaaSamples > 1) {
+-      Log.fatal("Depth tex copies from multisampled EFB targets are not supported");
+-    }
+     const tex_copy_conv::ConvRequest convReq{
+         .fmt = passInfo.resolveFormat,
+         .srcFmt = passInfo.resolveSourceFormat,
+@@ -278,6 +275,7 @@
+         // Filter taps must land on exact source rows.
+         .sampleFilter = needsScaling && !passInfo.resolveCopyFilterActive ? tex_copy_conv::SampleFilter::Linear
+                                                                            : tex_copy_conv::SampleFilter::Nearest,
++        .sourceSamples = isDepth ? passInfo.msaaSamples : 1,
+     };
+     const bool needsOpaqueAlpha = !isDepth && !gx::efb_has_alpha(convReq.srcFmt);
+     const bool sameFormat =
+--- a/aurora/lib/gfx/tex_copy_conv.cpp
++++ b/aurora/lib/gfx/tex_copy_conv.cpp
+@@ -431,6 +431,8 @@
+ 
+ static wgpu::BindGroupLayout g_bindGroupLayout;
+ static wgpu::BindGroupLayout g_depthBindGroupLayout;
++static wgpu::BindGroupLayout g_depthBindGroupLayoutMS;
++static absl::flat_hash_map<GXTexFmt, wgpu::RenderPipeline> g_depthPipelinesMS;
+ static wgpu::Sampler g_nearestSampler;
+ static wgpu::Sampler g_linearSampler;
+ static absl::flat_hash_map<GXTexFmt, wgpu::RenderPipeline> g_pipelines;
+@@ -616,6 +618,11 @@
+       .entries = depthBindGroupLayoutEntries.data(),
+   };
+   g_depthBindGroupLayout = g_device.CreateBindGroupLayout(&depthBindGroupLayoutDescriptor);
++  auto depthEntriesMS = depthBindGroupLayoutEntries;
++  depthEntriesMS[0].texture.multisampled = true;
++  auto depthDescriptorMS = depthBindGroupLayoutDescriptor;
++  depthDescriptorMS.entries = depthEntriesMS.data();
++  g_depthBindGroupLayoutMS = g_device.CreateBindGroupLayout(&depthDescriptorMS);
+ 
+   g_blitPipeline = create_pipeline(
+       {GX_TF_RGBA8, FragPassthrough, webgpu::g_graphicsConfig.surfaceConfiguration.format, "TexCopyConv Blit"},
+@@ -630,6 +637,12 @@
+   if (webgpu::g_hasCoreFeatures) {
+     for (const auto& conv : DepthConvPipelines) {
+       g_pipelines[conv.fmt] = create_pipeline(conv, DepthShaderPreamble, g_depthBindGroupLayout);
++      // Sample zero is also used by Aurora's MS depth snapshots. Do not average
++      // encoded depth bytes across samples before the guest format conversion.
++      auto depthShaderMS = DepthShaderPreamble;
++      const std::string depthType = "texture_depth_2d";
++      depthShaderMS.replace(depthShaderMS.find(depthType), depthType.size(), "texture_depth_multisampled_2d");
++      g_depthPipelinesMS[conv.fmt] = create_pipeline(conv, depthShaderMS, g_depthBindGroupLayoutMS);
+       if (conv.outputFormat != to_wgpu(conv.fmt)) {
+         Log.fatal("Output format mismatch for {}", conv.fmt);
+       }
+@@ -662,6 +675,8 @@
+   g_blitPipeline = {};
+   g_bindGroupLayout = {};
+   g_depthBindGroupLayout = {};
++  g_depthBindGroupLayoutMS = {};
++  g_depthPipelinesMS.clear();
+   g_nearestSampler = {};
+   g_linearSampler = {};
+   g_depthSnapshotBindGroupLayout = {};
+@@ -693,7 +708,7 @@
+         },
+     };
+     const wgpu::BindGroupDescriptor bindGroupDescriptor{
+-        .layout = g_depthBindGroupLayout,
++        .layout = req.sourceSamples > 1 ? g_depthBindGroupLayoutMS : g_depthBindGroupLayout,
+         .entryCount = bindGroupEntries.size(),
+         .entries = bindGroupEntries.data(),
+     };
+@@ -746,8 +761,9 @@
+ }
+ 
+ void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
+-  const auto it = g_pipelines.find(req.fmt);
+-  if (it == g_pipelines.end()) {
++  const auto& pipelines = gx::is_depth_format(req.fmt) && req.sourceSamples > 1 ? g_depthPipelinesMS : g_pipelines;
++  const auto it = pipelines.find(req.fmt);
++  if (it == pipelines.end()) {
+     Log.fatal("No copy conversion pipeline for format {}", static_cast<int>(req.fmt));
+   }
+   execute(cmd, req, it->second);

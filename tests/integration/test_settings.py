@@ -74,6 +74,9 @@ dvd_root = "DATA with spaces"
 volume = 0.375
 [video]
 vsync = false
+resolution_scale = 8
+msaa_samples = 4
+fxaa = true
 ''')
             before = path.read_bytes()
             for result in self.invoke_both(path):
@@ -82,6 +85,9 @@ vsync = false
                 self.assertEqual(settings["paths"]["dvd_root"], str(Path(directory) / "DATA with spaces"))
                 self.assertEqual(settings["audio"]["volume"], 0.375)
                 self.assertFalse(settings["video"]["vsync"])
+                self.assertEqual(settings["video"]["resolution_scale"], 8)
+                self.assertEqual(settings["video"]["msaa_samples"], 4)
+                self.assertTrue(settings["video"]["fxaa"])
                 self.assertTrue(settings["kirby"]["gpu_resident_copies"])
                 self.assertNotIn("translated entry resolved", result.stdout)
             self.assertEqual(path.read_bytes(), before)

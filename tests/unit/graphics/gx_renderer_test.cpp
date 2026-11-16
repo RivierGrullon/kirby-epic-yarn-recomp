@@ -3,6 +3,7 @@
 #include "kirby/graphics/gx_fifo.h"
 #include "kirby/graphics/xfb.h"
 #include "gfx/readback/copy_layout.hpp"
+#include "gfx/render_worker.hpp"
 #include "kirby/app/events.h"
 #include "gx/gx.hpp"
 #include "gx/fifo.hpp"
@@ -11,6 +12,7 @@
 #include "webgpu/gpu.hpp"
 #include <dolphin/gx.h>
 #include <bit>
+#include <atomic>
 #include <iostream>
 #include <stdexcept>
 #include <cstring>
@@ -34,7 +36,99 @@ void Bp(Kirby::GxRenderer& renderer, uint32_t value) {
     const uint8_t packet[]{0x61,uint8_t(value >> 24),uint8_t(value >> 16),uint8_t(value >> 8),uint8_t(value)};
     renderer.Feed(packet);
 }
-void GpuXfb(bool startHidden = false, bool waitForTrace = false) {
+void GpuFxaa() {
+    // Exercise the actual final-presentation shaders even with a hidden window.
+    Kirby::GxRenderer renderer([](uint32_t,uint32_t) { return std::span<const uint8_t>{}; });
+    renderer.OpenWindow(true, true, 1, 1, true);
+    Check(aurora::webgpu::fxaa_enabled(), "renderer applies the requested FXAA option");
+    constexpr unsigned width=64, height=64, bytes=width*height*4;
+    std::vector<uint8_t> source(bytes);
+    for (unsigned y=0;y<height;++y) for (unsigned x=0;x<width;++x) {
+        const uint8_t value=x+y<63 ? 255 : 0;
+        const auto offset=(y*width+x)*4;
+        source[offset]=source[offset+1]=source[offset+2]=value; source[offset+3]=255;
+    }
+    const auto capture = [&](bool fxaa, bool dimmed) {
+        struct Result {
+            std::vector<uint8_t> pixels=std::vector<uint8_t>(bytes);
+            std::atomic_bool complete=false;
+            bool success=false;
+        };
+        auto result=std::make_shared<Result>();
+        aurora::gfx::render_worker::enqueue_work([&] {
+            using namespace aurora::webgpu;
+            set_fxaa(fxaa);
+            auto input=create_render_texture(width,height,false);
+            auto output=create_render_texture(width,height,false);
+            const wgpu::TexelCopyTextureInfo upload{.texture=input.texture};
+            const wgpu::TexelCopyBufferLayout layout{.bytesPerRow=width*4,.rowsPerImage=height};
+            const wgpu::Extent3D extent{width,height,1};
+            g_queue.WriteTexture(&upload,source.data(),source.size(),&layout,&extent);
+            const wgpu::BufferDescriptor bufferDescriptor{
+                .label="FXAA verification readback",
+                .usage=wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+                .size=bytes,
+            };
+            auto buffer=g_device.CreateBuffer(&bufferDescriptor);
+            auto encoder=g_device.CreateCommandEncoder();
+            const wgpu::RenderPassColorAttachment attachment{
+                .view=output.view,.loadOp=wgpu::LoadOp::Clear,.storeOp=wgpu::StoreOp::Store,
+            };
+            const wgpu::RenderPassDescriptor passDescriptor{.colorAttachmentCount=1,.colorAttachments=&attachment};
+            auto pass=encoder.BeginRenderPass(&passDescriptor);
+            pass.SetPipeline(presentation_copy_pipeline(dimmed));
+            if (dimmed) { const wgpu::Color blend{.5,.5,.5,1}; pass.SetBlendConstant(&blend); }
+            pass.SetBindGroup(0,create_copy_bind_group(input));
+            pass.SetViewport(0,0,width,height,0,1); pass.Draw(3); pass.End();
+            const wgpu::TexelCopyTextureInfo from{.texture=output.texture};
+            const wgpu::TexelCopyBufferInfo to{.layout=layout,.buffer=buffer};
+            encoder.CopyTextureToBuffer(&from,&to,&extent);
+            const auto commands=encoder.Finish(); g_queue.Submit(1,&commands);
+            buffer.MapAsync(wgpu::MapMode::Read,0,bytes,wgpu::CallbackMode::AllowSpontaneous,
+                [result,buffer](wgpu::MapAsyncStatus status,wgpu::StringView) {
+                    if (status==wgpu::MapAsyncStatus::Success) {
+                        const auto* data=static_cast<const uint8_t*>(buffer.GetConstMappedRange(0,bytes));
+                        if (data) { std::copy_n(data,bytes,result->pixels.begin()); result->success=true; }
+                        buffer.Unmap();
+                    }
+                    result->complete.store(true,std::memory_order_release);
+                });
+        });
+        aurora_wait_for_frame_worker();
+        const auto deadline=SDL_GetTicks()+5000;
+        while (!result->complete.load(std::memory_order_acquire) && SDL_GetTicks()<deadline) {
+            aurora::gfx::render_worker::enqueue_work([] { aurora::webgpu::g_instance.ProcessEvents(); });
+            aurora_wait_for_frame_worker(); SDL_Delay(1);
+        }
+        Check(result->complete.load(std::memory_order_acquire), "FXAA GPU readback finishes before the deadline");
+        Check(result->success,"FXAA GPU readback completes successfully");
+        return std::move(result->pixels);
+    };
+    const auto baseline=capture(false,false);
+    Check(baseline==source,"unfiltered presentation preserves the input image");
+    const auto filtered=capture(true,false);
+    unsigned blended=0;
+    for (unsigned y=8;y<56;++y) for (unsigned x=8;x<56;++x) {
+        const auto at=(y*width+x)*4;
+        if (filtered[at]>4 && filtered[at]<251) ++blended;
+        if (x+y<50 || x+y>76)
+            Check(filtered[at]==source[at],"FXAA preserves flat areas away from the diagonal");
+        Check(filtered[at]==filtered[at+1] && filtered[at]==filtered[at+2] && filtered[at+3]==255,
+              "FXAA keeps neutral colors neutral and presentation alpha opaque");
+    }
+    Check(blended>25,"FXAA produces fractional coverage along a rasterized diagonal");
+    Check(capture(false,false)==baseline,"turning FXAA off restores the original presentation");
+    const auto dimmed=capture(true,true);
+    for (unsigned i=0;i<bytes;i+=4)
+        Check(std::abs(int(dimmed[i])*2-int(filtered[i]))<=1 && dimmed[i+3]==255,
+              "FXAA preserves the existing presentation brightness operation");
+    std::fill(source.begin(),source.end(),128);
+    for (unsigned i=3;i<bytes;i+=4) source[i]=255;
+    Check(capture(true,false)==source,"FXAA leaves a uniform mid-gray image unchanged, including borders");
+    std::cout << checks << " FXAA presentation checks passed; diagonal blend pixels=" << blended << '\n';
+}
+
+void GpuXfb(bool startHidden = false, int resolutionScale = 1, int msaaSamples = 1, bool waitForTrace = false) {
     if (waitForTrace) {
 #ifndef TRACY_ENABLE
         throw std::runtime_error("GPU trace test requires TRACY_ENABLE=ON");
@@ -55,7 +149,7 @@ void GpuXfb(bool startHidden = false, bool waitForTrace = false) {
         Check(resolve(address, bytes.size()).size() == bytes.size(), "GPU write respects guest RAM bounds");
         std::memcpy(memory.data() + address, bytes.data(), bytes.size()); ++writes;
     });
-    renderer.OpenWindow(startHidden);
+    renderer.OpenWindow(startHidden, true, resolutionScale, msaaSamples);
     if (waitForTrace) {
 #ifdef TRACY_ENABLE
         std::cout << "Waiting for the local Tracy collector\n" << std::flush;
@@ -64,6 +158,11 @@ void GpuXfb(bool startHidden = false, bool waitForTrace = false) {
         Check(TracyCIsConnected, "Tracy collector connects before GPU readbacks");
 #endif
     }
+    const auto framebuffer = aurora::window::get_window_size();
+    Check(framebuffer.fb_width == 640u * resolutionScale && framebuffer.fb_height == 528u * resolutionScale,
+          "internal EFB resolution uses the selected multiplier independently of window size");
+    Check(aurora::webgpu::g_graphicsConfig.msaaSamples == unsigned(msaaSamples),
+          "render attachments use the selected MSAA sample count");
     int windowWidth = 0, windowHeight = 0;
     Check(SDL_GetWindowSize(aurora_get_window(), &windowWidth, &windowHeight) &&
           windowWidth == 960 && windowHeight == 540,
@@ -97,6 +196,9 @@ void GpuXfb(bool startHidden = false, bool waitForTrace = false) {
     Bp(renderer, 0x4F00FF00); Bp(renderer, 0x5000FF00); // clear green after second copy
     Bp(renderer, 0x4B000100); Bp(renderer, 0x52004803);
     Bp(renderer, 0x4B000180); Bp(renderer, 0x52004803);
+    Check(aurora::gx::g_gxState.displayCopyTexture->size.width == 32u * resolutionScale &&
+          aurora::gx::g_gxState.displayCopyTexture->size.height == 4u * resolutionScale,
+          "display copies retain internal resolution instead of downscaling before presentation");
     const std::array<uint8_t,4> black{16,128,16,128}, red{82,90,82,239}, green{144,54,144,34};
     for (unsigned i = 0; i < 256; i += 4) {
         Check(std::equal(black.begin(), black.end(), memory.begin() + 0x1000 + i), "first GPU copy reads initial EFB before the red clear");
@@ -664,6 +766,58 @@ void GpuXfb(bool startHidden = false, bool waitForTrace = false) {
     Check(std::equal(red.begin(),red.end(),memory.begin()+0x16000),
           "cache invalidation crossing a PPC alias boundary materializes pending display copies");
     renderer.SetGpuResidentDisplayCopies(false);
+    // A slanted untextured triangle must gain fractional edge coverage from
+    // MSAA. Uniform-color rectangles alone cannot establish antialiasing.
+    Bp(renderer,0x43000000); Bp(renderer,0x49000000);
+    Bp(renderer,0x4A000000 | (31<<10) | 31); Bp(renderer,0x4D000002);
+    Bp(renderer,0x4F00FF00); Bp(renderer,0x50000000); Bp(renderer,0x51FFFFFF);
+    Bp(renderer,0x4B002800); Bp(renderer,0x52004803); // black, far-depth clear
+    projection[1][1] = -2.f/32;
+    GXSetProjection(projection,GX_ORTHOGRAPHIC);
+    GXSetViewport(0,0,32,32,0,1); GXSetScissor(0,0,32,32);
+    GXClearVtxDesc(); GXSetVtxDesc(GX_VA_POS,GX_DIRECT);
+    GXSetVtxAttrFmt(GX_VTXFMT0,GX_VA_POS,GX_POS_XYZ,GX_F32,0);
+    GXSetNumChans(1); GXSetNumTexGens(0); GXSetNumTevStages(1);
+    GXSetChanCtrl(GX_COLOR0A0,GX_FALSE,GX_SRC_REG,GX_SRC_REG,0,GX_DF_NONE,GX_AF_NONE);
+    GXSetChanMatColor(GX_COLOR0A0,{255,255,255,255});
+    GXSetTevOrder(GX_TEVSTAGE0,GX_TEXCOORD_NULL,GX_TEXMAP_NULL,GX_COLOR0A0);
+    GXSetTevOp(GX_TEVSTAGE0,GX_PASSCLR);
+    GXSetZMode(GX_FALSE,GX_ALWAYS,GX_FALSE); GXPokeAlphaRead(GX_READ_FF);
+    GXFlush(); aurora::gx::fifo::drain();
+    std::vector<uint8_t> triangle{0x90,0,3};
+    for (float f : {.25f,.25f,0.f, 31.25f,.25f,0.f, .25f,31.25f,0.f}) {
+        const auto word=std::bit_cast<uint32_t>(f);
+        for (int shift : {24,16,8,0}) triangle.push_back(word>>shift);
+    }
+    renderer.Feed(triangle);
+    const auto peekStream = AuroraReadbackCreateStream();
+    const AuroraReadbackPeekRequest peeks[]{
+        {0,AURORA_READBACK_PEEK_ARGB,4,4}, {1,AURORA_READBACK_PEEK_Z,4,4}};
+    Check(AuroraReadbackCapturePeeks(peekStream,peeks,2),"EFB peeks are accepted with MSAA and scaling");
+    GXFlush(); aurora::gx::fifo::drain();
+    Bp(renderer,0x52004003); // submit both the peek and display-copy readback
+    uint32_t color=0, depth=0;
+    AuroraReadbackDest peekResults[]{{0,&color,4,GX_FALSE},{1,&depth,4,GX_FALSE}};
+    const auto peekDeadline=SDL_GetTicks()+5000;
+    while (!AuroraReadbackGet(peekStream,peekResults,2) && SDL_GetTicks()<peekDeadline) {
+        aurora::gfx::render_worker::enqueue_work([] { aurora::webgpu::g_instance.ProcessEvents(); });
+        aurora_wait_for_frame_worker(); SDL_Delay(1);
+    }
+    Check(peekResults[0].found && peekResults[1].found && color==0xFFFFFFFF && depth==0xFFFFFF,
+          "scaled/MSAA EFB gather resolves white color and reads far depth from sample zero");
+    AuroraReadbackDestroyStream(peekStream);
+    unsigned partial=0, whitePixels=0, blackPixels=0;
+    for (unsigned i=0;i<32*32;++i) {
+        const auto y=memory[0x50000+i*2];
+        partial += y>20 && y<230;
+        whitePixels += y>=230; blackPixels += y<=20;
+    }
+    Check(whitePixels>100 && blackPixels>100,"slanted triangle has both filled and uncovered pixels");
+    if (resolutionScale==1)
+        Check(msaaSamples==4 ? partial>20 : partial==0,
+              "4x MSAA smooths polygon edges while the native non-MSAA baseline stays binary");
+    std::cout << "[test] triangle edge pixels=" << partial << "; scale=" << resolutionScale
+              << "; samples=" << msaaSamples << '\n';
     const auto writesBeforeInvalid = writes;
     Bp(renderer, 0x4B800000);
     Throws([&] { Bp(renderer, 0x52004803); }, "unmapped XFB stops before GPU submission or memory write");
@@ -680,9 +834,13 @@ void GpuXfb(bool startHidden = false, bool waitForTrace = false) {
 }
 int main(int argc, char** argv) {
     try {
+        if (argc == 2 && std::string_view(argv[1]) == "--gpu-fxaa") { GpuFxaa(); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb") { GpuXfb(); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb-hidden") { GpuXfb(true); return 0; }
-        if (argc == 2 && std::string_view(argv[1]) == "--gpu-trace-hidden") { GpuXfb(true, true); return 0; }
+        if (argc == 2 && std::string_view(argv[1]) == "--gpu-trace-hidden") { GpuXfb(true, 1, 1, true); return 0; }
+        if (argc == 4 && std::string_view(argv[1]) == "--gpu-quality") {
+            GpuXfb(true, std::stoi(argv[2]), std::stoi(argv[3])); return 0;
+        }
         if (argc != 1) throw std::runtime_error("Unknown renderer test option");
         using namespace aurora::gx;
         std::vector<uint8_t> memory(0x1800000);

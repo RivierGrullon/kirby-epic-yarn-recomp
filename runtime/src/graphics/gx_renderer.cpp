@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "kirby/graphics/gx_renderer.h"
 #include "kirby/graphics/gx_fifo.h"
+#include "kirby/graphics/quality.h"
+#include "webgpu/gpu.hpp"
 #include "kirby/app/events.h"
 #include <aurora/aurora.h>
 #include <dolphin/vi.h>
@@ -38,8 +40,10 @@ GxRenderer::GxRenderer(GxStream::Resolve resolve, WriteMemory write) : resolve_(
     };
 }
 GxRenderer::~GxRenderer() { if (initialized_) { CloseXfb(); aurora_shutdown(); } }
-void GxRenderer::OpenWindow(bool startHidden, bool vsync) {
+void GxRenderer::OpenWindow(bool startHidden, bool vsync, int resolutionScale, int msaaSamples, bool fxaa) {
     if (initialized_) throw std::runtime_error("Aurora window is already initialized");
+    if (!ValidResolutionScale(resolutionScale) || (msaaSamples != 1 && msaaSamples != 4))
+        throw std::runtime_error("Unsupported internal resolution or MSAA sample count");
     std::filesystem::create_directories("local/user/aurora/cache");
     userPath_ = std::filesystem::absolute("local/user/aurora").string();
     cachePath_ = std::filesystem::absolute("local/user/aurora/cache").string();
@@ -51,21 +55,26 @@ void GxRenderer::OpenWindow(bool startHidden, bool vsync) {
     config.desiredBackend = BACKEND_VULKAN;
     config.logCallback = Log; config.logLevel = LOG_INFO;
     config.vsync = vsync;
+    config.msaa = msaaSamples;
     config.startHidden = startHidden;
     const auto info = aurora_initialize(0, nullptr, &config);
     if (info.initializationStatus != AURORA_INITIALIZATION_SUCCESS)
         throw std::runtime_error(info.initializationError ? info.initializationError : "Aurora initialization failed");
     initialized_ = true;
+    aurora::webgpu::set_fxaa(fxaa);
     // DefaultSysconf advertises widescreen (IPL.AR = 1). The guest XFB has
     // non-square pixels, so its dimensions are not the intended display ratio.
     // Fit the final image to 16:9 without changing GX's native framebuffer.
     VILockAspectRatio(16, 9);
+    VISetFrameBufferScale(static_cast<float>(resolutionScale));
     // Bring-up must not silently skip EFB clear/draw operations while their
     // pipelines compile. GX readback observes the resulting pixels immediately.
     aurora::gx::g_gxState.drawsBlocking = true;
     PollHostEvents();
     if (!aurora_begin_frame()) throw std::runtime_error("Aurora could not begin the initial graphics frame");
     std::cout << "[kirby] Aurora window initialized; backend=" << info.backend
+              << "; internal resolution=" << resolutionScale << "x; MSAA=" << msaaSamples
+              << "; FXAA=" << (fxaa ? "on" : "off")
               << "; no game frame has been submitted\n";
 }
 void GxRenderer::ArrayBase(uint8_t reg, uint32_t value) {

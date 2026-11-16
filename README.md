@@ -78,6 +78,7 @@ The launcher can currently:
 - Build and update the native game, with progress and cancellation.
 - Start the native game in a visible window.
 - Set master volume and VSync for the next launch.
+- Select 1x–6x and 8x internal rendering resolution and Off/FXAA/4x MSAA/4x MSAA + FXAA under **Display**.
 - Rebind gamepad buttons, stick/trigger directions and keyboard keys, with
   conflict detection, swapping and reset.
 - Enable **Experimental performance mode** to reduce GPU copy waits and repeated
@@ -95,9 +96,8 @@ or closing the launcher. Changes apply on the next game launch. Existing launche
 preferences migrate automatically while retaining the original file. See the
 [settings guide](docs/settings.md) for the format and recovery instructions.
 The first installation uses the setup command; later imports and builds can use
-the launcher. Resolution
-scaling, per-device input profiles and a validated 30/60 FPS
-selector are not available in the launcher yet.
+the launcher. Per-device input profiles and a validated 30/60 FPS selector are
+not available in the launcher yet.
 
 ## Controls
 

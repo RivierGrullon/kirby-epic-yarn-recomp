@@ -27,6 +27,8 @@ Action DrawPlay(State& state) {
     ImGui::Text("Master volume: %.0f%%", state.config.masterVolume);
     ImGui::Text("VSync: %s", state.config.vsync ? "On" : "Off");
     ImGui::Text("Experimental performance mode: %s", state.config.gpuResidentCopies ? "On" : "Off");
+    ImGui::Text("Internal resolution: %dx | Anti-aliasing: %s", state.config.resolutionScale,
+                Kirby::AntiAliasingName(state.config.msaaSamples, state.config.fxaa));
     ImGui::Spacing();
     ImGui::TextWrapped("Use Display, Audio and Controls to review the current settings.");
     return action;

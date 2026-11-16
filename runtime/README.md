@@ -173,6 +173,22 @@ configuration adapter; see `../docs/settings.md` for its schema and migration.
 The launcher's hidden `--self-test` renders every page at desktop and compact
 sizes without dispatching file or process actions.
 
+Display quality uses shared `video.resolution_scale` (1–6 or 8) and `msaa_samples`
+(1 or 4), plus `video.fxaa` (false by default). `GxRenderer::OpenWindow` applies Aurora's fixed framebuffer scale and
+multisampled attachments; presentation retains 16:9 independently of EFB size.
+Display copies and eligible packed RGBA8 effect textures retain their scaled GPU
+images. RAM readback still packs the guest's native dimensions and strides.
+`patches/aurora/msaa-copy-readback.patch` resolves color before copy/readback,
+uses depth sample zero consistently with Aurora's existing depth snapshots, and
+adds multisampled depth-copy shader/layout variants. It also removes invalid
+copy usage flags from multisampled render attachments. The GPU fixture accepts
+`--gpu-quality SCALE SAMPLES` to check actual framebuffer/copy sizes, edge
+coverage, EFB color/depth peeks and existing copy-coherence behavior. The
+`fxaa-presentation.patch` adds directional FXAA to the final presentation copy,
+after output resampling and before ImGui overlays. It preserves brightness and
+does not change guest-visible copy bytes. `--gpu-fxaa` checks the actual shader
+against diagonal and uniform images, including disable and dimming behavior.
+
 `../launcher/input_focus.cpp` clears queued and held ImGui input when the launcher
 does not have keyboard focus or is minimized. This is required because the SDL
 backend polls global controller state. Actions are also checked against current
