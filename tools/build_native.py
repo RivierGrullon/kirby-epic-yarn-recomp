@@ -16,6 +16,23 @@ from kirby import ROOT, run_logged
 from build_layout import BuildLayout
 
 
+def find_windows_toolchain(root=None):
+    if root is None:
+        compiler = shutil.which('x86_64-w64-mingw32-clang')
+        if compiler is None:
+            raise ValueError('LLVM-MinGW was not found on PATH; add its bin directory '
+                             'or use --llvm-mingw-root')
+        # Preserve driver symlinks: their directory identifies the installation.
+        root = Path(compiler).absolute().parent.parent
+    root = Path(root).absolute()
+    suffix = '.exe' if os.name == 'nt' else ''
+    for name in ('clang', 'clang++', 'windres'):
+        tool = root/'bin'/f'x86_64-w64-mingw32-{name}{suffix}'
+        if not tool.is_file():
+            raise ValueError(f'Incomplete LLVM-MinGW installation: missing {tool}')
+    return root
+
+
 def apply_snapshot_patch(patch, workspace):
     # Git for Windows may have checked out clean dependency files as CRLF.
     # Only normalize the owned build copy; upstream worktrees stay untouched.
@@ -41,6 +58,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--configure-only", action="store_true")
     parser.add_argument("--target", choices=("linux", "windows"), default="windows" if os.name == "nt" else "linux")
+    parser.add_argument("--llvm-mingw-root", type=Path, help="LLVM-MinGW installation (default: discover on PATH)")
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--translated-jobs", type=int, default=2)
     parser.add_argument("--stage-root",type=Path,help="Use isolated outputs below local/setup/builds/JOB")
@@ -50,6 +68,7 @@ def main():
     try:
         if args.profile_dawn_calls and (args.stage_root is None or args.target != 'linux'):
             raise ValueError("--profile-dawn-calls requires a Linux build with --stage-root")
+        mingw_root = find_windows_toolchain(args.llvm_mingw_root) if args.target == 'windows' else None
         stage = args.stage_root
         if args.target == 'windows' and os.name != 'nt' and stage is None:
             stage = ROOT/'local/setup/builds/windows-developer'
@@ -124,10 +143,16 @@ def main():
                                 f"-DMKW_TRANSLATED_COMPILE_JOBS={max(1, args.translated_jobs)}", *platform_options]
         if layout.stage is not None:
             configure.append(f"-DCMAKE_RUNTIME_OUTPUT_DIRECTORY={build}")
-        if args.target == 'windows' and os.name != 'nt':
+        if args.target == 'windows':
             configure = [argument for argument in configure if not str(argument).startswith(
                 ('-DCMAKE_C_COMPILER=', '-DCMAKE_CXX_COMPILER='))]
-            configure.append(f"-DCMAKE_TOOLCHAIN_FILE={ROOT/'cmake/windows-toolchain.cmake'}")
+            configure.append(f"-DKIRBY_LLVM_MINGW_ROOT={mingw_root.as_posix()}")
+            if os.name != 'nt':
+                configure.append(f"-DCMAKE_TOOLCHAIN_FILE={ROOT/'cmake/windows-toolchain.cmake'}")
+            else:
+                for language, tool in (('C', 'clang'), ('CXX', 'clang++'), ('RC', 'windres')):
+                    configure.append(f"-DCMAKE_{language}_COMPILER="
+                                     f"{mingw_root.as_posix()}/bin/x86_64-w64-mingw32-{tool}.exe")
         run_logged("configure",configure,layout=layout)
         if not args.configure_only:
             run_logged("compile", ["cmake", "--build", build, "--target", "WiiCompiled", "kirby-launcher", "--parallel", str(max(1, args.jobs))],layout=layout)
@@ -135,11 +160,7 @@ def main():
                 # LLVM's C++ runtime and Dawn may be shared libraries. Keep DLLs
                 # next to the products so native Windows can resolve them.
                 libraries = list(build.rglob('*.dll'))
-                toolchain = Path('/opt/llvm-mingw/x86_64-w64-mingw32/bin')
-                if os.name == 'nt':
-                    compiler = shutil.which('clang++')
-                    if compiler:
-                        toolchain = Path(compiler).resolve().parent.parent/'x86_64-w64-mingw32/bin'
+                toolchain = mingw_root/'x86_64-w64-mingw32/bin'
                 libraries += list(toolchain.glob('*.dll'))
                 for library in libraries:
                     if library.parent != build:

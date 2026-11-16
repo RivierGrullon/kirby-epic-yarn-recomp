@@ -2,6 +2,7 @@
 #include "setup/installation.h"
 #include "kirby/platform/command_line.h"
 #include "launcher_test_paths.h"
+#include "../windows_fixtures.h"
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
@@ -35,9 +36,12 @@ int main(int argc,char** argv) {
     fs::remove(pointer);const auto keep=fs::path(directory)/"keep.json";std::ofstream(keep)<<"{}";
     std::error_code symlinkError;fs::create_symlink(keep,pointer,symlinkError);
 #ifdef _WIN32
-    // Windows requires Developer Mode or the symlink privilege for this fixture.
-    if (symlinkError==std::errc::permission_denied) {
-        std::cout<<"Installed reader: invalid selection rejected; symlink fixture needs Windows Developer Mode\n";return 0;
+    // Exercise reparse-point rejection even without the symlink privilege.
+    // libc++ may preserve the Win32 error instead of mapping permission_denied.
+    if (symlinkError==std::errc::permission_denied ||
+        symlinkError==std::error_code(ERROR_PRIVILEGE_NOT_HELD,std::system_category())) {
+        WindowsTest::FileLink(keep,pointer);
+        symlinkError.clear();
     }
 #endif
     if (symlinkError) throw std::system_error(symlinkError);
@@ -49,7 +53,9 @@ int main(int argc,char** argv) {
         std::cout<<"SKIP: linked-selection subcase: Wine reported symlink creation success without creating a link. "
                    "Absent and invalid selection checks passed.\n";return 0;
     }
-    Check(fs::is_symlink(linkStatus),"Windows did not create the linked-selection fixture");
+    const auto attributes=GetFileAttributesW(pointer.c_str());
+    Check(attributes!=INVALID_FILE_ATTRIBUTES && (attributes&FILE_ATTRIBUTE_REPARSE_POINT),
+          "Windows did not create the linked-selection fixture");
 #endif
     rejected=false;
     try { ReadInstallation(directory); } catch (const std::exception&) { rejected=true; }
