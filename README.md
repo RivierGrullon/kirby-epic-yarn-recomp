@@ -14,10 +14,11 @@ as a behavior reference; it does not run the native game.
 not stable frame pacing or full-game compatibility.*
 
 > [!IMPORTANT]
-> **Development source preview, not a finished release.** The main menu, Patch
+> **First experimental release.** The main menu, Patch
 > Castle and Fountain Gardens completion, plus save reload, have been
 > observed. The full game, physical controllers and sustained performance still
-> need validation. There is no ready-to-play binary package.
+> need validation. The Linux AppImage includes setup tools and builds the game
+> from your own supported copy on the first installation.
 >
 > You need your own **USA disc, RK5E01 revision 0**. Game files, generated game
 > code, saves and shader caches are not included. Other revisions are rejected.
@@ -32,9 +33,11 @@ not stable frame pacing or full-game compatibility.*
 - Linux x86-64 or Windows x86-64 with a desktop session and working graphics drivers.
   Windows support is under development; see the build guide for validation limits.
 - Your own complete RK5E01 Rev 0 dump, including the extracted `files/` tree.
-- Linux: Git, Python 3.11+ and **Docker or Podman** for the build environment.
+- Linux AppImage: glibc 2.39 or newer, Vulkan graphics drivers, internet access
+  for first-installation downloads, and space for extraction and compilation.
+- Linux source builds: Git, Python 3.11+ and **Docker or Podman** for the build environment.
 - Windows: the [native LLVM-MinGW toolchain](docs/building.md#windows-x64) used by celeron633, including Python 3.12+, .NET 8, CMake, Ninja and Windows SDK headers.
-- Dolphin's `dolphin-tool` / `DolphinTool.exe` for image extraction; 7-Zip only for `.7z` inputs.
+- Source builds: Dolphin's `dolphin-tool` / `DolphinTool.exe` for image extraction; 7-Zip only for `.7z` inputs.
   Neither is required for an already extracted DATA folder.
 - Several GB of storage and enough memory to compile the generated C++.
 
@@ -48,7 +51,35 @@ celeron633 exercised the Windows port on a Ryzen 5 9600X and RTX 3060. Startup a
 creation were observed, and the local tester reported that it works; level
 completion, save reload and sustained Windows performance remain unverified.
 
-## Build and play
+## Linux AppImage
+
+Download `Kirby-linux-x86_64.AppImage` and its `.sha256` file from the
+[first test release](https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/tag/v0.1.0-alpha.1).
+In the download directory:
+
+```bash
+sha256sum -c Kirby-linux-x86_64.AppImage.sha256
+chmod +x Kirby-linux-x86_64.AppImage
+./Kirby-linux-x86_64.AppImage
+```
+
+Under **Install**, choose your own supported disc image or complete DATA folder.
+The launcher extracts, translates, compiles and verifies the native game before
+enabling Play. The AppImage includes its own setup tools; separate Python,
+compilers, Dolphin and Docker/Podman installations are not required.
+
+If mounting AppImages is unavailable, run:
+
+```bash
+./Kirby-linux-x86_64.AppImage --appimage-extract-and-run
+```
+
+Settings, saves and generated builds are stored under
+`~/.local/share/kirby-native/versions/<source-commit>/`, or under `XDG_DATA_HOME`
+when set. The developer checkout's saves are separate. See
+[Application packages](docs/packaging.md) for storage and packaging details.
+
+## Build and play from source
 
 Install the [prerequisites](docs/building.md#prerequisites), then run one setup
 command from the checkout with the actual path to your own disc or DATA folder:
@@ -141,7 +172,7 @@ math and guest report path. See [motion settings](docs/settings.md#motion-contro
 | Input | Virtual mappings tested; physical controllers and Legion Go controls need validation |
 | Graphics | Native GX/VI rendering through Aurora; some formats and display modes remain unsupported |
 | Saves | Creation/reload verified on Linux; Windows creation verified, reload pending |
-| Distribution | Source-tree build and launcher; no portable installer or public binary release |
+| Distribution | Experimental Linux x86-64 AppImage with bundled setup tools; source builds on Linux and Windows |
 
 The window's FPS counter measures Aurora presentations. It does not establish
 correct simulation speed or audio synchronization. See the

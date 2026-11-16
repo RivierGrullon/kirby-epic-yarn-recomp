@@ -1,5 +1,9 @@
 # Building and updating
 
+For the Linux test release, download the AppImage and follow the
+[AppImage instructions](../README.md#linux-appimage). It includes its own setup
+tools. The prerequisites and container commands below apply to source builds.
+
 This is a source build for Linux x86-64 and native Windows x86-64. Translation
 and compilation use your own RK5E01 Rev 0 dump. Windows builds produce `.exe`
 files; the game runs on Windows, outside the build container. Keep the complete extracted DATA

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.1 - 2026-11-16
+
+- Publish the first Linux x86-64 test AppImage with a launcher, private setup
+  tools, application sources, licenses and SHA-256 checksum. Import a supported
+  RK5E01 Rev 0 source and build the native game locally without host development
+  tools or a container engine.
+
 - Add 1x–6x and 8x internal resolution and Off/FXAA/4x MSAA/4x MSAA + FXAA to the launcher and shared
   settings. Preserve scaled display/effect textures while keeping guest RAM copy
   layouts at native resolution. Support multisampled color/depth readback and
