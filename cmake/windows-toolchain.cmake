@@ -1,10 +1,14 @@
-# Native Windows x86-64 products from the Linux build container.
+# Windows x86-64 products from Linux or native Windows hosts.
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR AMD64)
 set(KIRBY_LLVM_MINGW_ROOT "/opt/llvm-mingw" CACHE PATH "LLVM-MinGW installation")
-set(CMAKE_C_COMPILER "${KIRBY_LLVM_MINGW_ROOT}/bin/x86_64-w64-mingw32-clang")
-set(CMAKE_CXX_COMPILER "${KIRBY_LLVM_MINGW_ROOT}/bin/x86_64-w64-mingw32-clang++")
-set(CMAKE_RC_COMPILER "${KIRBY_LLVM_MINGW_ROOT}/bin/x86_64-w64-mingw32-windres")
+set(kirby_tool_suffix "")
+if(CMAKE_HOST_WIN32)
+    set(kirby_tool_suffix ".exe")
+endif()
+set(CMAKE_C_COMPILER "${KIRBY_LLVM_MINGW_ROOT}/bin/x86_64-w64-mingw32-clang${kirby_tool_suffix}")
+set(CMAKE_CXX_COMPILER "${KIRBY_LLVM_MINGW_ROOT}/bin/x86_64-w64-mingw32-clang++${kirby_tool_suffix}")
+set(CMAKE_RC_COMPILER "${KIRBY_LLVM_MINGW_ROOT}/bin/x86_64-w64-mingw32-windres${kirby_tool_suffix}")
 set(CMAKE_FIND_ROOT_PATH "${KIRBY_LLVM_MINGW_ROOT}/x86_64-w64-mingw32")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
