@@ -30,17 +30,21 @@ class BuildLayout:
             self.translator_artifacts=self.stage/'translator'
 
     def _check_stage(self):
+        # Check the supplied path before resolving: resolve() would hide a
+        # symlink or junction. Then use the same spelling as the resolved root,
+        # including expansion of Windows 8.3 aliases used by runner TEMP paths.
+        for path in (self.stage,*self.stage.parents):
+            if path==self.root:
+                break
+            if is_link(path):
+                raise ValueError('Build stage paths must not contain symlinks')
+        self.stage=self.stage.resolve()
         base=self.root/'local/setup/builds'
         if self.stage==base or not self.stage.is_relative_to(base):
             raise ValueError('Stage root must be a directory below local/setup/builds/')
         relative=self.stage.relative_to(base)
         if len(relative.parts)!=1 or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',relative.name):
             raise ValueError('Build job ID must contain 1-80 ASCII letters, digits, underscores or hyphens')
-        for path in (self.stage,*self.stage.parents):
-            if path==self.root:
-                break
-            if is_link(path):
-                raise ValueError('Build stage paths must not contain symlinks')
 
     def ensure(self):
         if self.stage is not None:

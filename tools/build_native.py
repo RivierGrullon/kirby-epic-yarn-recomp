@@ -136,6 +136,10 @@ def main():
                 # next to the products so native Windows can resolve them.
                 libraries = list(build.rglob('*.dll'))
                 toolchain = Path('/opt/llvm-mingw/x86_64-w64-mingw32/bin')
+                if os.name == 'nt':
+                    compiler = shutil.which('clang++')
+                    if compiler:
+                        toolchain = Path(compiler).resolve().parent.parent/'x86_64-w64-mingw32/bin'
                 libraries += list(toolchain.glob('*.dll'))
                 for library in libraries:
                     if library.parent != build:
