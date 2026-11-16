@@ -58,7 +58,9 @@ The packager exports the private toolchain and freezes the setup worker. It
 creates a fresh shallow source snapshot, and includes only the launcher from the
 native build. It excludes the disc, translated game code, native game executable,
 settings, saves and developer caches. Existing component notices stay with their
-components. The generic AppImage loader comes from the official
+components. The toolchain builds PRoot 5.5.0 from pinned upstream source; the
+distribution's older 5.1 cannot restore archive symlink metadata through
+`fchmodat2` on modern kernels. The generic AppImage loader comes from the official
 [AppImage/type2-runtime](https://github.com/AppImage/type2-runtime) project and is
 checked against the SHA-256 pinned in `tools/build_appimage.py`.
 

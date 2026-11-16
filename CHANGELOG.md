@@ -6,6 +6,8 @@
   keep the packaged toolchain link out of source identity checks.
 - Disable persistent translator build servers so packaged installation can
   continue to native compilation after translation finishes.
+- Bundle pinned PRoot 5.5.0 with modern Linux syscall support for CMake dependency
+  extraction.
 
 - Start full installation when a game source is selected, support bundled setup
   workers and private Linux build tools, and add experimental AppDir/AppImage

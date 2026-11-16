@@ -27,4 +27,14 @@ RUN cmake -S /opt/dolphin-source -B /opt/dolphin-build -G Ninja \
 # PyInstaller needs Python's shared library, not only the interpreter and venv.
 RUN apt-get update && apt-get install -y --no-install-recommends python3-dev \
     && rm -rf /var/lib/apt/lists/*
+# Ubuntu's PRoot 5.1 does not translate fchmodat2. CMake/libarchive uses it to
+# restore symlink metadata when unpacking dependencies on modern Linux kernels.
+RUN apt-get update && apt-get install -y --no-install-recommends libtalloc-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch v5.5.0 --recurse-submodules --shallow-submodules \
+      https://github.com/proot-me/proot.git /opt/proot-source \
+    && test "$(git -C /opt/proot-source rev-parse HEAD)" = 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1 \
+    && make -C /opt/proot-source/src --jobs=2 WITHOUT_PYTHON=1 \
+    && cp /opt/proot-source/src/proot /usr/bin/proot \
+    && /usr/bin/proot --version
 WORKDIR /workspace
