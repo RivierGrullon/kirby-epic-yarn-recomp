@@ -1923,3 +1923,145 @@ local for diagnosis. Evidence is under ignored `build-logs/stage78-*` and
 profile, per-run frame/state logs and thermal endpoints. Incomplete automated
 starts were excluded; input replay now waits for the first flushed frame-log row
 before pressing through the boot screens.
+
+## Linux resolution and anti-aliasing validation (2026-11-16)
+
+The implementation at `48dbad45ec1cb9e63b783ff3075800973e0e6db5` compiled on
+Bazzite 44 with the existing Podman toolchain (Clang 18.1.3), pinned dependencies,
+verified RK5E01 Rev 0 DATA and translated-source cache. Both `WiiCompiled` and
+`kirby-launcher` built without source corrections. The existing documented
+`local/host-libs/libbz2.so.1.0` compatibility link was reused.
+
+The host was an i5-10300H with an NVIDIA GeForce RTX 3050 Laptop GPU (4 GiB),
+NVIDIA driver 615.78.08. The following checks passed:
+
+- 35 Kirby CTest targets and 11 shared-settings integration tests.
+- Python discovery: 250 tests, with 75 optional tests skipped.
+- Seven native-video integration tests, including synchronous and GPU-resident
+  copies, 3x/6x MSAA startup and the extended 8x/FXAA startup combinations.
+- Real Vulkan `--gpu-quality 1 1`, `1 4`, `3 1` and `3 4` fixtures: 452, 452,
+  451 and 451 checks respectively. The 1x MSAA triangle had 90 fractional edge
+  pixels; the non-MSAA reference had zero.
+- Real Vulkan `--gpu-fxaa`: 7,605 checks, including 95 blended diagonal pixels,
+  unchanged flat regions, restoration when disabled and presentation dimming.
+- The launcher displayed Internal resolution and all four anti-aliasing choices
+  under Display. Saving 3x with 4x MSAA + FXAA, closing and reopening retained
+  both choices. Play passed them to the native game, whose log confirmed the
+  NVIDIA adapter and selected settings. The launcher self-test also passed.
+
+Tests used separate working directories for NAND, settings and graphics caches.
+All 41 original user files retained their pre-test SHA-256 hashes after the final
+run, including saves, settings and the installation selection. Disc data, saves,
+generated sources, captures and caches remain outside Git.
+
+The regular profile's installation selection still referred to a build of
+`50bd469`; it was left unchanged. Rebuilding `build/native/WiiCompiled` does not
+replace an independently selected installed bundle. The isolated review launcher
+is at `local/resolution-aa/desktop/build/native/kirby-launcher` on the test host;
+its sibling executable is the tested build, and it has no installation pointer.
+Run it with the documented host-library path to review the options without
+changing normal preferences:
+
+```bash
+LD_LIBRARY_PATH="$PWD/local/host-libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  local/resolution-aa/desktop/build/native/kirby-launcher
+```
+
+To update the regular profile later, use its Install > Build / update native
+game action and check the selected runtime's revision in Diagnostics.
+
+An earlier visible test coincided with a desktop outage: KWin logged
+`atomic commit failed: Permission denied` at 12:30:15, followed by a new system
+boot. The retained journal did not establish its cause. That incident must not
+be treated as resolved by successful renderer fixtures or startup checks.
+
+### Reproduce the build and automated checks
+
+From the checkout root, reuse the existing translated source and toolchain:
+
+```bash
+bash tools/container.sh python3 tools/build_native.py --jobs 2 --translated-jobs 2
+bash tools/container.sh cmake --build build/native --target kirby_tests --parallel 2
+bash tools/container.sh ctest --test-dir build/native -R '^kirby_' --output-on-failure
+
+# Use the canonical disk-backed path: /tmp may have less than the installer's
+# required 6 GiB free, and /home may be a symlink on Bazzite.
+mkdir -p local/resolution-aa/tmp
+export TMPDIR="$(realpath local/resolution-aa/tmp)"
+python3 -m unittest discover -s tests -v
+
+project_root="$(pwd -P)"
+export LD_LIBRARY_PATH="$project_root/local/host-libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# Optional NVIDIA selection for this host; use the actual installed ICD filename.
+export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/nvidia_icd.x86_64.json
+probe_dir="$(mktemp -d "$TMPDIR/quality-XXXXXX")"
+(
+  cd "$probe_dir" &&
+  "$project_root/build/native/kirby_gx_renderer_test" --gpu-quality 1 1 &&
+  "$project_root/build/native/kirby_gx_renderer_test" --gpu-quality 1 4 &&
+  "$project_root/build/native/kirby_gx_renderer_test" --gpu-quality 3 1 &&
+  "$project_root/build/native/kirby_gx_renderer_test" --gpu-quality 3 4 &&
+  "$project_root/build/native/kirby_gx_renderer_test" --gpu-fxaa
+)
+KIRBY_NATIVE_TEST="$project_root/build/native/WiiCompiled" \
+  KIRBY_LAUNCHER_TEST="$project_root/build/native/kirby-launcher" \
+  python3 -m unittest tests.integration.test_settings -v
+SDL_AUDIO_DRIVER=dummy \
+  KIRBY_NATIVE_VIDEO_TEST="$project_root/build/native/WiiCompiled" \
+  python3 -m unittest tests.integration.test_native_video -v
+```
+
+The GPU fixtures use hidden windows; they establish specific pixel/readback
+properties, independently of visible gameplay speed. The native-video integration
+tests use temporary user directories and do not traverse a playable level.
+
+### Playable quality comparison
+
+Visible Wayland runs used copies of the same previously validated Patch Castle
+clear save, a virtual SDL gamepad and the NVIDIA Vulkan ICD. Each run entered
+Grass Land and Fountain Gardens `(1, 101, 1)`, moved left and right near the
+entrance, jumped and used yarn. Guest coordinates and scene IDs were read only;
+they were never edited. GPU-resident copies were enabled, VSync was requested
+off, and audio used dummy output with volume zero for every configuration.
+
+The movement loop reversed around reachable x positions 14 and 25. Each sample
+followed 15 seconds of warmup and covered 45 seconds of movement. A preliminary
+route that remained at the left boundary and an interrupted automation process
+were excluded from the comparison. Native VI sequence counters selected the
+measurement interval, avoiding confusion between SDL's elapsed clock and the
+host's absolute monotonic clock.
+
+Debugger-assisted captures flushed pending GPU copies and inspected the game's
+640x480 VI XFB. Captures were taken outside measurement, and warmup followed the
+initial level capture. They can reveal gameplay-image corruption, but are not
+high-resolution screenshots of the final FXAA/compositor output. The synthetic
+GPU fixtures separately verified scaling, MSAA coverage and final FXAA pixels.
+
+| Configuration | Native VI submissions/s | p95 interval | p99 interval | Maximum interval |
+| --- | ---: | ---: | ---: | ---: |
+| 1x, AA off | 59.854 | 17.448 ms | 17.652 ms | 48.700 ms |
+| 3x, FXAA | 59.919 | 17.442 ms | 17.635 ms | 34.578 ms |
+| 3x, 4x MSAA | 59.941 | 17.450 ms | 17.634 ms | 17.794 ms |
+| 3x, 4x MSAA + FXAA | 59.941 | 17.444 ms | 17.634 ms | 18.099 ms |
+
+Every run closed normally with exit code zero and had an empty sampled pipeline
+queue throughout measurement. Movement spanned more than 12 game units and jumps
+more than 3 vertical units in each measured interval. The inspected XFB captures
+showed no obvious corruption, and no blocked-runtime or GPU validation failure
+was reported during play. Shutdown logged destroyed-device/pending-map notices;
+these followed the normal host-exit request, rather than interrupting gameplay.
+
+No sustained performance drop was observed in this entrance segment. These are
+single 45-second samples of native submissions, not compositor scanout, a full
+level clear or a controlled benchmark across repeated runs. The isolated longer
+intervals in the first two runs do not establish a causal difference between AA
+modes; background host activity was uncontrolled. Audio quality, physical input,
+long sessions and later demanding scenes remain outside this comparison. The
+earlier desktop outage remains unexplained; no further outage occurred during
+these completed runs.
+
+Local evidence is under `local/resolution-aa/gpu-tests/`, the four
+`local/resolution-aa/*-verified/` directories, and
+`local/resolution-aa/verified-summary.json`. Build, unit and integration logs are
+under ignored `build-logs/resolution-aa-*`. No Linux runtime or Aurora source
+patch was required by these results.
