@@ -430,7 +430,9 @@ def translator(existing=None, *, layout=None):
             raise ValueError(f"Translator DLL not found: {existing}")
         return ["dotnet", existing.resolve()]
     project = ROOT / "vendor/wiicompiled/translator/src/Translator.Cli"
-    command=["dotnet", "build", project / "Translator.Cli.csproj", "-c", "Release"]
+    # Persistent MSBuild/Roslyn children keep PRoot alive after translation ends.
+    command=["dotnet", "build", project / "Translator.Cli.csproj", "-c", "Release",
+             "--disable-build-servers"]
     if layout.stage is not None:
         layout.ensure()
         # .NET 8's reference-copy item transform breaks when OutDir contains an

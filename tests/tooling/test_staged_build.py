@@ -66,6 +66,7 @@ class StagedBuildTests(unittest.TestCase):
         dotnet=tools/'dotnet'
         dotnet.write_text(f'#!{sys.executable}\nimport pathlib,sys\n'
                           "a=sys.argv[1:];p=pathlib.Path(a[a.index('--artifacts-path')+1])\n"
+                          "if '--disable-build-servers' not in a: sys.exit(4)\n"
                           'if "\'" in str(p): sys.exit(3)\n'
                           "target=p/'bin/Translator.Cli/release/Translator.Cli.dll'\n"
                           "target.parent.mkdir(parents=True);target.write_bytes(b'staged translator')\n")
