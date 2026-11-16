@@ -272,7 +272,7 @@ int main(int argc, char** argv) {
         state.buildStatus=state.checkingBuild ? "Checking native executable..." : buildProbe.Error();
     };
     if (!selfTest) refreshBuild();
-    auto page = Launcher::Page::Play;
+    auto page = valid && fs::is_regular_file(executable) ? Launcher::Page::Play : Launcher::Page::Install;
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -312,7 +312,10 @@ int main(int argc, char** argv) {
                     }
                     if (data!=selected) { data=selected;settingsDirty=true; }
                     valid=true;status=std::move(selectedStatus);
-                    if (state.setup.installation && settingsDirty) saveSettings();
+                    if (state.setup.installation) {
+                        if (settingsDirty) saveSettings();
+                        page=Launcher::Page::Play;
+                    }
                 } else setupSelectionError="Imported data changed before selection. Import again. "+selectedStatus;
                 } catch (const std::exception& error) { setupSelectionError=error.what(); }
             }
@@ -381,7 +384,7 @@ int main(int argc, char** argv) {
                     if (!game) state.gameStatus="Could not start the native executable: "+std::string(SDL_GetError());
                     else { state.gameStatus = "Game running"; SDL_MinimizeWindow(window); }
                 } else if (valid) state.gameStatus = fs::exists(executable)
-                    ? "Could not save settings" : "Native executable missing. See the build guide.";
+                    ? "Could not save settings" : "Choose your game in Install to prepare it.";
                 break;
             case Launcher::Action::ChooseData:
             case Launcher::Action::ChooseImage:

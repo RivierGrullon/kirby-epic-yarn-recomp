@@ -167,6 +167,7 @@ Filesystems without named-stream support have not been validated.
 
 ## Documentation
 
+- [Application packaging (experimental)](docs/packaging.md)
 - [Building and updating](docs/building.md)
 - [Performance and audio findings](docs/performance.md)
 - [Runtime organization](runtime/README.md)

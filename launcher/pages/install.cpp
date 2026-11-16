@@ -70,9 +70,10 @@ Action DrawInstall(State& state) {
     ImGui::EndDisabled();
     if (std::filesystem::exists(state.root/"tools/runtime/toolchain.json"))
         ImGui::TextWrapped("Build tools are included. The first preparation needs internet access and can take several minutes. Your game files stay on this computer.");
-    else
+    else {
         ImGui::TextWrapped("Developer checkout: prepare the build tools using the Build Guide. Application packages include their own tools.");
-    if (ImGui::Button("Open Build Guide")) action = Action::BuildGuide;
+        if (ImGui::Button("Open Build Guide")) action = Action::BuildGuide;
+    }
     return action;
 }
 } // namespace Launcher

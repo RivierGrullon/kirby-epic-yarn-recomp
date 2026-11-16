@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Start full installation when a game source is selected, support bundled setup
+  workers and private Linux build tools, and add experimental AppDir/AppImage
+  packaging with writable per-user build storage. Packaged installation and
+  Windows ZIP validation remain separate from gameplay readiness.
+
 - Integrate celeron633's tested native Windows runtime, launcher process handling,
   NTFS-stream saves and LLVM-MinGW build path, plus 16:9 presentation and motion
   settings. Retain Linux setup and diagnostics, and preserve original commits
