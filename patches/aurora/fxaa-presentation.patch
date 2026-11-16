@@ -1,0 +1,112 @@
+--- a/aurora/lib/webgpu/gpu.hpp
++++ b/aurora/lib/webgpu/gpu.hpp
+@@ -52,6 +52,10 @@
+ extern TextureWithSampler g_depthBuffer;
+ extern TextureWithSampler g_normalBuffer;
+ extern wgpu::RenderPipeline g_CopyPipeline;
++// Presentation-only AA, after output resampling. Guest EFB/copy bytes are untouched.
++void set_fxaa(bool enabled) noexcept;
++bool fxaa_enabled() noexcept;
++const wgpu::RenderPipeline& presentation_copy_pipeline(bool dimmed) noexcept;
+ extern wgpu::RenderPipeline g_CopyDimmedPipeline;
+ extern wgpu::RenderPipeline g_CopyPremultipliedAlphaPipeline;
+ extern wgpu::BindGroup g_CopyBindGroup;
+--- a/aurora/lib/webgpu/gpu.cpp
++++ b/aurora/lib/webgpu/gpu.cpp
+@@ -50,6 +50,15 @@
+ static wgpu::BindGroupLayout g_CopyBindGroupLayout;
+ wgpu::RenderPipeline g_CopyPipeline;
+ wgpu::RenderPipeline g_CopyDimmedPipeline;
++static wgpu::RenderPipeline g_FxaaPipeline;
++static wgpu::RenderPipeline g_FxaaDimmedPipeline;
++static std::atomic_bool g_fxaaEnabled = false;
++void set_fxaa(bool enabled) noexcept { g_fxaaEnabled.store(enabled, std::memory_order_release); }
++bool fxaa_enabled() noexcept { return g_fxaaEnabled.load(std::memory_order_acquire); }
++const wgpu::RenderPipeline& presentation_copy_pipeline(bool dimmed) noexcept {
++  if (fxaa_enabled()) return dimmed ? g_FxaaDimmedPipeline : g_FxaaPipeline;
++  return dimmed ? g_CopyDimmedPipeline : g_CopyPipeline;
++}
+ wgpu::RenderPipeline g_CopyPremultipliedAlphaPipeline;
+ wgpu::BindGroup g_CopyBindGroup;
+ static AuroraSampler g_Resampler = SAMPLER_BILINEAR;
+@@ -473,6 +482,38 @@
+ fn fs_opaque(in: VertexOutput) -> @location(0) vec4<f32> {
+     let color = textureSample(efb_texture, efb_sampler, in.uv);
+     return vec4(color.rgb, 1.0);
++}
++
++// Directional FXAA: detect luminance contrast, estimate the edge tangent,
++// then blend along it. Explicit LOD keeps divergent contrast rejection valid.
++fn fxaa_rgb(uv: vec2f) -> vec3f {
++    return textureSampleLevel(efb_texture, efb_sampler, uv, 0.0).rgb;
++}
++fn fxaa_luma(rgb: vec3f) -> f32 {
++    return dot(rgb, vec3f(0.299, 0.587, 0.114));
++}
++@fragment
++fn fs_fxaa(in: VertexOutput) -> @location(0) vec4f {
++    let pixel = 1.0 / vec2f(textureDimensions(efb_texture));
++    let center = fxaa_rgb(in.uv);
++    let m = fxaa_luma(center);
++    let nw = fxaa_luma(fxaa_rgb(in.uv + pixel * vec2f(-1.0, -1.0)));
++    let ne = fxaa_luma(fxaa_rgb(in.uv + pixel * vec2f(1.0, -1.0)));
++    let sw = fxaa_luma(fxaa_rgb(in.uv + pixel * vec2f(-1.0, 1.0)));
++    let se = fxaa_luma(fxaa_rgb(in.uv + pixel * vec2f(1.0, 1.0)));
++    let low = min(m, min(min(nw, ne), min(sw, se)));
++    let high = max(m, max(max(nw, ne), max(sw, se)));
++    if (high - low < max(0.03125, high * 0.125)) {
++        return vec4f(center, 1.0);
++    }
++    let tangent = vec2f((sw + se) - (nw + ne), (nw + sw) - (ne + se));
++    let reduction = max((nw + ne + sw + se) * 0.03125, 0.0078125);
++    let inverse = 1.0 / (min(abs(tangent.x), abs(tangent.y)) + reduction);
++    let step = clamp(tangent * inverse, vec2f(-8.0), vec2f(8.0)) * pixel;
++    let inner = 0.5 * (fxaa_rgb(in.uv - step / 6.0) + fxaa_rgb(in.uv + step / 6.0));
++    let outer = 0.5 * inner + 0.25 * (fxaa_rgb(in.uv - step * 0.5) + fxaa_rgb(in.uv + step * 0.5));
++    let outerLuma = fxaa_luma(outer);
++    return vec4f(select(outer, inner, outerLuma < low || outerLuma > high), 1.0);
+ }
+ 
+ @fragment
+@@ -550,6 +591,7 @@
+     return g_device.CreateRenderPipeline(&pipelineDescriptor);
+   };
+   g_CopyPipeline = make_copy_pipeline("XFB Copy Pipeline", "fs_opaque", nullptr);
++  g_FxaaPipeline = make_copy_pipeline("XFB FXAA Pipeline", "fs_fxaa", nullptr);
+   const wgpu::BlendState dimmingBlend{
+ 	.color = {
+ 		.operation = wgpu::BlendOperation::Add,
+@@ -563,6 +605,7 @@
+ 	},
+   };
+   g_CopyDimmedPipeline = make_copy_pipeline("XFB Dimmed Copy Pipeline", "fs_opaque", &dimmingBlend);
++  g_FxaaDimmedPipeline = make_copy_pipeline("XFB Dimmed FXAA Pipeline", "fs_fxaa", &dimmingBlend);
+ 
+   const wgpu::BlendState premultipliedAlphaBlend{
+       .color =
+@@ -1160,6 +1203,9 @@
+   g_CopyBindGroupLayout = {};
+   g_CopyPipeline = {};
+   g_CopyDimmedPipeline = {};
++  g_FxaaPipeline = {};
++  g_FxaaDimmedPipeline = {};
++  set_fxaa(false);
+   g_CopyPremultipliedAlphaPipeline = {};
+   g_CopyBindGroup = {};
+   g_ResampleBindGroupLayout = {};
+--- a/aurora/lib/aurora.cpp
++++ b/aurora/lib/aurora.cpp
+@@ -602,11 +602,11 @@
+           const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
+           // Copy EFB -> XFB (swapchain)
+           if (brightness < 1.0f) {
+-            pass.SetPipeline(webgpu::g_CopyDimmedPipeline);
++            pass.SetPipeline(webgpu::presentation_copy_pipeline(true));
+             const wgpu::Color blend{brightness, brightness, brightness, 1.0};
+             pass.SetBlendConstant(&blend);
+           } else {
+-            pass.SetPipeline(webgpu::g_CopyPipeline);
++            pass.SetPipeline(webgpu::presentation_copy_pipeline(false));
+           }
+ 
+           pass.SetBindGroup(0, presentBindGroup, 0, nullptr);

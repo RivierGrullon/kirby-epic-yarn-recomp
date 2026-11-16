@@ -36,10 +36,20 @@ int main() {
     const auto file = temp.path / "user/settings.toml";
     const auto data = (temp.path / "Kirby's DATA \"test\" \\ files").lexically_normal();
     Kirby::Settings settings{data, 37.5f, false, true};
+    settings.resolutionScale = 3;
+    settings.msaaSamples = 4;
     Kirby::SaveSettings(file, settings);
     const auto loaded = Kirby::LoadSettings(file);
     Check(loaded.gameData == data && loaded.masterVolume == 37.5f &&
           !loaded.vsync && loaded.gpuResidentCopies, "Settings did not round-trip");
+    Check(loaded.resolutionScale == 3 && loaded.msaaSamples == 4, "Image quality settings did not round-trip");
+    for (const int samples : {1,4}) for (const bool fxaa : {false,true}) {
+        settings.resolutionScale = 8; settings.msaaSamples = samples; settings.fxaa = fxaa;
+        Kirby::SaveSettings(file, settings);
+        const auto quality = Kirby::LoadSettings(file);
+        Check(quality.resolutionScale == 8 && quality.msaaSamples == samples && quality.fxaa == fxaa,
+              "8x resolution and all AA combinations must survive save/reload");
+    }
     const auto serialized = Read(file);
     Write(file, serialized + "\n# Keep custom values\n[custom]\nanswer = 42\n");
     settings.masterVolume = 19;
@@ -107,6 +117,15 @@ int main() {
           "Activation endpoints did not survive numeric serialization");
 
     for (const auto* invalid : {"[broken", "[kirby]\nschema_version = 99\n",
+            "[kirby]\nschema_version = 1\n[video]\nresolution_scale = 0\n",
+            "[kirby]\nschema_version = 1\n[video]\nresolution_scale = 7\n",
+            "[kirby]\nschema_version = 1\n[video]\nresolution_scale = 9\n",
+            "[kirby]\nschema_version = 1\n[video]\nfxaa = 1\n",
+            "[kirby]\nschema_version = 1\n[video]\nresolution_scale = 2.5\n",
+            "[kirby]\nschema_version = 1\n[video]\nresolution_scale = true\n",
+            "[kirby]\nschema_version = 1\n[video]\nmsaa_samples = 2\n",
+            "[kirby]\nschema_version = 1\n[video]\nmsaa_samples = 8\n",
+            "[kirby]\nschema_version = 1\n[video]\nmsaa_samples = \"4\"\n",
             "[kirby]\nschema_version = 1\n[audio]\nvolume = nan\n",
             "[kirby]\nschema_version = 1\n[paths]\ndvd_root = false\n",
             "[kirby]\nschema_version = 1\nmotion = 1\n[motion]\ntilt = 1\n",
@@ -125,6 +144,8 @@ int main() {
     Check(missing.gameData == data && missing.masterVolume == 80 && !missing.vsync,
           "Missing-file defaults were ignored");
     Check(!fs::exists(file), "Read created a configuration file");
+    Check(missing.resolutionScale == 1 && missing.msaaSamples == 1, "Missing settings must default to native resolution without MSAA");
+    Check(!missing.fxaa, "Missing FXAA option must default to off");
 
     const auto legacy = temp.path / "launcher.cfg";
     Write(legacy, "relative DATA\n62\n0\n1\n");

@@ -298,6 +298,7 @@ void GxRenderer::CopyDisplay(uint32_t value) {
     if (firstDestination) std::cout << "[kirby] XFB " << (resident ? "GPU resident" : "GPU readback")
               << ": destination=0x" << std::hex << copy.address << std::dec
               << " size=" << copy.width << 'x' << copy.height << " bytes=" << copy.bytes
+              << " GPU size=" << texture->size.width << 'x' << texture->size.height
               << "; awaiting VI selection" << std::endl;
 }
 
@@ -308,7 +309,7 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
     const auto memory=resolve_(copy.address,copy.bytes);
     if (memory.size()!=copy.bytes) throw std::runtime_error("GX texture-copy destination lies outside MEM1/MEM2");
     if (!gfx::readback::supported()) throw std::runtime_error("GPU texture readback is unavailable");
-    const auto extent=gfx::get_render_target_size();
+    const auto extent=gx::logical_fb_size();
     if (copy.x+copy.sourceWidth>extent.x || copy.y+copy.sourceHeight>extent.y)
         throw std::runtime_error("GX texture-copy source lies outside the EFB");
     if (!xfb_) { xfb_=std::make_shared<XfbState>(); xfb_->stream=gfx::readback::create_stream(); }
@@ -331,7 +332,7 @@ void GxRenderer::CopyTexture(uint32_t value, uint32_t control) {
     const auto texture=state.copyTextures.at(memory.data()).handle;
     // Direct GPU sampling is verified only for packed RGB8->RGBA8 copies.
     const bool retain = copy.format == GX_TF_RGBA8 && state.pixelFmt == GX_PF_RGB8_Z24 &&
-        copy.stride == copy.rowBytes && texture->size.width == copy.width && texture->size.height == copy.height &&
+        copy.stride == copy.rowBytes &&
         (xfb_->textures.contains(copy.address) || xfb_->textures.size() < 16);
     if (deferredTextureCopies_ && retain) {
         auto before=std::make_shared<const std::vector<uint8_t>>(memory.begin(),memory.end());

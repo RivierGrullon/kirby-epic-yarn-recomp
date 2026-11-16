@@ -16,7 +16,7 @@ public:
     ~GxRenderer();
     GxRenderer(const GxRenderer&) = delete;
     GxRenderer& operator=(const GxRenderer&) = delete;
-    void OpenWindow(bool startHidden = false, bool vsync = true);
+    void OpenWindow(bool startHidden = false, bool vsync = true, int resolutionScale = 1, int msaaSamples = 1, bool fxaa = false);
     // Guest execution is suspended while this synchronous batch is decoded.
     void Feed(std::span<const uint8_t> bytes) { InvalidateTextureValidation(); stream_.Feed(bytes); }
     const GxStream& Stream() const { return stream_; }

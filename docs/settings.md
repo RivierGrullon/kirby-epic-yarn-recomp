@@ -19,7 +19,18 @@ in another window. Losing focus also clears held input.
 
 The game opens in a 960×540 window and presents at 16:9, matching the default Wii
 widescreen setting. Resizing the window preserves that ratio with black bars as
-needed. This changes display sizing only; the internal game resolution is unchanged.
+needed. **Display > Internal resolution** selects a fixed 1x–6x and 8x rendering multiplier,
+independent of window size. **Anti-aliasing** offers Off, FXAA, 4x MSAA, and 4x MSAA + FXAA. Both apply on
+the next launch and work with experimental performance mode on or off.
+
+The native EFB workspace is 640×528; 3x renders it at 1920×1584 and 6x at
+3840×3168; 8x renders at 5120×4224, with the game's visible area presented at 16:9. This is higher-resolution
+geometry rendering, as in an emulator's internal resolution setting. Original
+texture assets retain their original detail. Increasing resolution also smooths
+edges when the result is reduced to a smaller window; MSAA adds polygon-edge
+coverage samples. FXAA filters edges after output resizing and can soften fine detail;
+the combined mode uses both methods. Higher settings cost GPU time and memory. Start with 2x or 3x
+and 4x MSAA, then adjust to your hardware. Defaults remain 1x with MSAA off.
 
 Only implemented Kirby options are written:
 
@@ -36,12 +47,18 @@ volume = 1.0
 
 [video]
 vsync = true
+resolution_scale = 1
+msaa_samples = 1
+fxaa = false
 ```
 
 `audio.volume` is the master gain from 0.0 to 1.0. The launcher displays it as a
 percentage. `gpu_resident_copies` controls **Experimental performance mode**; its
-compatibility and frame pacing remain under investigation. Separate stable 30/60
-FPS modes, display scaling, individual audio groups and per-device input profiles
+compatibility and frame pacing remain under investigation. `resolution_scale`
+accepts integers 1 through 6 or 8; `msaa_samples` accepts 1 (off) or 4. `fxaa` is a boolean, defaulting to false. Missing keys use
+the defaults, so existing configuration files keep loading. Unsupported values
+are reported without overwriting the file. Separate stable 30/60 FPS modes,
+individual audio groups and per-device input profiles
 remain pending.
 Unimplemented upstream settings are not presented as supported Kirby options.
 

@@ -24,6 +24,10 @@ void Validate(const Settings& settings) {
         throw std::runtime_error("audio.volume must be between 0 and 1");
     ValidateControlBindings(settings.controls);
     ValidateMotionSettings(settings.motion);
+    if (!ValidResolutionScale(settings.resolutionScale))
+        throw std::runtime_error("video.resolution_scale must be 1, 2, 3, 4, 5, 6 or 8");
+    if (settings.msaaSamples != 1 && settings.msaaSamples != 4)
+        throw std::runtime_error("video.msaa_samples must be 1 (off) or 4");
 }
 std::optional<std::string> Read(const fs::path& file) {
     if (!fs::exists(file)) return std::nullopt;
@@ -75,6 +79,20 @@ Settings Parse(const std::string& text, const fs::path& file, Settings defaults)
         if (!value || !std::isfinite(*value) || *value < 0.05 || *value > 0.95)
             throw std::runtime_error(std::string("controller.") + key + " must be between 0.05 and 0.95");
         *destination = static_cast<float>(*value);
+    }
+    const auto integer = [&](const char* key, int& target, int minimum, int maximum) {
+        if (!present("video", key)) return;
+        const auto value = FindConfigValue<int64_t>(document, "video", key);
+        if (!value || *value < minimum || *value > maximum)
+            throw std::runtime_error(std::string("video.") + key + " is not a supported integer");
+        target = static_cast<int>(*value);
+    };
+    integer("resolution_scale", defaults.resolutionScale, 1, 8);
+    integer("msaa_samples", defaults.msaaSamples, 1, 4);
+    if (present("video", "fxaa")) {
+        const auto value = FindConfigValue<bool>(document, "video", "fxaa");
+        if (!value) throw std::runtime_error("video.fxaa must be a boolean");
+        defaults.fxaa = *value;
     }
     for (size_t i = 0; i < GameActions.size(); ++i) {
         for (const auto device : {BindingDevice::Gamepad, BindingDevice::Keyboard}) {
@@ -138,6 +156,9 @@ std::string Update(std::string text, const Settings& settings) {
     volume << std::setprecision(std::numeric_limits<float>::max_digits10) << settings.masterVolume / 100;
     set("audio", "volume", volume.str());
     set("video", "vsync", settings.vsync ? "true" : "false");
+    set("video", "resolution_scale", std::to_string(settings.resolutionScale));
+    set("video", "msaa_samples", std::to_string(settings.msaaSamples));
+    set("video", "fxaa", settings.fxaa ? "true" : "false");
     for (const auto& [key, value] : std::array{
             std::pair{"stick_activation", settings.controls.stickActivation},
             std::pair{"trigger_activation", settings.controls.triggerActivation}}) {

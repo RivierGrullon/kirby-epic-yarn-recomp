@@ -2,6 +2,7 @@
 #pragma once
 #include "kirby/input/bindings.h"
 #include "kirby/input/motion.h"
+#include "kirby/graphics/quality.h"
 #include <filesystem>
 #include <iosfwd>
 #include <string>
@@ -14,6 +15,9 @@ struct Settings {
     bool gpuResidentCopies = false;
     ControlBindings controls{};
     MotionSettings motion{};
+    int resolutionScale = 1;
+    int msaaSamples = 1;
+    bool fxaa = false;
 };
 
 // Errors throw without modifying the source file. Relative DATA paths are

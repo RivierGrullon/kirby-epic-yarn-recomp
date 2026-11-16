@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add 1x–6x and 8x internal resolution and Off/FXAA/4x MSAA/4x MSAA + FXAA to the launcher and shared
+  settings. Preserve scaled display/effect textures while keeping guest RAM copy
+  layouts at native resolution. Support multisampled color/depth readback and
+  depth texture copies. Cover edge smoothing, scaled GPU copies, settings and
+  native startup with ordinary and experimental performance modes.
+
 - Give bundled .NET tools a private runtime directory for named mutexes, and
   keep the packaged toolchain link out of source identity checks.
 - Disable persistent translator build servers so packaged installation can

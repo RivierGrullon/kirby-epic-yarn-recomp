@@ -1811,6 +1811,57 @@ byte-for-byte with the executable used above. SHA-256:
 `8c7e0bef9b39f81bb735a10eea2887e0df65ee944a202a5aff67a8f143a74ef2`.
 The launcher uses that executable on its next launch.
 
+## Internal resolution and MSAA (2026-11-14)
+
+The launcher now exposes 1x–6x internal resolution and Off/4x MSAA. They are
+independent of VSync and experimental performance mode; defaults are 1x and Off.
+The fixed multiplier scales both EFB axes and retained GPU copies. Guest RAM
+copies keep their native byte layout. Window resizing only changes presentation.
+
+Windows Vulkan checks on the RTX 3060 covered 1x, 3x and 6x with MSAA off/on.
+Each configuration passed the existing graphics/copy-coherence fixture plus new
+framebuffer dimensions, scaled display-copy dimensions and EFB color/depth peeks
+(451 or 452 checks, depending on the native-resolution edge assertion). A white
+slanted triangle on black produced zero intermediate-luma pixels at 1x without
+MSAA and 90 with 4x MSAA. This verifies actual edge coverage, not just a setting
+being accepted. Scaled RGBA8 copies continue to pass the guest RAM/alias tests.
+
+Four isolated real-DOL startup runs recorded at least 120 VI submissions each:
+1x/4x MSAA and 3x/4x MSAA with synchronous copies, then 3x/4x MSAA and 6x/4x MSAA
+with resident copies. All verified the GPU/native copy dimension ratio and exited
+normally through the Windows window-close event. They used hidden windows and
+muted audio; these are startup/compatibility checks, not sustained gameplay FPS
+or a visual comparison of whole levels. Linux execution of these new options has
+not been measured in this session.
+
+Validation also passed 25 Kirby CTest targets, eight shared-settings integration
+tests, the launcher's desktop/compact-page self-test, and 25 source-only Python
+tests (46 optional executable tests skipped in that discovery run). Logs are
+under ignored `build-logs/image-quality-*`.
+
+```powershell
+.\build\native\kirby_gx_renderer_test.exe --gpu-quality 3 4
+$env:KIRBY_NATIVE_VIDEO_TEST = (Resolve-Path build/native/WiiCompiled.exe).Path
+python -m unittest tests.integration.test_native_video.NativeVideoTests.test_resolution_and_msaa_with_synchronous_and_resident_copies -v
+```
+
+## Extended quality options (2026-11-14)
+
+Added an 8x internal-resolution option (5120×4224 EFB) and two more AA choices:
+FXAA, and 4x MSAA + FXAA. FXAA runs after output resampling in the final display
+shader; it leaves guest EFB/readback data unchanged. The current Dawn/WebGPU
+multisample interface accepts sample counts 1 and 4, so the launcher does not
+advertise unsupported 2x/8x MSAA. See the [WebGPU multisample specification](https://www.w3.org/TR/webgpu/#multisample-state).
+The directional luminance-based FXAA implementation follows the approach described
+in [NVIDIA's FXAA white paper](https://developer.download.nvidia.com/assets/gamedev/files/sdk/11/FXAA_WhitePaper.pdf).
+
+Before testing was handed to the user, the new presentation-shader GPU fixture
+passed: a diagonal gained 95 blended pixels, uniform regions stayed unchanged,
+disabling FXAA restored the baseline and dimming retained its expected output.
+The owner subsequently tested 8x resolution and the anti-aliasing options on
+2026-11-14 and reported no problems. This is user-reported gameplay validation;
+no new sustained frame-time measurement is claimed for these options.
+
 ## Reproduce checks
 
 ```bash
