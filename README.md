@@ -14,11 +14,11 @@ as a behavior reference; it does not run the native game.
 not stable frame pacing or full-game compatibility.*
 
 > [!IMPORTANT]
-> **First experimental release.** The main menu, Patch
+> **Experimental alpha release.** The main menu, Patch
 > Castle and Fountain Gardens completion, plus save reload, have been
 > observed. The full game, physical controllers and sustained performance still
-> need validation. The Linux AppImage includes setup tools and builds the game
-> from your own supported copy on the first installation.
+> need validation. The Linux AppImage opens a dedicated installer, downloads its
+> build tools once, and builds the game from your own supported copy.
 >
 > You need your own **USA disc, RK5E01 revision 0**. Game files, generated game
 > code, saves and shader caches are not included. Other revisions are rejected.
@@ -53,31 +53,42 @@ completion, save reload and sustained Windows performance remain unverified.
 
 ## Linux AppImage
 
-Download `Kirby-linux-x86_64.AppImage` and its `.sha256` file from the
-[first test release](https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/tag/v0.1.0-alpha.1).
-In the download directory:
+Download **[Kirby-Setup-linux-x86_64.AppImage](https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/download/v0.1.0-alpha.2/Kirby-Setup-linux-x86_64.AppImage)** (about **58 MB**) and its matching `.sha256` file from
+[the current alpha release](https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/tag/v0.1.0-alpha.2).
+Make it executable in your file manager and open it, or run these commands in the
+download directory:
 
 ```bash
-sha256sum -c Kirby-linux-x86_64.AppImage.sha256
-chmod +x Kirby-linux-x86_64.AppImage
-./Kirby-linux-x86_64.AppImage
+sha256sum -c Kirby-Setup-linux-x86_64.AppImage.sha256
+chmod +x Kirby-Setup-linux-x86_64.AppImage
+./Kirby-Setup-linux-x86_64.AppImage
 ```
 
-Under **Install**, choose your own supported disc image or complete DATA folder.
-The launcher extracts, translates, compiles and verifies the native game before
-enabling Play. The AppImage includes its own setup tools; separate Python,
-compilers, Dolphin and Docker/Podman installations are not required.
+Kirby Setup asks for your own supported disc image or complete DATA folder and
+an installation folder (default: `~/Games/Kirby Native`). It downloads the build
+tools automatically once (about **460 MB**), then extracts, translates, compiles
+and verifies the game. Progress, elapsed time, cancellation and retry are shown
+in the installer. Separate Python, Qt, compilers, Dolphin and Docker/Podman
+installations are not required.
+
+After setup, select **Open launcher** or use **Kirby's Epic Yarn** in the
+applications menu. Enable **Also create a desktop shortcut** during setup to
+create one on the desktop. `Play Kirby.sh` is also available in your
+installation folder.
 
 If mounting AppImages is unavailable, run:
 
 ```bash
-./Kirby-linux-x86_64.AppImage --appimage-extract-and-run
+./Kirby-Setup-linux-x86_64.AppImage --appimage-extract-and-run
 ```
 
-Settings, saves and generated builds are stored under
-`~/.local/share/kirby-native/versions/<source-commit>/`, or under `XDG_DATA_HOME`
-when set. The developer checkout's saves are separate. See
-[Application packages](docs/packaging.md) for storage and packaging details.
+Settings, saves and generated builds stay in the chosen installation folder
+under `.kirby/<source-version>/`. Compatible installer versions reuse the tools
+cache at `$XDG_DATA_HOME/kirby-native/toolchains/` (normally
+`~/.local/share/kirby-native/toolchains/`). Saves and settings from older
+layouts/source versions are not migrated automatically; keep the previous files
+if you need to transfer them. See [Application packages](docs/packaging.md) for
+storage and packaging details.
 
 ## Build and play from source
 
@@ -116,8 +127,8 @@ On Windows, open `build\native\kirby-launcher.exe`.
 
 The launcher can currently:
 
-- Import a disc image or select and verify an extracted DATA folder.
-- Build and update the native game, with progress and cancellation.
+- Open the standalone installer to import a disc image or DATA folder and build/update the game.
+- Detect a verified native installation and its game data.
 - Start the native game in a visible window.
 - Set master volume and VSync for the next launch.
 - Select 1x–6x and 8x internal rendering resolution and Off/FXAA/4x MSAA/4x MSAA + FXAA under **Display**.
@@ -130,15 +141,16 @@ The launcher can currently:
 These actions are organized into **Play**, **Install**, **Display**, **Audio**,
 **Controls**, **Saves** and **Diagnostics**. Navigation uses a sidebar on wider
 windows and tabs on compact windows. Settings saving stays available on every
-page. The Install page imports and verifies your source, then builds the native game.
-First-time toolchain and launcher preparation is handled by `tools/setup.py`.
+page. In application packages, the Install page opens the standalone Kirby Setup
+installer. Source checkouts can use `tools/setup.py` for toolchain and launcher
+preparation.
 
 Settings are shared with the native game and saved on **Save settings**, **Play**,
 or closing the launcher. Changes apply on the next game launch. Existing launcher
 preferences migrate automatically while retaining the original file. See the
 [settings guide](docs/settings.md) for the format and recovery instructions.
-The first installation uses the setup command; later imports and builds can use
-the launcher. Per-device input profiles and a validated 30/60 FPS selector are
+Packaged installations use Kirby Setup for imports, builds and updates.
+Per-device input profiles and a validated 30/60 FPS selector are
 not available in the launcher yet.
 
 ## Controls
@@ -183,7 +195,7 @@ math and guest report path. See [motion settings](docs/settings.md#motion-contro
 | Input | Virtual mappings tested; physical controllers and Legion Go controls need validation |
 | Graphics | Native GX/VI rendering through Aurora; some formats and display modes remain unsupported |
 | Saves | Creation/reload verified on Linux; Windows creation verified, reload pending |
-| Distribution | Experimental Linux x86-64 AppImage with bundled setup tools; source builds on Linux and Windows |
+| Distribution | Experimental Linux x86-64 PyQt installer AppImage with reusable tools download; source builds on Linux and Windows |
 
 The window's FPS counter measures Aurora presentations. It does not establish
 correct simulation speed or audio synchronization. See the
