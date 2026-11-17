@@ -2,4 +2,4 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # No host Python, compiler, container engine, or external shell utilities needed.
 appdir=$(CDPATH= cd -- "${0%/*}" && pwd -P) || exit 1
-exec "$appdir/tools/runtime/kirby-setup-worker" --launch-appimage "$appdir" "$@"
+exec "$appdir/tools/setup/kirby-setup" --appdir "$appdir" "$@"

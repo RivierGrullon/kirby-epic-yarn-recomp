@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "setup/protocol.h"
+#include "setup/handoff.h"
 #include "launcher_test_paths.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -16,6 +17,23 @@ void Reject(std::string text) {
 }
 int main() {
     using namespace Launcher::Setup;
+    const auto handoffRoot=TemporaryLauncherDirectory("kirby-setup-handoff-");
+    std::filesystem::create_directories(handoffRoot/"local");
+    const auto setupPath=AbsoluteFixture("Setup folder/Kirby Setup");
+    {
+        std::ofstream file(handoffRoot/"local/setup-command.json");
+        file << nlohmann::json{{"version",1},{"arguments",{setupPath,"--appdir","a folder's literal $ path"}}};
+    }
+    const auto command=ReadSetupCommand(handoffRoot);
+    Check(command.size()==3 && command[0]==setupPath && command[2]=="a folder's literal $ path","Setup handoff changed literal arguments");
+    {
+        std::ofstream file(handoffRoot/"local/setup-command.json");
+        file << R"({"version":1,"arguments":["relative-program"]})";
+    }
+    bool badHandoff=false;
+    try { ReadSetupCommand(handoffRoot); } catch (const std::exception&) { badHandoff=true; }
+    Check(badHandoff,"Setup handoff accepted a relative program");
+    std::filesystem::remove_all(handoffRoot);
     const auto progress=ParseEvent(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"hash","state":"progress","completed":128,"total":512})","job-1",1);
     Check(progress.completed==128 && progress.total==512,"Genuine byte progress was lost");
     const auto tasks=ParseEvent(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"compile","state":"progress","completed":12,"total":100,"unit":"tasks"})","job-1",1);

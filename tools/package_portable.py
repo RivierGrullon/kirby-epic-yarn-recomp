@@ -140,11 +140,22 @@ def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, 
         container(engine,image,['/opt/freeze/bin/pyinstaller','--noconfirm','--clean',
                   '--distpath','local/portable-freeze/dist','--workpath','local/portable-freeze/work',
                   '--specpath','local/portable-freeze','--name','kirby-setup-worker',
-                  '--contents-directory','python','tools/install.py'],root)
+                  '--exclude-module','PyQt6','--contents-directory','python','tools/install.py'],root)
         container(engine,image,['cp','/etc/ssl/certs/ca-certificates.crt',
                   'local/portable-freeze/dist/kirby-setup-worker/ca-certificates.crt'],root)
         built=freeze/'dist/kirby-setup-worker'
         shutil.copytree(built,worker,dirs_exist_ok=True)
+        container(engine,image,['/opt/freeze/bin/pyinstaller','--noconfirm','--clean','--windowed',
+                  '--distpath','local/portable-freeze/dist','--workpath','local/portable-freeze/work',
+                  '--specpath','local/portable-freeze','--name','kirby-setup',
+                  '--contents-directory','python','tools/setup_gui.py'],root)
+        shutil.copytree(freeze/'dist/kirby-setup',appdir/'tools/setup')
+        # Preserve the exact Qt/PyQt wheel notices alongside the frozen components.
+        container(engine,image,['/opt/freeze/bin/python','-c',
+                  "import importlib.metadata,pathlib,shutil;out=pathlib.Path('local/portable-freeze/licenses');out.mkdir(exist_ok=True);"
+                  "[(shutil.copytree(p,out/p.name,dirs_exist_ok=True)) for n in ('PyQt6','PyQt6-Qt6','PyQt6-sip') "
+                  "for p in [pathlib.Path(importlib.metadata.distribution(n)._path)] if p.is_dir()]"],root)
+        shutil.copytree(freeze/'licenses',appdir/'licenses/qt')
         (project/'build/native').mkdir(parents=True)
         shutil.copy2(launcher,project/'build/native/kirby-launcher')
         if (root/'local/host-libs').is_dir():
@@ -173,7 +184,7 @@ def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--image',default='localhost/kirby-portable-tools:dev')
+    parser.add_argument('--image',default='localhost/kirby-setup-tools:pyqt')
     parser.add_argument('--engine',choices=('podman','docker'),default='podman')
     parser.add_argument('--output',type=Path,required=True)
     tools=parser.add_mutually_exclusive_group(required=True)

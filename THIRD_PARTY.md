@@ -1,5 +1,10 @@
 # Third-party sources
 
+The standalone setup UI uses PyQt6 (GPL-3.0-only), Qt6 from the PyQt6-Qt6 wheel
+(LGPL v3 as declared by that wheel), and PyQt6-sip (BSD-2-Clause). Frozen setup
+packages retain the installed wheels' metadata and license files under `licenses/qt`.
+These are installer dependencies; the native game and launcher do not link Qt.
+
 | Project | Use | License location |
 | --- | --- | --- |
 | [Swiftshine/key](https://github.com/Swiftshine/key) | RK5E01 revision hash, symbols, section splits, startup source cross-check | `vendor/key/LICENSE` (CC0-1.0) |

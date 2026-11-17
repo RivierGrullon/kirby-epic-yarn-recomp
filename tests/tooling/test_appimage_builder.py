@@ -38,7 +38,7 @@ class AppImageBuilderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);appdir=root/'image'
             for name in ('AppRun','revision','project/tools/kirby.py','tools/runtime/kirby-setup-worker',
-                         'tools/runtime/ca-certificates.crt'):
+                         'tools/runtime/ca-certificates.crt','tools/setup/kirby-setup'):
                 path=appdir/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'fixture')
             record=dict(version=1,platform='linux-x86_64',image_id='a'*64,sha256='b'*64,
                         url='https://example.invalid/tools.tar.xz',size=100,unpacked_size=200)
