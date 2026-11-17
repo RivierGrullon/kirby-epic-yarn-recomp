@@ -36,7 +36,7 @@ not stable frame pacing or full-game compatibility.*
 - Linux AppImage: glibc 2.39 or newer, Vulkan graphics drivers, internet access
   for first-installation downloads, and space for extraction and compilation.
 - Linux source builds: Git, Python 3.11+ and **Docker or Podman** for the build environment.
-- Windows: the [native LLVM-MinGW toolchain](docs/building.md#windows-x64) used by celeron633, including Python 3.12+, .NET 8, CMake, Ninja and Windows SDK headers.
+- Windows: [tools/windows/build-windows.ps1](docs/building.md#windows-x64) automatically downloads LLVM-MinGW, Python, .NET 8, CMake, Ninja and Windows SDK headers.
 - Source builds: Dolphin's `dolphin-tool` / `DolphinTool.exe` for image extraction; 7-Zip only for `.7z` inputs.
   Neither is required for an already extracted DATA folder.
 - Several GB of storage and enough memory to compile the generated C++.
@@ -88,8 +88,19 @@ command from the checkout with the actual path to your own disc or DATA folder:
 python3 tools/setup.py "/actual/path/to/Kirby.wbfs"
 ```
 
-On Windows, follow [celeron633's native build steps](docs/building.md#windows-x64).
-They build directly with LLVM-MinGW and do not require Docker or Podman.
+On Windows, use the [automatic native build](docs/building.md#windows-x64):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\windows\build-windows.ps1 "D:\Games\Kirby.wbfs"
+```
+
+It downloads its own toolchain and builds directly with LLVM-MinGW, without
+Docker or Podman. An extracted `main.dol` is also accepted for compilation;
+playing still requires the complete DATA folder.
+After building, extract `local/releases/Kirby-Windows-x64.zip` to use the compiled
+game outside the checkout. Use `tools/windows/build-windows.ps1 -PackageOnly` to package it again.
+
+For the Linux setup command above:
 If `disc/DATA` is already extracted, omit the path. Use `--engine docker` or
 `--engine podman` to choose explicitly, or `--check` to check prerequisites first.
 Setup prepares tools, translates, compiles and verifies the game and launcher.

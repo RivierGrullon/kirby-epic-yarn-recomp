@@ -8,7 +8,18 @@ build is reused. Later launches use the selected native installation.
 
 This packaging work is experimental. An AppImage format smoke check is not an
 end-to-end installation test, and does not establish gameplay performance.
-Windows portable ZIP preparation and validation are still outstanding.
+Windows builds create a ZIP of the compiled game; see below.
+
+## Windows ZIP
+
+`tools/windows/build-windows.ps1` creates `local/releases/Kirby-Windows-x64.zip` after a successful
+build. Use `tools/windows/build-windows.ps1 -PackageOnly` to package existing binaries again.
+The ZIP includes the launcher, game executable, runtime DLLs, DSP resource,
+Microsoft runtime installer and component notices. It excludes disc assets,
+settings, saves and compiler outputs. Extract it, install the included Microsoft
+runtime if needed, then open `kirby-launcher.exe` and select your DATA folder.
+The ZIP runs the precompiled game; extraction and rebuilding use the source
+checkout. See the [quick guide](building.md#windows-x64).
 
 ## Linux AppImage
 
