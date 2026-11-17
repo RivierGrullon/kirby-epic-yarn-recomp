@@ -55,7 +55,22 @@ function Get-Package([string]$Name) {
     if (!(Test-Path -LiteralPath (Join-Path $Destination '.complete'))) {
         # Publish only complete packages. An interrupted extraction is never reused.
         if (Test-Path -LiteralPath $Destination) { throw "Incomplete tool directory: $Destination" }
-        $Staging = Join-Path $Cache "$Id-staging-$([guid]::NewGuid().ToString('N'))"
+        # The SDK contains deeply nested filenames. Keep staging shorter than
+        # the installed package path for Windows PowerShell 5.1's ZIP reader.
+        do {
+            $Staging = Join-Path $Cache ('.s-' + [guid]::NewGuid().ToString('N').Substring(0,8))
+        } while (Test-Path -LiteralPath $Staging)
+        if ($Spec.format -eq 'zip') {
+            $Zip = [IO.Compression.ZipFile]::OpenRead($Archive)
+            try {
+                foreach ($Member in $Zip.Entries) {
+                    if ((Join-Path $Destination $Member.FullName).Length -ge 260 -or
+                        (Join-Path $Staging $Member.FullName).Length -ge 260) {
+                        throw "The project path is too long to extract $Name. Move the checkout to a shorter path such as C:\Kirby and rerun. Cached downloads can be kept."
+                    }
+                }
+            } finally { $Zip.Dispose() }
+        }
         New-Item -ItemType Directory -Path $Staging | Out-Null
         Write-Host "Extracting $Name ..."
         if ($Spec.format -eq 'zip') {
