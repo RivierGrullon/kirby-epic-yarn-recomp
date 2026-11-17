@@ -59,6 +59,7 @@ def main():
     parser.add_argument("--configure-only", action="store_true")
     parser.add_argument("--target", choices=("linux", "windows"), default="windows" if os.name == "nt" else "linux")
     parser.add_argument("--llvm-mingw-root", type=Path, help="LLVM-MinGW installation (default: discover on PATH)")
+    parser.add_argument("--cppwinrt-include", type=Path, help="Directory containing winrt/base.h (default: installed Windows SDK)")
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--translated-jobs", type=int, default=2)
     parser.add_argument("--stage-root",type=Path,help="Use isolated outputs below local/setup/builds/JOB")
@@ -124,14 +125,18 @@ def main():
         build = layout.build
         platform_options = []
         if os.name == "nt":
-            sdk = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Windows Kits/10/Include"
-            headers = sorted(sdk.glob("*/cppwinrt/winrt/base.h"), reverse=True)
-            if not headers:
+            headers = args.cppwinrt_include
+            if headers is None:
+                sdk = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Windows Kits/10/Include"
+                candidates = sorted(sdk.glob("*/cppwinrt/winrt/base.h"), reverse=True)
+                headers = candidates[0].parent.parent if candidates else None
+            if headers is None or not (headers / 'winrt/base.h').is_file():
                 raise ValueError("Windows SDK C++/WinRT headers are required for the pinned runtime")
-            platform_options.append(f"-DMKW_CPPWINRT_INCLUDE_DIR={headers[0].parent.parent.as_posix()}")
+            platform_options.append(f"-DMKW_CPPWINRT_INCLUDE_DIR={headers.resolve().as_posix()}")
         configure=["cmake", "-S", workspace / "runtime", "-B", build, "-G", "Ninja",
                                 "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++",
                                 "-DCMAKE_BUILD_TYPE=Release", "-DAURORA_DAWN_PROVIDER=package",
+                                f"-DPython3_EXECUTABLE={sys.executable}",
                                 "-DAURORA_SDL3_PROVIDER=vendor",
                                 f"-DAURORA_SDL3_LINKAGE={'shared' if args.target == 'windows' else 'static'}",
                                 f"-DKIRBY_PROJECT_ROOT={ROOT}",

@@ -1,0 +1,72 @@
+{
+  "mingw": {
+    "algorithm": "SHA256",
+    "format": "zip",
+    "entry": "llvm-mingw-20261104-ucrt-x86_64/bin/x86_64-w64-mingw32-clang.exe",
+    "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/llvm-mingw-20261104-ucrt-x86_64.zip",
+    "hash": "552191b5754c49a5a20723276a6fc56541ea1922c4c50b7b669022333fc1b40f"
+  },
+  "git": {
+    "algorithm": "SHA256",
+    "format": "zip",
+    "entry": "cmd/git.exe",
+    "url": "https://github.com/git-for-windows/git/releases/download/v2.56.1.windows.1/MinGit-2.56.1-64-bit.zip",
+    "hash": "4a92850b6e917da4fd010669b614b55dccf5b0ec333a534cc4be4700dfefdafd"
+  },
+  "cmake": {
+    "algorithm": "SHA256",
+    "format": "zip",
+    "entry": "cmake-4.5.0-windows-x86_64/bin/cmake.exe",
+    "url": "https://github.com/Kitware/CMake/releases/download/v4.5.0/cmake-4.5.0-windows-x86_64.zip",
+    "hash": "301b1728317ccd84e984b02e366a8293735bc5ac618757d3d8f58b578f062411"
+  },
+  "ninja": {
+    "algorithm": "SHA256",
+    "format": "zip",
+    "entry": "ninja.exe",
+    "url": "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip",
+    "hash": "07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65"
+  },
+  "dotnet": {
+    "algorithm": "SHA512",
+    "format": "zip",
+    "entry": "dotnet.exe",
+    "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/8.0.428/dotnet-sdk-8.0.428-win-x64.zip",
+    "hash": "cce1dc5cfb2c5b73ddd9d3658f6009deb85be3a58dbec44a6dfe3910bb32b044ad2fc6bb28c77aded70c73270a204d207fe790dcb82ffca6c7b42c1335b51c21"
+  },
+  "sdk": {
+    "algorithm": "SHA256",
+    "format": "zip",
+    "entry": "c/Include/10.0.26100.0/cppwinrt/winrt/base.h",
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.cpp/10.0.26100.9457/microsoft.windows.sdk.cpp.10.0.26100.9457.nupkg",
+    "hash": "1c8b332abba402808880ddba4d70e663f834ded44cf4771a2c191e9485e7cdcd"
+  },
+  "python": {
+    "url": "https://www.python.org/ftp/python/3.14.0/python-3.14.0-embed-amd64.zip",
+    "format": "zip",
+    "algorithm": "SHA256",
+    "entry": "python.exe",
+    "hash": "8d4d3590c10449d78aa4375f534e6d5f3027d67fdc362dd1a882279db6f90fdf"
+  },
+  "dolphin": {
+    "url": "https://dl.dolphin-emu.org/releases/2609b/dolphin-2609b-x64.7z",
+    "format": "7z",
+    "algorithm": "SHA256",
+    "entry": "Dolphin-x64/DolphinTool.exe",
+    "hash": "926eb7594d885b4fba8fd9807058d90618efab4b3d75d1ef297022ba14925133"
+  },
+  "vcredist": {
+    "url": "https://download.visualstudio.microsoft.com/download/pr/78d061c5-9ef3-42ab-98ed-3309d1095dc4/9C02C9ED120F671B900E6B9471D890E3B2414117A7E53F4AE2E855466FA2B7C9/VC_redist.x64.exe",
+    "format": "exe",
+    "algorithm": "SHA256",
+    "entry": "vc_redist.x64.exe",
+    "hash": "9c02c9ed120f671b900e6b9471d890e3b2414117a7e53f4ae2e855466fa2b7c9"
+  },
+  "sevenzip": {
+    "url": "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe",
+    "format": "exe",
+    "algorithm": "SHA256",
+    "entry": "7zr.exe",
+    "hash": "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc"
+  }
+}
