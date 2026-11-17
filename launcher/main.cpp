@@ -190,13 +190,15 @@ int main(int argc, char** argv) {
     const bool selfTest = argc == 2 && std::string_view(argv[1]) == "--self-test";
     if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --check-source SOURCE | --print-settings TOML | --build-info | --check-native-build EXECUTABLE]\n"); return 2; }
     const fs::path developerExecutable = Launcher::FromUtf8(SDL_GetBasePath()) / Launcher::GameExecutable;
-    const fs::path root = developerExecutable.parent_path().parent_path().parent_path();
-    if (!fs::exists(root / "tools/kirby.py")) {
+    const bool portable = fs::is_regular_file(developerExecutable.parent_path() / "kirby-portable.txt");
+    const fs::path root = portable ? developerExecutable.parent_path() : developerExecutable.parent_path().parent_path().parent_path();
+    if (!portable && !fs::exists(root / "tools/kirby.py")) {
         std::fprintf(stderr,"Keep the launcher in this project's build/native or build/windows folder\n"); return 2;
     }
     Launcher::State state{root, developerExecutable, root / "local/user/settings.toml", Kirby::Settings{root / "disc/DATA"}};
     auto& executable=state.executable;
     state.selfTest = selfTest;
+    state.portable = portable;
     state.launcherBuild=Kirby::ParseBuildInformation(Kirby::BuildInformation(Kirby::BuildProgram::Launcher));
     if (selfTest) {
         // Render a fixture record without launching a query or touching user data.
@@ -261,6 +263,13 @@ int main(int argc, char** argv) {
     const auto startSetup=[&](const fs::path& source,Launcher::Setup::Operation operation=Launcher::Setup::Operation::Inspect) {
         if (game!=nullptr || setupJob.Current().Busy() || state.closing) return;
         setupApplied=false;setupSelectionError.clear();
+        if (portable) {
+            std::string selectedStatus;
+            if (!Verify(source, selectedStatus)) { setupSelectionError=selectedStatus;return; }
+            data=source;valid=true;status=std::move(selectedStatus);settingsDirty=true;
+            saveSettings();
+            return;
+        }
         const auto worker=Launcher::FindSetupWorker(root);
         setupJob.Start(worker.file,source,root/"local/setup",worker.interpreter,operation);
         state.setup=setupJob.Current();
