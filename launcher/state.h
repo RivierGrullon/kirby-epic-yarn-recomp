@@ -37,6 +37,6 @@ struct State {
 enum class Action {
     None, Play, ChooseData, VerifyData, SaveSettings, ReloadSettings,
     OpenLogs, OpenSaves, OpenSettings, BuildGuide, ShowInstall, RefreshBuildInfo,
-    ChooseImage, CancelSetup, OpenSetupLogs, BuildGame,
+    ChooseImage, CancelSetup, OpenSetupLogs, BuildGame, OpenSetup,
 };
 } // namespace Launcher

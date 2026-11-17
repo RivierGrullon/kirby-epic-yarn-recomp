@@ -14,6 +14,7 @@ from container_engine import TOOLCHAIN_IMAGE, image_name, select_engine, run_com
 from .jobs import run_process
 from .platforms import open_read, is_link
 from .portable import PortableTools
+from .windows_tools import WindowsTools
 
 
 
@@ -100,7 +101,7 @@ def recover_containers(job):
         _cleanup(job,directory,receipt)
 
 
-def run_container(job,root,command,*,image_id=None,capture_limit=0):
+def run_container(job,root,command,*,image_id=None,capture_limit=0,on_output=None):
     """Run one managed tool, then remove and verify only this ownership token.
 
     A CID file alone cannot be trusted to identify a container for removal.
@@ -110,12 +111,19 @@ def run_container(job,root,command,*,image_id=None,capture_limit=0):
     job.check_cancel()
     if not command:
         raise ValueError('A managed container command is required')
+    native = WindowsTools.find(root)
+    if native is not None:
+        if image_id is not None and _image_id(image_id) != native.image_id:
+            raise ValueError('Windows toolchain identity changed during setup')
+        output = run_process(job, native.command(command), env=native.environment(), cwd=native.root,
+                             capture_limit=capture_limit, on_output=on_output)
+        return ContainerResult(native.image_id, output)
     portable = PortableTools.find(root)
     if portable is not None:
         if image_id is not None and _image_id(image_id) != portable.image_id:
             raise ValueError('Portable toolchain identity changed during setup')
         output = run_process(job, portable.command(command), env=portable.environment(),
-                             capture_limit=capture_limit)
+                             capture_limit=capture_limit,on_output=on_output)
         return ContainerResult(portable.image_id, output)
     image=_image_id(image_id) if image_id is not None else toolchain_image(job)
     token=uuid.uuid4().hex
@@ -129,7 +137,7 @@ def run_container(job,root,command,*,image_id=None,capture_limit=0):
         raise
     try:
         arguments=run_command(root,engine,image,command,managed=(directory/'container.cid',job.identifier,token))
-        output=run_process(job,arguments,capture_limit=capture_limit)
+        output=run_process(job,arguments,capture_limit=capture_limit,on_output=on_output)
         return ContainerResult(image,output)
     finally:
         _cleanup(job,directory,receipt)

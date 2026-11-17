@@ -12,6 +12,7 @@
 #include <cryptopp/sha.h>
 #include "setup/job.h"
 #include "setup/installation.h"
+#include "setup/handoff.h"
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
@@ -257,12 +258,10 @@ int main(int argc, char** argv) {
     auto& status = state.dataStatus;
     if (!selfTest) valid = Verify(data, status);
     GameProcess* game=nullptr;
-    Launcher::Setup::Job setupJob;
-    bool setupApplied=false;
     std::string setupSelectionError;
     const auto startSetup=[&](const fs::path& source,Launcher::Setup::Operation operation=Launcher::Setup::Operation::Inspect) {
-        if (game!=nullptr || setupJob.Current().Busy() || state.closing) return;
-        setupApplied=false;setupSelectionError.clear();
+        if (game!=nullptr || state.setup.Busy() || state.closing) return;
+        setupSelectionError.clear();
         if (portable) {
             std::string selectedStatus;
             if (!Verify(source, selectedStatus)) { setupSelectionError=selectedStatus;return; }
@@ -270,9 +269,8 @@ int main(int argc, char** argv) {
             saveSettings();
             return;
         }
-        const auto worker=Launcher::FindSetupWorker(root);
-        setupJob.Start(worker.file,source,root/"local/setup",worker.interpreter,operation);
-        state.setup=setupJob.Current();
+        (void)operation;
+        setupSelectionError="Open Kirby Setup to install or update the game.";
     };
     Launcher::BuildProbe buildProbe;
     const auto refreshBuild=[&] {
@@ -291,8 +289,7 @@ int main(int argc, char** argv) {
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window))) {
                 state.closing=true;
-                if (setupJob.Current().Busy()) setupJob.Cancel();
-                else running=false;
+                running=false;
             }
         }
         std::string selectedSource,selectionError;
@@ -304,35 +301,9 @@ int main(int argc, char** argv) {
             try { startSetup(Launcher::FromUtf8(selectedSource),Launcher::Setup::Operation::Install); }
             catch (const std::exception& error) { setupSelectionError=error.what(); }
         }
-        if (!selfTest) {
-            setupJob.Poll();state.setup=setupJob.Current();
-            if (state.setup.status==Launcher::Setup::Status::Ready && !setupApplied && !state.closing) {
-                setupApplied=true;
-                try {
-                std::string selectedStatus;
-                const auto& selected=state.setup.installation ? state.setup.installation->dataRoot : state.setup.result->dataRoot;
-                if (Verify(selected,selectedStatus)) {
-                    if (state.setup.installation) {
-                        const auto installed=Launcher::Setup::ReadInstallation(root);
-                        if (!installed || installed->identifier!=state.setup.installation->identifier)
-                            throw std::runtime_error("Installation selection changed before the launcher verified it");
-                        executable=installed->executable;state.installationId=installed->identifier;
-                        state.installationError.clear();refreshBuild();
-                    }
-                    if (data!=selected) { data=selected;settingsDirty=true; }
-                    valid=true;status=std::move(selectedStatus);
-                    if (state.setup.installation) {
-                        if (settingsDirty) saveSettings();
-                        page=Launcher::Page::Play;
-                    }
-                } else setupSelectionError="Imported data changed before selection. Import again. "+selectedStatus;
-                } catch (const std::exception& error) { setupSelectionError=error.what(); }
-            }
-            if (!setupSelectionError.empty()) {
-                state.setup.status=Launcher::Setup::Status::Failed;
-                state.setup.message=setupSelectionError;state.setup.result.reset();
-            }
-            if (state.closing && !state.setup.Busy()) running=false;
+        if (!selfTest && !setupSelectionError.empty()) {
+            state.setup.status=Launcher::Setup::Status::Failed;
+            state.setup.message=setupSelectionError;state.setup.result.reset();
         }
         if (game!=nullptr) {
             int result = 0;
@@ -375,7 +346,7 @@ int main(int argc, char** argv) {
         if (!selfTest && focused && !state.closing) try {
             switch (action) {
             case Launcher::Action::Play:
-                if (setupJob.Current().Busy() || state.choosingSource || game!=nullptr) break;
+                if (state.setup.Busy() || state.choosingSource || game!=nullptr) break;
                 if (!state.installationError.empty()) { state.gameStatus="Repair the installed build before playing. "+state.installationError;break; }
                 if (!state.installationId.empty()) {
                     const auto installed=Launcher::Setup::ReadInstallation(root);
@@ -397,7 +368,7 @@ int main(int argc, char** argv) {
                 break;
             case Launcher::Action::ChooseData:
             case Launcher::Action::ChooseImage:
-                if (setupJob.Current().Busy() || state.choosingSource || game!=nullptr) break;
+                if (state.setup.Busy() || state.choosingSource || game!=nullptr) break;
                 { std::lock_guard lock(selection->mutex);selection->pending=true;state.choosingSource=true; }
                 if (action==Launcher::Action::ChooseData)
                     SDL_ShowOpenFolderDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,Launcher::Utf8(data).c_str(),false);
@@ -407,8 +378,18 @@ int main(int argc, char** argv) {
                 }
                 break;
             case Launcher::Action::VerifyData: if (!state.choosingSource) startSetup(data);break;
-            case Launcher::Action::BuildGame: if (!state.choosingSource) startSetup(data,Launcher::Setup::Operation::Install);break;
-            case Launcher::Action::CancelSetup: setupJob.Cancel();break;
+            case Launcher::Action::CancelSetup: break;
+            case Launcher::Action::BuildGame:
+            case Launcher::Action::OpenSetup: {
+                if (game!=nullptr) break;
+                auto command=Launcher::Setup::ReadSetupCommand(root);
+                std::vector<const char*> arguments;
+                for (const auto& item:command) arguments.push_back(item.c_str());
+                arguments.push_back(nullptr);
+                auto* process=SDL_CreateProcess(arguments.data(),false);
+                if (!process) throw std::runtime_error("Could not open Kirby Setup: "+std::string(SDL_GetError()));
+                SDL_DestroyProcess(process);break;
+            }
             case Launcher::Action::OpenSetupLogs:
                 OpenFolder(state.setup.logPath.empty() ? root/"local/setup/logs" : state.setup.logPath.parent_path());break;
             case Launcher::Action::SaveSettings: saveSettings(); break;

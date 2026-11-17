@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -416,7 +417,15 @@ def run_logged(name, command, *, layout=None):
     logs = layout.logs
     print("+ " + shlex.join(list(map(str, command))), flush=True)
     with (logs / f"{name}.log").open("w") as log:
-        result = subprocess.run(list(map(str, command)), cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
+        if name in ('compile', 'translate'):
+            with subprocess.Popen(list(map(str, command)), cwd=ROOT, stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True, errors='replace') as result:
+                for line in result.stdout:
+                    log.write(line)
+                    print(line, end='', flush=True)
+                result.wait()
+        else:
+            result = subprocess.run(list(map(str, command)), cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
     if result.returncode:
         print((logs / f"{name}.log").read_text()[-8000:], file=sys.stderr)
         raise ValueError(f"{name} failed (exit {result.returncode}); see {logs/name}.log")
@@ -425,6 +434,8 @@ def run_logged(name, command, *, layout=None):
 
 def translator(existing=None, *, layout=None):
     layout=layout or BuildLayout(ROOT)
+    if existing is None and os.environ.get('KIRBY_TRANSLATOR_DLL'):
+        existing = Path(os.environ['KIRBY_TRANSLATOR_DLL'])
     if existing is not None:
         if not existing.is_file():
             raise ValueError(f"Translator DLL not found: {existing}")

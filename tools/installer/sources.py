@@ -12,6 +12,7 @@ from .data import DISC_CAPACITY, inspect_data
 from .jobs import run_process
 from .platforms import WINDOWS, is_link
 from .portable import PortableTools
+from .windows_tools import WindowsTools
 from kirby import ROOT
 
 
@@ -64,6 +65,9 @@ def archive_member(listing):
 
 
 def _dolphin(source, output):
+    native = WindowsTools.find(ROOT)
+    if native is not None:
+        return native.command(['dolphin-tool'])
     portable = PortableTools.find(ROOT)
     if portable is not None:
         return portable.command(['dolphin-tool'], binds=[source, output])
@@ -110,14 +114,17 @@ def inspect_source(selected, job):
         image = source
         needed = DISC_CAPACITY  # Conservative DATA export allowance, not a progress total.
         if source.suffix.lower() == ".7z":
-            portable = PortableTools.find(ROOT)
-            sevenzip = portable.command(['7z'], binds=[source]) if portable else None
+            native = WindowsTools.find(ROOT)
+            portable = PortableTools.find(ROOT) if native is None else None
+            sevenzip = native.command(['7z']) if native else None
+            if portable is not None:
+                sevenzip = portable.command(['7z'], binds=[source])
             if sevenzip is None:
                 found = shutil.which("7z") or shutil.which("7zz")
                 sevenzip = [found] if found else None
             if not sevenzip:
                 raise ValueError("7z or 7zz is required for archive imports")
-            environment = portable.environment() if portable else None
+            environment = native.environment() if native else portable.environment() if portable else None
             listing = run_process(job, [*sevenzip, "l", "-slt", "-ba", "--", source],
                                   env=environment, capture_limit=2 * 1024 * 1024)
             name, size = archive_member(listing.decode("utf-8", errors="strict"))
@@ -141,9 +148,10 @@ def inspect_source(selected, job):
         output = staging / "export"
         output.mkdir(mode=0o700)
         job.emit(dict(stage="extract", state="started"))
-        portable = PortableTools.find(ROOT)
+        native = WindowsTools.find(ROOT)
+        portable = PortableTools.find(ROOT) if native is None else None
         run_process(job, [*_dolphin(image, output), "extract", "-i", image, "-o", output, "-g", "-q"],
-                    env=portable.environment() if portable else None)
+                    env=native.environment() if native else portable.environment() if portable else None)
         job.emit(dict(stage="extract", state="complete"))
         job.emit(dict(stage="validate", state="started", cached=False))
         result = inspect_data(output, check_cancel=job.check_cancel)

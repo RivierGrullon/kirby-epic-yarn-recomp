@@ -18,6 +18,8 @@ from .jobs import run_process
 from .verification import verify_native
 from .platforms import WINDOWS, executable_name, is_link
 from .portable import PortableTools
+from .windows_tools import WindowsTools
+from .progress import ToolProgress
 
 
 class BuildTools:
@@ -25,16 +27,18 @@ class BuildTools:
         self.job, self.root = job, root
         self.image_id = None
         self.portable = PortableTools.find(root)
+        self.native = WindowsTools.find(root)
 
     def bootstrap(self):
-        if self.portable is not None:
+        if self.portable is not None or self.native is not None:
             self.run(['python3', 'tools/bootstrap.py'])
             return
         recover_containers(self.job)
         run_process(self.job, [sys.executable, self.root/'tools/bootstrap.py'], cwd=self.root)
 
     def image(self):
-        self.image_id = self.portable.image_id if self.portable is not None else toolchain_image(self.job)
+        local = self.native or self.portable
+        self.image_id = local.image_id if local is not None else toolchain_image(self.job)
         return self.image_id
 
     def identity(self):
@@ -61,7 +65,8 @@ class BuildTools:
             raise ValueError('Check the memory assigned to the Docker/Podman machine. '+str(error)) from error
 
     def run(self, arguments):
-        return run_container(self.job, self.root, arguments, image_id=self.image_id)
+        progress = ToolProgress('compile', self.job.emit) if 'tools/build_native.py' in arguments else None
+        return run_container(self.job, self.root, arguments, image_id=self.image_id, on_output=progress)
 
     def verify(self, executable, data, identity):
         return verify_native(self.job, self.root, executable, data, identity)

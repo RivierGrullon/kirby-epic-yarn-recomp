@@ -20,7 +20,7 @@ struct Inspection {
     bool cached=false;
 };
 struct Event {
-    std::string stage,state,error;
+    std::string stage,state,error,detail,unit="bytes";
     std::filesystem::path logPath;
     std::optional<uint64_t> completed,total;
     std::optional<Inspection> result;

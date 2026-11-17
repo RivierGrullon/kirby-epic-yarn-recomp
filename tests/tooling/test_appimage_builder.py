@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 import hashlib
+import json
 import os
 from pathlib import Path
 import sys
@@ -32,6 +33,20 @@ class AppImageBuilderTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'checksum'):
                     build_appimage.runtime_file()
             self.assertFalse(os.access(runtime,os.X_OK))
+
+    def test_compact_image_refuses_an_embedded_build_environment(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);appdir=root/'image'
+            for name in ('AppRun','revision','project/tools/kirby.py','tools/runtime/kirby-setup-worker',
+                         'tools/runtime/ca-certificates.crt','tools/setup/kirby-setup'):
+                path=appdir/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'fixture')
+            record=dict(version=1,platform='linux-x86_64',image_id='a'*64,sha256='b'*64,
+                        url='https://example.invalid/tools.tar.xz',size=100,unpacked_size=200)
+            (appdir/'tools/runtime/toolchain-download.json').write_text(json.dumps(record))
+            (appdir/'tools/runtime/rootfs').mkdir()
+            with self.assertRaisesRegex(ValueError,'separate download'):
+                build_appimage.build(appdir,root/'game.AppImage')
+            self.assertFalse((root/'game.AppImage').exists())
 
 
 if __name__=='__main__':

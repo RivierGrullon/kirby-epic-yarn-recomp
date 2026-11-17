@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "setup/protocol.h"
+#include "setup/handoff.h"
 #include "launcher_test_paths.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 
@@ -16,8 +18,27 @@ void Reject(std::string text) {
 }
 int main() {
     using namespace Launcher::Setup;
+    const auto handoffRoot=TemporaryLauncherDirectory("kirby-setup-handoff-");
+    std::filesystem::create_directories(handoffRoot/"local");
+    const auto setupPath=AbsoluteFixture("Setup folder/Kirby Setup");
+    {
+        std::ofstream file(handoffRoot/"local/setup-command.json");
+        file << nlohmann::json{{"version",1},{"arguments",{setupPath,"--appdir","a folder's literal $ path"}}};
+    }
+    const auto command=ReadSetupCommand(handoffRoot);
+    Check(command.size()==3 && command[0]==setupPath && command[2]=="a folder's literal $ path","Setup handoff changed literal arguments");
+    {
+        std::ofstream file(handoffRoot/"local/setup-command.json");
+        file << R"({"version":1,"arguments":["relative-program"]})";
+    }
+    bool badHandoff=false;
+    try { ReadSetupCommand(handoffRoot); } catch (const std::exception&) { badHandoff=true; }
+    Check(badHandoff,"Setup handoff accepted a relative program");
+    std::filesystem::remove_all(handoffRoot);
     const auto progress=ParseEvent(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"hash","state":"progress","completed":128,"total":512})","job-1",1);
     Check(progress.completed==128 && progress.total==512,"Genuine byte progress was lost");
+    const auto tasks=ParseEvent(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"compile","state":"progress","completed":12,"total":100,"unit":"tasks"})","job-1",1);
+    Check(tasks.unit=="tasks" && tasks.completed==12 && tasks.total==100,"Compiler task progress was lost");
     const auto extraction=ParseEvent(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"extract","state":"started"})","job-1",1);
     Check(!extraction.completed && !extraction.total,"Unknown extraction progress was invented");
     auto readyObject=nlohmann::json::parse(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"inspect","state":"complete","result":{"source":"/selected's copy.wbfs","source_kind":"wbfs","source_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","cached":false,"data_root":"/setup/export/DATA","game_id":"RK5E01","revision":0,"dol_sha1":"f4280a2b0709bfde4132be22e9f7fa8ecfa2a130","entry_point":2147500112,"asset_files":12,"asset_bytes":1024,"validation":"dol-sha1-and-data-layout"}})");
@@ -41,6 +62,7 @@ int main() {
     Reject(R"({"version":1,"job_id":"job-1","sequence":2,"stage":"hash","state":"progress"})");
     Reject(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"hash","state":"progress","completed":5,"total":4})");
     Reject(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"hash","state":"progress","completed":1})");
+    Reject(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"compile","state":"progress","completed":1,"total":4,"unit":"unknown"})");
     Reject(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"inspect","state":"complete"})");
     const auto failure=ParseEvent(R"({"version":1,"job_id":"job-1","sequence":1,"stage":"inspect","state":"failed","error":"Selected source is incomplete"})","job-1",1);
     Check(failure.error=="Selected source is incomplete","Actionable setup error was lost");

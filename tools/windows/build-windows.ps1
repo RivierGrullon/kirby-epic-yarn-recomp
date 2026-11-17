@@ -13,14 +13,15 @@ param(
     [ValidateRange(1,256)][int]$Jobs = 2,
     [ValidateRange(1,256)][int]$TranslatedJobs = 2,
     [switch]$ToolsOnly,
-    [switch]$PackageOnly
+    [switch]$PackageOnly,
+    [string]$CacheRoot
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $Root = Split-Path (Split-Path $PSScriptRoot)
-$Cache = Join-Path $Root '.tools\windows'
+$Cache = if ($CacheRoot) { [IO.Path]::GetFullPath($CacheRoot) } else { Join-Path $Root '.tools\windows' }
 $Manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'windows-dependencies.json') -Raw | ConvertFrom-Json
 
 function Invoke-Checked([string]$Program, [string[]]$Arguments) {
@@ -93,7 +94,7 @@ function Get-Package([string]$Name) {
 
 $SavedEnvironment = @{}
 foreach ($Name in @('PATH', 'DOTNET_ROOT', 'DOTNET_MULTILEVEL_LOOKUP', 'DOTNET_CLI_TELEMETRY_OPTOUT',
-                    'DOTNET_NOLOGO', 'PYTHONUTF8')) {
+                    'DOTNET_NOLOGO', 'PYTHONUTF8', 'KIRBY_PROJECT_ROOT')) {
     $SavedEnvironment[$Name] = [Environment]::GetEnvironmentVariable($Name, 'Process')
 }
 $Lock = $null
@@ -123,17 +124,31 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
 
     $Python = Get-Package 'python'
-    # The embedded distribution deliberately excludes the script directory.
-    # Add this checkout's modules, without using a global Python installation.
+    # Select modules per process, so concurrent snapshots can share this Python.
+    # Remove old checkout-specific paths from earlier private tool installations.
+    $env:KIRBY_PROJECT_ROOT = $Root
     $PythonHome = Split-Path $Python
     $Pth = Get-ChildItem -LiteralPath $PythonHome -Filter 'python*._pth' | Select-Object -First 1
-    $PthLines = @(Get-Content -LiteralPath $Pth.FullName | Where-Object { $_ -notmatch '^[A-Za-z]:[\\/]' })
-    [IO.File]::WriteAllLines($Pth.FullName, [string[]]($PthLines + (Join-Path $Root 'tools')), [Text.UTF8Encoding]::new($false))
+    $PthLines = @(Get-Content -LiteralPath $Pth.FullName | Where-Object {
+        ![IO.Path]::IsPathRooted($_) -and $_.Trim() -notmatch '^#?\s*import site$'
+    })
+    $SiteSource = Join-Path $PSScriptRoot 'sitecustomize.py'
+    $SiteTarget = Join-Path $PythonHome 'sitecustomize.py'
+    if (!(Test-Path -LiteralPath $SiteTarget) -or
+        (Get-FileHash -LiteralPath $SiteSource -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $SiteTarget -Algorithm SHA256).Hash) {
+        Copy-Item -LiteralPath $SiteSource -Destination $SiteTarget -Force
+    }
+    $ConfiguredPth = [string[]]($PthLines + 'import site')
+    if (($ConfiguredPth -join "`n") -ne ((Get-Content -LiteralPath $Pth.FullName) -join "`n")) {
+        [IO.File]::WriteAllLines($Pth.FullName, $ConfiguredPth, [Text.UTF8Encoding]::new($false))
+    }
     $Redist = Get-Package 'vcredist'
     if ($PackageOnly) {
         Invoke-Checked $Python @((Join-Path $PSScriptRoot 'package_windows.py'), '--redist', $Redist)
         exit 0
     }
+    # Archive imports need 7zr even if every ZIP package was already cached.
+    $SevenZip = Get-Package 'sevenzip'
     $Git = Get-Package 'git'
     $Cmake = Get-Package 'cmake'
     $Ninja = Get-Package 'ninja'
@@ -143,7 +158,7 @@ try {
     # clang lives in <package>/<llvm-mingw-version>/bin.
     $MingwRoot = Split-Path (Split-Path $Clang)
     $WinrtInclude = Split-Path (Split-Path $WinrtBase)
-    $Bins = @($Python, $Git, $Cmake, $Ninja, $Dotnet, $Clang) | ForEach-Object { Split-Path $_ }
+    $Bins = @($Python, $Git, $Cmake, $Ninja, $Dotnet, $Clang, $SevenZip) | ForEach-Object { Split-Path $_ }
     $env:PATH = ($Bins -join ';') + ';' + $env:PATH
     $env:DOTNET_ROOT = Split-Path $Dotnet
     $env:DOTNET_MULTILEVEL_LOOKUP = '0'

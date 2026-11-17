@@ -94,6 +94,7 @@ bool Job::Start(const std::filesystem::path& worker,const std::filesystem::path&
         StartWindows(worker,workspace,python);
         #endif
         view_.status=Status::Running;view_.stage="inspect";view_.message="Checking selected game data...";
+        view_.startedAt=view_.stageStartedAt=Clock::now();
         return true;
     } catch (const std::exception& errorMessage) {
         Close();view_.status=Status::Failed;view_.message=errorMessage.what();return false;
@@ -180,7 +181,9 @@ void Job::Consume(std::string_view line) {
         if (!terminal_.empty()) throw std::runtime_error("Setup worker sent data after its final event");
         auto event=ParseEvent(line,identifier_,sequence_++);
         if (event.stage=="request") return;
-        view_.stage=event.stage;view_.completed=event.completed;view_.total=event.total;
+        if (view_.stage!=event.stage) view_.stageStartedAt=Clock::now();
+        view_.stage=event.stage;view_.completed=event.completed;view_.total=event.total;view_.unit=event.unit;
+        view_.detail=event.detail;
         if (!event.logPath.empty()) view_.logPath=std::move(event.logPath);
         if (event.result) {
             if (view_.operation!=Operation::Inspect) throw std::runtime_error("Unexpected inspection completion during installation");

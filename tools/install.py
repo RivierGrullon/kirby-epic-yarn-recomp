@@ -15,6 +15,8 @@ from installer.jobs import Cancelled, Job
 from installer.platforms import WINDOWS, readable
 from installer.sources import inspect_source
 from installer.pipeline import execute_install
+from installer.toolchain_download import ensure_toolchain
+from installer.windows_tools import WindowsTools
 
 LIMIT = 64 * 1024
 
@@ -55,6 +57,10 @@ class RequestReader:
 
 
 def main():
+    if len(sys.argv)>1 and sys.argv[1]=='--supervise':
+        from installer.setup_supervisor import supervise
+        command=([sys.executable] if getattr(sys,'frozen',False) else [sys.executable,str(Path(__file__).resolve())])
+        return supervise([*command,*sys.argv[2:]])
     if len(sys.argv)>2 and sys.argv[1]=='--launch-appimage':
         from installer.appimage import launch_appimage
         launch_appimage(sys.argv[2],sys.argv[3:])
@@ -115,6 +121,14 @@ def main():
                 if control_thread is not None:
                     control_thread.start()
                 emit(dict(stage="inspect", state="started", log_path=str(job.log_path)))
+                if operation == 'install' or Path(selected).is_file():
+                    if WINDOWS:
+                        native = WindowsTools.prepare(ROOT, job)
+                        environment = native.environment()
+                        os.environ.clear()
+                        os.environ.update(environment)
+                    else:
+                        ensure_toolchain(ROOT, job)
                 result = inspect_source(selected, job)
                 if operation == "install":
                     result = execute_install(job, ROOT, result)

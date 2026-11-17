@@ -14,6 +14,8 @@ import tempfile
 import uuid
 
 from installer.portable import PortableTools
+from package_toolchain import build as archive_toolchain
+from installer.toolchain_download import descriptor as read_descriptor
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -77,7 +79,30 @@ def container(engine, image, arguments, root=ROOT):
     subprocess.run(command,check=True)
 
 
-def make_appdir(root, output, image, engine):
+def export_tools(image, engine, runtime):
+    runtime = Path(runtime); runtime.mkdir(parents=True)
+    identifier='kirby-package-'+uuid.uuid4().hex
+    subprocess.run([engine,'create','--name',identifier,image],check=True,stdout=subprocess.DEVNULL)
+    archive_path=runtime.parent/'rootfs.tar'
+    try:
+        subprocess.run([engine,'export','--output',archive_path,identifier],check=True)
+        with tarfile.open(archive_path) as archive:
+            extract_rootfs(archive,runtime/'rootfs')
+    finally:
+        subprocess.run([engine,'rm',identifier],check=True,stdout=subprocess.DEVNULL)
+        archive_path.unlink(missing_ok=True)
+    shutil.copy2(runtime/'rootfs/usr/bin/proot',runtime/'proot')
+    (runtime/'lib').mkdir()
+    for library in sorted((runtime/'rootfs/usr/lib/x86_64-linux-gnu').glob('libtalloc.so*')):
+        shutil.copy2(library.resolve(),runtime/'lib'/library.name)
+    files={name:digest(runtime/name) for name in PortableTools.REQUIRED}
+    for library in sorted((runtime/'lib').iterdir()):
+        files[library.relative_to(runtime).as_posix()]=digest(library)
+    (runtime/'toolchain.json').write_text(json.dumps(dict(version=1,platform='linux-x86_64',
+        image_id=image.removeprefix('sha256:'),files=files),indent=2)+'\n')
+
+
+def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, tools_descriptor=None):
     root, output = Path(root).resolve(), Path(output).absolute()
     if output.exists():
         raise ValueError('Package output already exists; choose a new path')
@@ -86,44 +111,51 @@ def make_appdir(root, output, image, engine):
     expected = collect(root,compiler='pending',build_type='Release')
     if expected['source_modified']:
         raise ValueError('Commit project changes before packaging')
+    launcher=root/'build/native/kirby-launcher'
+    environment=dict(os.environ,LD_LIBRARY_PATH=str(root/'local/host-libs'))
+    import tomllib
+    information=tomllib.loads(subprocess.check_output([launcher,'--build-info'],env=environment,text=True))
+    for key in ('source_revision','source_modified','source_sha256'):
+        if information['build'][key] != expected[key]:
+            raise ValueError('Rebuild the launcher from the committed package sources')
     image = subprocess.check_output([engine,'image','inspect',image,'--format','{{.Id}}'],text=True).strip().removeprefix('sha256:')
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.appdir-',dir=output.parent) as temporary:
         appdir=Path(temporary)/'Kirby.AppDir';appdir.mkdir()
         project=appdir/'project';project_snapshot(root,project)
-        runtime=appdir/'tools/runtime';runtime.mkdir(parents=True)
-        identifier='kirby-package-'+uuid.uuid4().hex
-        subprocess.run([engine,'create','--name',identifier,image],check=True,stdout=subprocess.DEVNULL)
-        try:
-            archive_path=Path(temporary)/'rootfs.tar'
-            subprocess.run([engine,'export','--output',archive_path,identifier],check=True)
-            with tarfile.open(archive_path) as archive:
-                extract_rootfs(archive,runtime/'rootfs')
-        finally:
-            subprocess.run([engine,'rm',identifier],check=True,stdout=subprocess.DEVNULL)
-        shutil.copy2(runtime/'rootfs/usr/bin/proot',runtime/'proot')
-        (runtime/'lib').mkdir()
-        for library in (runtime/'rootfs/usr/lib/x86_64-linux-gnu').glob('libtalloc.so*'):
-            shutil.copy2(library.resolve(),runtime/'lib'/library.name)
+        worker=appdir/'tools/runtime';worker.mkdir(parents=True)
+        translator_revision=json.loads((root/'dependencies.json').read_text())['wiicompiled']['commit']
+        if tools_descriptor is not None:
+            shutil.copy2(tools_descriptor,worker/'toolchain-download.json')
+            descriptor=read_descriptor(worker)
+            if descriptor is None or descriptor.get('translator_revision') != translator_revision:
+                raise ValueError('Toolchain descriptor does not match the pinned translator revision')
+        else:
+            runtime=Path(temporary)/'toolchain'
+            export_tools(image,engine,runtime)
+            descriptor=archive_toolchain(runtime,runtime/'rootfs/opt/kirby-translator',
+                                         tools_output,tools_url,translator_revision)
+            (worker/'toolchain-download.json').write_text(json.dumps(descriptor,indent=2)+'\n')
         freeze=root/'local/portable-freeze';freeze.mkdir(parents=True,exist_ok=True)
         container(engine,image,['/opt/freeze/bin/pyinstaller','--noconfirm','--clean',
                   '--distpath','local/portable-freeze/dist','--workpath','local/portable-freeze/work',
                   '--specpath','local/portable-freeze','--name','kirby-setup-worker',
-                  '--contents-directory','python','tools/install.py'],root)
+                  '--exclude-module','PyQt6','--contents-directory','python','tools/install.py'],root)
+        container(engine,image,['cp','/etc/ssl/certs/ca-certificates.crt',
+                  'local/portable-freeze/dist/kirby-setup-worker/ca-certificates.crt'],root)
         built=freeze/'dist/kirby-setup-worker'
-        shutil.copytree(built,runtime,dirs_exist_ok=True)
-        files={name:digest(runtime/name) for name in PortableTools.REQUIRED}
-        for library in (runtime/'lib').iterdir():
-            files[library.relative_to(runtime).as_posix()]=digest(library)
-        (runtime/'toolchain.json').write_text(json.dumps(dict(version=1,platform='linux-x86_64',
-            image_id=image,files=files),indent=2)+'\n')
-        launcher=root/'build/native/kirby-launcher'
-        environment=dict(os.environ,LD_LIBRARY_PATH=str(root/'local/host-libs'))
-        import tomllib
-        information=tomllib.loads(subprocess.check_output([launcher,'--build-info'],env=environment,text=True))
-        for key in ('source_revision','source_modified','source_sha256'):
-            if information['build'][key] != expected[key]:
-                raise ValueError('Rebuild the launcher from the committed package sources')
+        shutil.copytree(built,worker,dirs_exist_ok=True)
+        container(engine,image,['/opt/freeze/bin/pyinstaller','--noconfirm','--clean','--windowed',
+                  '--distpath','local/portable-freeze/dist','--workpath','local/portable-freeze/work',
+                  '--specpath','local/portable-freeze','--name','kirby-setup',
+                  '--contents-directory','python','tools/setup_gui.py'],root)
+        shutil.copytree(freeze/'dist/kirby-setup',appdir/'tools/setup')
+        # Preserve the exact Qt/PyQt wheel notices alongside the frozen components.
+        container(engine,image,['/opt/freeze/bin/python','-c',
+                  "import importlib.metadata,pathlib,shutil;out=pathlib.Path('local/portable-freeze/licenses');out.mkdir(exist_ok=True);"
+                  "[(shutil.copytree(p,out/p.name,dirs_exist_ok=True)) for n in ('PyQt6','PyQt6-Qt6','PyQt6-sip') "
+                  "for p in [pathlib.Path(importlib.metadata.distribution(n)._path)] if p.is_dir()]"],root)
+        shutil.copytree(freeze/'licenses',appdir/'licenses/qt')
         (project/'build/native').mkdir(parents=True)
         shutil.copy2(launcher,project/'build/native/kirby-launcher')
         if (root/'local/host-libs').is_dir():
@@ -143,7 +175,7 @@ def make_appdir(root, output, image, engine):
         (appdir/'kirby-native.png').symlink_to(png_icon)
         (appdir/'.DirIcon').symlink_to('kirby-native.png')
         (appdir/'revision').write_text(expected['source_revision']+'\n')
-        # The rootfs retains /usr/share/doc and Dolphin's corresponding source.
+        # The separate tools archive retains component notices and corresponding source.
         shutil.copy2(root/'THIRD_PARTY.md',appdir/'THIRD_PARTY.md')
         shutil.copy2(root/'LICENSE',appdir/'LICENSE')
         os.rename(appdir,output)
@@ -152,11 +184,17 @@ def make_appdir(root, output, image, engine):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--image',default='localhost/kirby-portable-tools:dev')
+    parser.add_argument('--image',default='localhost/kirby-setup-tools:pyqt')
     parser.add_argument('--engine',choices=('podman','docker'),default='podman')
     parser.add_argument('--output',type=Path,required=True)
+    tools=parser.add_mutually_exclusive_group(required=True)
+    tools.add_argument('--tools-output',type=Path,help='Separate tools .tar.xz to publish once')
+    tools.add_argument('--tools-descriptor',type=Path,help='Reuse a previously published tools archive descriptor')
+    parser.add_argument('--tools-url',help='Immutable HTTPS release URL when making a new tools archive')
     args=parser.parse_args()
-    make_appdir(ROOT,args.output,args.image,args.engine)
+    if args.tools_output and not args.tools_url:
+        parser.error('--tools-output requires --tools-url')
+    make_appdir(ROOT,args.output,args.image,args.engine,args.tools_output,args.tools_url,args.tools_descriptor)
 
 
 if __name__ == '__main__':

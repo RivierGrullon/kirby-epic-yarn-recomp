@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Packaging only: this image is never shipped to players.
+ARG TOOLS_IMAGE=localhost/kirby-portable-tools:compact
+FROM ${TOOLS_IMAGE}
+COPY requirements-setup.txt /tmp/requirements-setup.txt
+RUN /opt/freeze/bin/pip install --no-cache-dir pyinstaller==6.22.3 -r /tmp/requirements-setup.txt
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 \
+    libxcb-render-util0 libxcb-xinerama0 libgl1 fontconfig \
+    && rm -rf /var/lib/apt/lists/*
