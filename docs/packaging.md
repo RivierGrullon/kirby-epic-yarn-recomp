@@ -12,11 +12,32 @@ Windows portable ZIP preparation and validation are still outstanding.
 
 ## Linux AppImage
 
-The image includes the launcher, an isolated setup worker, PRoot and a private
-Linux build environment with DolphinTool. PRoot is used for build and extraction
+The image includes the launcher, an isolated setup worker and a pinned tools
+download descriptor. Opening the launcher and playing an installed game do not
+download tools. Importing a disc image or building a game downloads the private
+Linux build environment with PRoot and DolphinTool once. PRoot is used for build and extraction
 commands. The resulting game and its startup checks run on the host.
 Build subprocesses use a private runtime directory inside the writable temporary
 storage, so .NET mutexes do not depend on the host desktop's `/run/user` paths.
+
+Tools are stored separately under
+`$XDG_DATA_HOME/kirby-native/toolchains/<archive-sha256>/` (defaulting to
+`~/.local/share/kirby-native/toolchains/`). Application versions reuse the same
+tools when their descriptor pins the same archive. Downloads use the packaged CA
+bundle, require HTTPS and match both the pinned byte size and SHA-256. Extraction
+checks paths, links and expansion size before selecting a complete toolchain.
+Cancelled or failed transfers leave no selected partial toolchain; retrying setup
+starts a fresh transfer. A cache lock coordinates simultaneous application versions.
+
+The tools archive contains the prebuilt pinned translator and the .NET runtime,
+without the .NET SDK. Packaging-only PyInstaller files, PowerShell, caches and Git
+metadata are excluded. Corresponding component source trees and license notices
+remain in the tools archive. Archive timestamps are normalized so repackaging
+identical tools preserves their download/cache identity.
+
+Setup displays its current stage and elapsed time throughout installation. Download
+and unpack progress use real byte totals; Ninja compilation uses completed build
+tasks. Stages without a known total display an animated activity bar.
 
 The AppImage mount stays read-only. Authored sources are prepared under:
 
@@ -49,12 +70,28 @@ podman build -t localhost/kirby-portable-tools:dev \
 # Rebuild the launcher after committing the packaging sources.
 bash tools/container.sh cmake --build build/native --target kirby-launcher --parallel 2
 
-python3 tools/package_portable.py --output local/releases/Kirby.AppDir
+python3 tools/package_portable.py --output local/releases/Kirby.AppDir \
+  --tools-output local/releases/Kirby-tools-linux-x86_64.tar.xz \
+  --tools-url https://github.com/OWNER/REPO/releases/download/TOOLS-VERSION/Kirby-tools-linux-x86_64.tar.xz
 python3 tools/build_appimage.py local/releases/Kirby.AppDir \
   --output local/releases/Kirby-linux-x86_64.AppImage
 ```
 
-The packager exports the private toolchain and freezes the setup worker. It
+Replace the example tools URL with the immutable HTTPS asset URL you will publish.
+Publish the `.tar.xz` at that exact URL before distributing the AppImage. The
+packager writes a companion `.tar.xz.json` descriptor containing its hashes, sizes
+and translator revision. Keep it with the release artifacts. A later application
+release can reuse that descriptor and archive without exporting the tools again:
+
+```sh
+python3 tools/package_portable.py --output local/releases/Kirby-next.AppDir \
+  --tools-descriptor local/releases/Kirby-tools-linux-x86_64.tar.xz.json
+```
+
+Rebuild the tools when their dependencies change, using a new immutable URL.
+The packager rejects descriptors with a different translator source revision.
+
+The packager exports and reduces the private toolchain, then freezes the setup worker. It
 creates a fresh shallow source snapshot, and includes only the launcher from the
 native build. It excludes the disc, translated game code, native game executable,
 settings, saves and developer caches. Existing component notices stay with their

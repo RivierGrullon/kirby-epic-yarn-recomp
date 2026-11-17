@@ -12,7 +12,8 @@ enum class Status { Idle,Running,Cancelling,Ready,Failed,Cancelled };
 struct View {
     Operation operation=Operation::Inspect;
     Status status=Status::Idle;
-    std::string stage,message;
+    std::string stage,message,detail,unit="bytes";
+    std::chrono::steady_clock::time_point startedAt{},stageStartedAt{};
     std::filesystem::path source,logPath;
     std::optional<uint64_t> completed,total;
     std::optional<Inspection> result;

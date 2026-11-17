@@ -52,7 +52,13 @@ Event ParseEvent(std::string_view line,std::string_view identifier,uint64_t sequ
         event.completed=Number(object,"completed");event.total=Number(object,"total");
         if (*event.completed>*event.total) throw std::runtime_error("Setup byte progress exceeds its total");
     }
+    if (object.contains("unit")) {
+        event.unit=Text(object,"unit",16);
+        if (!oneOf(event.unit,{"bytes","tasks"}) || !event.completed || !event.total)
+            throw std::runtime_error("Invalid setup progress unit");
+    }
     if (object.contains("log_path")) event.logPath=Path(object,"log_path");
+    if (object.contains("detail")) event.detail=Text(object,"detail",256);
     if (object.contains("error")) event.error=Text(object,"error",8192);
     if (event.stage=="inspect" && event.state=="complete") {
         const auto& result=object.at("result");

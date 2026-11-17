@@ -38,3 +38,13 @@ RUN git clone --depth 1 --branch v5.5.0 --recurse-submodules --shallow-submodule
     && cp /opt/proot-source/src/proot /usr/bin/proot \
     && /usr/bin/proot --version
 WORKDIR /workspace
+# Publish the pinned translator once. Players only need the .NET runtime;
+# package_toolchain.py excludes the SDK and retains this corresponding source.
+RUN git init /opt/kirby-translator-source \
+    && git -C /opt/kirby-translator-source remote add origin https://github.com/patchzyy/Wiicompiled.git \
+    && git -C /opt/kirby-translator-source fetch --depth 1 origin ffbde831317c2a3fc7841f53e7244db83f024ff2 \
+    && git -C /opt/kirby-translator-source checkout --detach FETCH_HEAD \
+    && dotnet publish /opt/kirby-translator-source/translator/src/Translator.Cli/Translator.Cli.csproj \
+         -c Release --self-contained false -p:UseAppHost=false --disable-build-servers \
+         -o /opt/kirby-translator \
+    && git -C /opt/kirby-translator-source rev-parse HEAD > /opt/kirby-translator/source-revision

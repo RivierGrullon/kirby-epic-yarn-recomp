@@ -33,7 +33,8 @@ inline SetupWorker FindSetupWorker(const std::filesystem::path& root) {
 #endif
     if (std::filesystem::is_regular_file(native)) return {native,{}};
     if (std::filesystem::is_regular_file(python)) return {root/"tools/install.py",Utf8(python)};
-    if (std::filesystem::exists(root/"tools/runtime/toolchain.json"))
+    if (std::filesystem::exists(root/"tools/runtime/toolchain.json") ||
+        std::filesystem::exists(root/"tools/runtime/toolchain-download.json"))
         throw std::runtime_error("The setup tools are incomplete. Extract the complete application package again.");
     return {root/"tools/install.py",PythonExecutable};
 }

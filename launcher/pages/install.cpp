@@ -2,6 +2,8 @@
 #include "pages.h"
 #include "../platform.h"
 #include <imgui.h>
+#include <chrono>
+#include <cstdio>
 
 namespace Launcher {
 namespace {
@@ -10,7 +12,7 @@ const char* StageLabel(const std::string& stage) {
     if (stage=="unpack") return "Unpacking archive";
     if (stage=="extract") return "Extracting game data";
     if (stage=="validate") return "Verifying game data";
-    if (stage=="prepare") return "Preparing pinned build tools";
+    if (stage=="prepare") return "Preparing installation tools";
     if (stage=="translate") return "Translating PowerPC code to C++";
     if (stage=="compile") return "Compiling the native game";
     if (stage=="verify") return "Checking native startup (silent)";
@@ -35,13 +37,28 @@ Action DrawInstall(State& state) {
     if (setup.status!=Setup::Status::Idle) {
         ImGui::Spacing();
         if (setup.Busy()) {
-            ImGui::TextUnformatted(setup.status==Setup::Status::Cancelling ? "Cancelling setup..." : StageLabel(setup.stage));
+            ImGui::TextUnformatted("Installation progress");
+            ImGui::TextUnformatted(setup.status==Setup::Status::Cancelling ? "Cancelling setup..." :
+                                   setup.detail.empty() ? StageLabel(setup.stage) : setup.detail.c_str());
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram,ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered));
             if (setup.completed && setup.total && *setup.total>0) {
-                const auto label=std::to_string(*setup.completed/1048576)+" / "+std::to_string(*setup.total/1048576)+" MiB";
-                ImGui::PushStyleColor(ImGuiCol_PlotHistogram,ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered));
-                ImGui::ProgressBar(static_cast<float>(double(*setup.completed)/double(*setup.total)),{-1,0},label.c_str());
-                ImGui::PopStyleColor();
+                const double fraction=double(*setup.completed)/double(*setup.total);
+                char label[128];
+                if (setup.unit=="tasks")
+                    std::snprintf(label,sizeof(label),"%.0f%% - %llu / %llu build tasks",fraction*100.,
+                                  static_cast<unsigned long long>(*setup.completed),static_cast<unsigned long long>(*setup.total));
+                else
+                    std::snprintf(label,sizeof(label),"%.0f%% - %.1f / %.1f MiB",fraction*100.,
+                                  double(*setup.completed)/1048576.,double(*setup.total)/1048576.);
+                ImGui::ProgressBar(static_cast<float>(fraction),{-1,0},label);
+            } else {
+                ImGui::ProgressBar(-static_cast<float>(ImGui::GetTime()),{-1,0},"Working...");
             }
+            ImGui::PopStyleColor();
+            const auto seconds=std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now()-setup.startedAt).count();
+            ImGui::Text("Elapsed: %lld min %02lld sec",static_cast<long long>(seconds/60),static_cast<long long>(seconds%60));
+            ImGui::TextWrapped("The first installation can take several minutes. You can leave this window open.");
             ImGui::BeginDisabled(state.selfTest || setup.status==Setup::Status::Cancelling);
             if (ImGui::Button(setup.operation==Setup::Operation::Install ? "Cancel build" : "Cancel import")) action=Action::CancelSetup;
             ImGui::EndDisabled();
@@ -68,7 +85,9 @@ Action DrawInstall(State& state) {
     ImGui::BeginDisabled(state.selfTest || state.gameRunning || setup.Busy() || state.choosingSource || !state.dataVerified);
     if (ImGui::Button("Build / update native game")) action=Action::BuildGame;
     ImGui::EndDisabled();
-    if (std::filesystem::exists(state.root/"tools/runtime/toolchain.json"))
+    if (std::filesystem::exists(state.root/"tools/runtime/toolchain-download.json"))
+        ImGui::TextWrapped("Installation tools download automatically the first time and are reused for future updates. Your game files stay on this computer.");
+    else if (std::filesystem::exists(state.root/"tools/runtime/toolchain.json"))
         ImGui::TextWrapped("Build tools are included. The first preparation needs internet access and can take several minutes. Your game files stay on this computer.");
     else {
         ImGui::TextWrapped("Developer checkout: prepare the build tools using the Build Guide. Application packages include their own tools.");

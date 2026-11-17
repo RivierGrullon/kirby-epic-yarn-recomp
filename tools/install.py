@@ -15,6 +15,7 @@ from installer.jobs import Cancelled, Job
 from installer.platforms import WINDOWS, readable
 from installer.sources import inspect_source
 from installer.pipeline import execute_install
+from installer.toolchain_download import ensure_toolchain
 
 LIMIT = 64 * 1024
 
@@ -115,6 +116,8 @@ def main():
                 if control_thread is not None:
                     control_thread.start()
                 emit(dict(stage="inspect", state="started", log_path=str(job.log_path)))
+                if operation == 'install' or Path(selected).is_file():
+                    ensure_toolchain(ROOT, job)
                 result = inspect_source(selected, job)
                 if operation == "install":
                     result = execute_install(job, ROOT, result)

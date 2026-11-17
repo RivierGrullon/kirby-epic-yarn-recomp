@@ -100,7 +100,7 @@ def recover_containers(job):
         _cleanup(job,directory,receipt)
 
 
-def run_container(job,root,command,*,image_id=None,capture_limit=0):
+def run_container(job,root,command,*,image_id=None,capture_limit=0,on_output=None):
     """Run one managed tool, then remove and verify only this ownership token.
 
     A CID file alone cannot be trusted to identify a container for removal.
@@ -115,7 +115,7 @@ def run_container(job,root,command,*,image_id=None,capture_limit=0):
         if image_id is not None and _image_id(image_id) != portable.image_id:
             raise ValueError('Portable toolchain identity changed during setup')
         output = run_process(job, portable.command(command), env=portable.environment(),
-                             capture_limit=capture_limit)
+                             capture_limit=capture_limit,on_output=on_output)
         return ContainerResult(portable.image_id, output)
     image=_image_id(image_id) if image_id is not None else toolchain_image(job)
     token=uuid.uuid4().hex
@@ -129,7 +129,7 @@ def run_container(job,root,command,*,image_id=None,capture_limit=0):
         raise
     try:
         arguments=run_command(root,engine,image,command,managed=(directory/'container.cid',job.identifier,token))
-        output=run_process(job,arguments,capture_limit=capture_limit)
+        output=run_process(job,arguments,capture_limit=capture_limit,on_output=on_output)
         return ContainerResult(image,output)
     finally:
         _cleanup(job,directory,receipt)

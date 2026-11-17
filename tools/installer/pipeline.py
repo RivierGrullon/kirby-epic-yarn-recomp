@@ -18,6 +18,7 @@ from .jobs import run_process
 from .verification import verify_native
 from .platforms import WINDOWS, executable_name, is_link
 from .portable import PortableTools
+from .progress import ToolProgress
 
 
 class BuildTools:
@@ -61,7 +62,8 @@ class BuildTools:
             raise ValueError('Check the memory assigned to the Docker/Podman machine. '+str(error)) from error
 
     def run(self, arguments):
-        return run_container(self.job, self.root, arguments, image_id=self.image_id)
+        progress = ToolProgress('compile', self.job.emit) if 'tools/build_native.py' in arguments else None
+        return run_container(self.job, self.root, arguments, image_id=self.image_id, on_output=progress)
 
     def verify(self, executable, data, identity):
         return verify_native(self.job, self.root, executable, data, identity)

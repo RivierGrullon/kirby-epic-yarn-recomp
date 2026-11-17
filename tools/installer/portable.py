@@ -19,6 +19,20 @@ class PortableTools:
     @classmethod
     def find(cls, root):
         base = (Path(root).resolve()/'tools/runtime').resolve()
+        from .toolchain_download import cached_toolchain
+        cached = cached_toolchain(base)
+        if cached is not None:
+            tools = cls.from_base(root, cached[0])
+            if tools is None:
+                raise ValueError('Cached toolchain manifest is missing')
+            if tools.image_id != cached[1]:
+                raise ValueError('Cached toolchain identity mismatch')
+            return tools
+        return cls.from_base(root, base)
+
+    @classmethod
+    def from_base(cls, root, base):
+        base = Path(base).resolve()
         marker = base/'toolchain.json'
         if not marker.exists() and not marker.is_symlink():
             return None
@@ -45,6 +59,12 @@ class PortableTools:
                     raise ValueError('Portable tool checksum mismatch: '+name)
         if (base/'rootfs').is_symlink() or not (base/'rootfs').is_dir():
             raise ValueError('Invalid portable root filesystem')
+        if 'translator_revision' in record:
+            dependencies = json.loads((Path(root)/'dependencies.json').read_text())
+            if record['translator_revision'] != dependencies['wiicompiled']['commit']:
+                raise ValueError('Prebuilt translator revision does not match project dependencies')
+            if 'rootfs/opt/kirby-translator/Translator.Cli.dll' not in record['files']:
+                raise ValueError('Prebuilt translator is missing from toolchain manifest')
         return cls(Path(root).resolve(), base, record['image_id'])
 
     def __init__(self, root, base, image_id):
@@ -89,4 +109,7 @@ class PortableTools:
                    TMPDIR='/tmp', XDG_RUNTIME_DIR='/tmp/kirby-runtime',
                    DOTNET_CLI_TELEMETRY_OPTOUT='1', DOTNET_NOLOGO='1',
                    GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='safe.directory', GIT_CONFIG_VALUE_0='/workspace')
+        env.pop('KIRBY_TRANSLATOR_DLL', None)
+        if (self.base/'rootfs/opt/kirby-translator/Translator.Cli.dll').is_file():
+            env['KIRBY_TRANSLATOR_DLL'] = '/opt/kirby-translator/Translator.Cli.dll'
         return env
