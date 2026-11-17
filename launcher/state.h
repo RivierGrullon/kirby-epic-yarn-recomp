@@ -15,6 +15,7 @@ struct State {
     std::filesystem::path root, executable, settingsFile;
     Kirby::Settings config;
     bool selfTest = false;
+    bool portable = false;
     bool dataVerified = false;
     bool settingsDirty = false;
     bool gameRunning = false;

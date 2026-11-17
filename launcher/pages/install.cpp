@@ -23,6 +23,19 @@ const char* StageLabel(const std::string& stage) {
 }
 Action DrawInstall(State& state) {
     Action action = Action::None;
+    if (state.portable) {
+        ImGui::TextWrapped("Choose the extracted DATA folder from your own RK5E01 Rev 0 (USA) copy, then open Play.");
+        ImGui::BeginDisabled(state.selfTest || state.gameRunning || state.choosingSource);
+        if (ImGui::Button("Choose DATA folder")) action=Action::ChooseData;
+        ImGui::SameLine();
+        if (ImGui::Button("Verify selected folder")) action=Action::VerifyData;
+        ImGui::EndDisabled();
+        ImGui::TextWrapped("%s", Utf8(state.config.gameData).c_str());
+        ImGui::TextWrapped("%s", state.dataStatus.c_str());
+        if (state.setup.status==Setup::Status::Failed) ImGui::TextWrapped("%s", state.setup.message.c_str());
+        ImGui::TextWrapped("This package is already compiled. To use a WBFS or rebuild, run tools/windows/build-windows.ps1 in the source checkout.");
+        return action;
+    }
     auto& setup=state.setup;
     ImGui::TextWrapped("Import your own RK5E01 Rev 0 (USA) copy.");
     ImGui::TextWrapped("Choose a WBFS, ISO, RVZ, 7z archive or an extracted DATA folder. Setup prepares and checks the native game automatically.");
