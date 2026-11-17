@@ -79,7 +79,7 @@ class SetupShortcutTests(unittest.TestCase):
         self.root=self.destination/'.kirby'/('c'*12)
         self.launcher=self.root/'build/native/kirby-launcher';self.launcher.parent.mkdir(parents=True)
         output=self.base/'launched'
-        self.launcher.write_text('#!/bin/sh\nprintf "%s" "$0" > '+shlex.quote(str(output))+'\n')
+        self.launcher.write_text('#!/bin/sh\nprintf "%s\\0%s" "$PWD" "$0" > '+shlex.quote(str(output))+'\n')
         self.launcher.chmod(0o755)
         from installer.setup_layout import finish_destination
         finish_destination(self.root,self.destination)
@@ -87,7 +87,8 @@ class SetupShortcutTests(unittest.TestCase):
         subprocess.run(['gio','launch',str(shortcut)],check=True,capture_output=True,timeout=10)
         deadline=time.monotonic()+5
         while not output.exists() and time.monotonic()<deadline:time.sleep(.02)
-        self.assertEqual(output.read_text(),str(self.launcher))
+        directory,program=output.read_text().split('\0')
+        self.assertEqual((Path(directory)/program).resolve(),self.launcher)
 
 
 if __name__=='__main__':unittest.main()
