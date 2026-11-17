@@ -139,7 +139,7 @@ requires a Linux target and `--stage-root`; build identity records
 `KIRBY_PROFILE_DAWN_CALLS=ON` so captures cannot be mistaken for ordinary builds.
 
 After preparing and translating an isolated stage as described in
-[Building](building.md#build-separately-from-the-runnable-version):
+[Building](building-advanced.md#build-separately-from-the-runnable-version):
 
 ```bash
 stage_root="local/setup/builds/dawn-profile"
