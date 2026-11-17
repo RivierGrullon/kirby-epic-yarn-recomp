@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "protocol.h"
+#include "handoff.h"
+#include <fstream>
 #include "../platform.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -92,6 +94,21 @@ Event ParseEvent(std::string_view line,std::string_view identifier,uint64_t sequ
     if ((event.stage=="inspect" || event.stage=="install") && (event.state=="failed" || event.state=="cancelled") && event.error.empty())
         throw std::runtime_error("Setup failure has no explanation");
     return event;
+}
+std::vector<std::string> ReadSetupCommand(const std::filesystem::path& root) {
+    std::ifstream stream(root/"local/setup-command.json",std::ios::binary);
+    std::string text(16385,'\0');stream.read(text.data(),text.size());text.resize(stream.gcount());
+    if (text.empty() || text.size()>16384) throw std::runtime_error("Open your Kirby Setup application to update this installation.");
+    const auto record=nlohmann::json::parse(text);
+    if (!record.is_object() || record.value("version",0)!=1 || !record.contains("arguments") ||
+        !record.at("arguments").is_array() || record.at("arguments").empty() || record.at("arguments").size()>8)
+        throw std::runtime_error("Invalid Kirby Setup location");
+    auto command=record.at("arguments").get<std::vector<std::string>>();
+    for (const auto& argument:command)
+        if (argument.empty() || argument.size()>8192 || argument.find('\0')!=std::string::npos)
+            throw std::runtime_error("Invalid Kirby Setup argument");
+    if (!FromUtf8(command[0]).is_absolute()) throw std::runtime_error("Kirby Setup requires an absolute executable path");
+    return command;
 }
 std::string InspectRequest(std::string_view identifier,const std::filesystem::path& source) {
     return Json{{"version",1},{"id",identifier},{"operation","inspect"},{"source",Utf8(source)}}.dump()+"\n";
