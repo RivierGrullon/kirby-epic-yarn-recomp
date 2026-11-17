@@ -12,7 +12,8 @@ from installer.setup_model import Session
 
 class SetupModelTests(unittest.TestCase):
     def setUp(self):
-        self.root=Path(tempfile.gettempdir())/'kirby model'
+        # The worker uses a resolved root, including Windows' short TEMP aliases.
+        self.root=(Path(tempfile.gettempdir())/'kirby model').resolve()
         self.source=self.root/"own ' copy.wbfs"
         self.session=Session('job-1',self.root,self.source)
         self.sequence=0

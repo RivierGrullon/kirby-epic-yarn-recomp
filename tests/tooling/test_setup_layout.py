@@ -19,7 +19,8 @@ class SetupLayoutTests(unittest.TestCase):
         self.runtime=self.base/'bundle/tools/runtime';self.runtime.mkdir(parents=True)
         (self.runtime/'toolchain-download.json').write_text('{}')
         (self.runtime/'ca-certificates.crt').write_bytes(b'certificates')
-        launcher=self.project/'build/native/kirby-launcher';launcher.parent.mkdir(parents=True)
+        self.launcher_name='kirby-launcher.exe' if os.name=='nt' else 'kirby-launcher'
+        launcher=self.project/'build/native'/self.launcher_name;launcher.parent.mkdir(parents=True)
         launcher.write_bytes(b'launcher');launcher.chmod(0o755)
         self.libs=self.base/'bundle/host-libs';self.libs.mkdir();(self.libs/'libfixture.so').write_bytes(b'library')
         self.bundle=Bundle(self.project,self.runtime,self.libs,'a'*40,packaged=True)
@@ -30,13 +31,16 @@ class SetupLayoutTests(unittest.TestCase):
             path=self.project/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'private')
         root=prepare_destination(self.bundle,self.destination)
         self.assertTrue((root/'.git/HEAD').is_file())
-        self.assertTrue((root/'build/native/kirby-launcher').stat().st_mode & 0o111)
+        launcher=root/'build/native'/self.launcher_name
+        self.assertEqual(launcher.read_bytes(),b'launcher')
+        if os.name!='nt':self.assertTrue(launcher.stat().st_mode & 0o111)
         self.assertEqual((root/'local/host-libs/libfixture.so').read_bytes(),b'library')
         self.assertFalse((root/'local/host-libs').is_symlink())
         self.assertTrue((root/'tools/runtime/ca-certificates.crt').is_file())
         for name in ('disc','generated','vendor'):self.assertFalse((root/name).exists())
         self.assertFalse((root/'local/user/save').exists())
-        self.assertFalse((self.destination/'Play Kirby.sh').exists())
+        for name in ('Play Kirby.sh','Play Kirby.cmd'):
+            self.assertFalse((self.destination/name).exists())
 
     def test_retry_preserves_installed_saves_and_outputs(self):
         root=prepare_destination(self.bundle,self.destination)
@@ -48,7 +52,10 @@ class SetupLayoutTests(unittest.TestCase):
         root=prepare_destination(self.bundle,self.destination)
         shortcut=finish_destination(root,self.destination)
         self.assertTrue(shortcut.is_file())
-        if os.name!='nt':
+        if os.name=='nt':
+            self.assertEqual(shortcut.name,'Play Kirby.cmd')
+            self.assertIn(str(Path('.kirby')/('a'*12)/'build/native'/self.launcher_name),shortcut.read_text())
+        else:
             self.assertIn('.kirby/',shortcut.read_text())
             self.assertNotIn(str(self.project),shortcut.read_text())
             self.assertTrue(shortcut.stat().st_mode & 0o111)
