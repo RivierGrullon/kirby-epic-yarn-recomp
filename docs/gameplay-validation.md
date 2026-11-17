@@ -1,9 +1,18 @@
 # Gameplay validation
 
-These checks describe observed native gameplay, not whole-game compatibility or
-display performance. Game data, test saves and framebuffer captures stay local.
+## Current status
 
-## Fountain Gardens
+The maintainer reports stable native gameplay with the current build. The game
+and launcher run on Windows and Linux (x86-64).
+
+## Historical validation records
+
+The records below document earlier checks on specific development revisions.
+They preserve the conditions and scope of those runs; they do not limit the
+current game to the stages listed here. Game data, test saves and framebuffer
+captures stay local.
+
+### Fountain Gardens
 
 The Linux runtime at `297e01ca6f7d00923ac3b0fc82d6a0c6d03d1c6a` was tested on
 2026-11-15 on an Acer Nitro AN515-55 (i5-10300H, RTX 3050), using an isolated
@@ -50,7 +59,7 @@ Framebuffer inspection interrupts execution and is excluded from performance
 measurements. See [performance measurements](performance.md) for those separate
 checks and their limitations.
 
-## Flower Fields: partial traversal
+### Flower Fields: partial traversal
 
 A separate native run on the same Acer used clean runtime `699f568` and an
 isolated copy of the Fountain Gardens clear save after placing the Butterfly

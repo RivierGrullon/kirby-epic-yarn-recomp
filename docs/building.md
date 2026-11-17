@@ -1,5 +1,8 @@
 # Build and play
 
+The native game and launcher target **Windows and Linux (x86-64)**. Follow the
+instructions for your platform below.
+
 You need your own **Kirby’s Epic Yarn, USA (RK5E01 Rev 0)** copy.
 
 ## Windows x64

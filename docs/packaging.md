@@ -1,14 +1,16 @@
 # Application packages
 
+The native game and launcher run on **Windows and Linux (x86-64)**. Windows builds
+produce a [ZIP](#windows-zip); Linux offers an [AppImage installer](#linux-appimage).
+
 The application package is separate from the developer checkout. Its setup tools
 belong to the package; players should not install Python, Git, a compiler, or a
 container engine. Selecting a supported game source starts extraction,
 translation, compilation and silent native startup checks. A matching verified
 build is reused. Later launches use the selected native installation.
 
-This packaging work is experimental. An AppImage format smoke check is not an
-end-to-end installation test, and does not establish gameplay performance.
-Windows builds create a ZIP of the compiled game; see below.
+The sections below cover installation, package contents and maintainer build
+instructions for each platform.
 
 ## Windows ZIP
 

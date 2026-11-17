@@ -2,7 +2,7 @@
 
 Contributions should make the native game more correct, reproducible or usable.
 Read the [build guide](docs/building.md), [runtime layout](runtime/README.md) and
-[current limitations](README.md#known-limitations) before changing runtime behavior.
+[project features](README.md#features) before changing runtime behavior.
 
 ## Bug reports
 

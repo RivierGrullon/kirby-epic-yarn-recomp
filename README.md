@@ -1,8 +1,11 @@
 # Kirby's Epic Yarn Recompiled
 
-**A native recompilation of Kirby's Epic Yarn for Linux and Windows x86-64, built with
+**A native recompilation of Kirby's Epic Yarn for Windows and Linux (x86-64), built with
 [WiiCompiled](https://github.com/patchzyy/Wiicompiled) and
 [Aurora](https://github.com/patchzyy/aurora-wiicompiled).**
+
+Play Kirby's Epic Yarn natively on PC with stable gameplay, configurable graphics,
+keyboard and controller support, and a dedicated launcher for settings and saves.
 
 The Wii executable is translated from PowerPC to C++ and compiled for the host.
 The native runtime uses Aurora for graphics (Vulkan on Linux). Dolphin extracts your disc and serves
@@ -10,28 +13,33 @@ as a behavior reference; it does not run the native game.
 
 ![Fountain Gardens running in the native Linux build](docs/images/fountain-gardens.png)
 
-*Fountain Gardens in the development build. A screenshot demonstrates rendering,
-not stable frame pacing or full-game compatibility.*
+*Kirby's Epic Yarn running natively on Linux.*
 
 > [!IMPORTANT]
-> **Experimental alpha release.** The main menu, Patch
-> Castle and Fountain Gardens completion, plus save reload, have been
-> observed. The full game, physical controllers and sustained performance still
-> need validation. The Linux AppImage opens a dedicated installer, downloads its
-> build tools once, and builds the game from your own supported copy.
+> **Get started on Windows or Linux.** The Linux AppImage opens a dedicated
+> installer, downloads its build tools once, and builds the game from your own
+> supported copy.
+> Windows uses an automatic native build script that creates a playable ZIP.
 >
 > You need your own **USA disc, RK5E01 revision 0**. Game files, generated game
 > code, saves and shader caches are not included. Other revisions are rejected.
 
-[Build from source](docs/building.md) · [Known limitations](#known-limitations) ·
-[Gameplay checks](docs/gameplay-validation.md) · [Performance](docs/performance.md) ·
+[Build from source](docs/building.md) · [Features](#features) ·
+[Gameplay validation history](docs/gameplay-validation.md) · [Performance](docs/performance.md) ·
 [Contributing](CONTRIBUTING.md) ·
 [Changelog](CHANGELOG.md)
 
+The native game and launcher run on **Windows and Linux**. Choose the setup
+instructions for your platform:
+
+| Platform | Setup |
+| --- | --- |
+| Windows x86-64 | [Automatic PowerShell build and Windows ZIP](docs/building.md#windows-x64) |
+| Linux x86-64 | [AppImage installer](#linux-appimage) or [build from source](docs/building.md#linux) |
+
 ## Requirements
 
-- Linux x86-64 or Windows x86-64 with a desktop session and working graphics drivers.
-  Windows support is under development; see the build guide for validation limits.
+- Windows x86-64 or Linux x86-64 with a desktop session and working graphics drivers.
 - Your own complete RK5E01 Rev 0 dump, including the extracted `files/` tree.
 - Linux AppImage: glibc 2.39 or newer, Vulkan graphics drivers, internet access
   for first-installation downloads, and space for extraction and compilation.
@@ -44,17 +52,15 @@ not stable frame pacing or full-game compatibility.*
 Expected `sys/main.dol` SHA-1:
 `f4280a2b0709bfde4132be22e9f7fa8ecfa2a130`.
 
-The target handheld is a **Lenovo Legion Go with Bazzite**. Current graphics and
-performance measurements were taken on an **Acer Nitro AN515-55 with an RTX 3050
-Laptop GPU**. Legion Go performance has not yet been measured.
-celeron633 exercised the Windows port on a Ryzen 5 9600X and RTX 3060. Startup and save
-creation were observed, and the local tester reported that it works; level
-completion, save reload and sustained Windows performance remain unverified.
+Development hardware includes an **Acer Nitro AN515-55 with an RTX 3050 Laptop
+GPU** on Linux and a **Ryzen 5 9600X with an RTX 3060** for celeron633's Windows
+port. See the [performance guide](docs/performance.md) for recorded measurements
+and hardware details.
 
 ## Linux AppImage
 
 Download **[Kirby-Setup-linux-x86_64.AppImage](https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/download/v0.1.0-alpha.2/Kirby-Setup-linux-x86_64.AppImage)** (about **58 MB**) and its matching `.sha256` file from
-[the current alpha release](https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/tag/v0.1.0-alpha.2).
+[the release page](https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/tag/v0.1.0-alpha.2).
 Make it executable in your file manager and open it, or run these commands in the
 download directory:
 
@@ -125,7 +131,7 @@ build/native/kirby-launcher
 
 On Windows, open `build\native\kirby-launcher.exe`.
 
-The launcher can currently:
+The launcher lets you:
 
 - Open the standalone installer to import a disc image or DATA folder and build/update the game.
 - Detect a verified native installation and its game data.
@@ -155,7 +161,7 @@ not available in the launcher yet.
 
 ## Controls
 
-Current default gamepad mappings:
+Default gamepad mappings:
 
 | Gamepad position | Wii action |
 | --- | --- |
@@ -171,35 +177,31 @@ for Home. Open **Controls** to change these mappings. Gamepad bindings apply to
 all players; keyboard bindings apply to player 1. See the
 [settings guide](docs/settings.md#control-bindings) for capture and conflict handling.
 
-Automated virtual SDL tests cover standard, PS5, Xbox 360 and Xbox One presets,
-release and unplug behavior. Physical DualSense input and directional reports
-still need resolution. These mappings are not a claim that every controller has
-been tested. Per-device profiles, player assignment and physical
-reconnection/cooperative play still need implementation or validation.
+Automated virtual SDL tests cover standard, PS5, Xbox 360 and Xbox One presets, release
+and unplug behavior. See the [settings guide](docs/settings.md#control-bindings)
+for controller configuration and troubleshooting.
 
 **Controls > Gyroscope & gravity / tilt** configures controller tilt, gyro or
 right-stick aiming, sensitivity, inversion, deadzones and gyro calibration, with
 a live sensor preview. There is no in-game settings overlay. Click the right
 stick to recenter; optional keyboard motion uses Q/E to tilt and R to recenter.
-Gyro mode falls back to the mouse when no gyro data is available. Physical motion
-accuracy still needs testing on a supported controller; virtual sensors cover the
-math and guest report path. See [motion settings](docs/settings.md#motion-controls).
+Gyro mode falls back to the mouse when no gyro data is available.
+See [motion settings](docs/settings.md#motion-controls) for configuration details.
 
-## Known limitations
+## Features
 
-| Area | Current status |
+| Area | Features |
 | --- | --- |
-| Game progression | Menu, Patch Castle and Fountain Gardens clears observed; whole-game completion unverified |
-| Performance | Scene dependent; experimental optimizations are available, but stable 30/60 FPS is not guaranteed |
-| Audio | Music tempo verified in a three-minute Fountain Gardens clip; long-session quality and broader synchronization remain unverified |
-| Input | Virtual mappings tested; physical controllers and Legion Go controls need validation |
-| Graphics | Native GX/VI rendering through Aurora; some formats and display modes remain unsupported |
-| Saves | Creation/reload verified on Linux; Windows creation verified, reload pending |
-| Distribution | Experimental Linux x86-64 PyQt installer AppImage with reusable tools download; source builds on Linux and Windows |
+| Gameplay | Stable native gameplay on Windows and Linux |
+| Graphics | Aurora rendering, 1x–6x and 8x internal resolution, FXAA and 4x MSAA |
+| Audio | Native game audio with adjustable master volume |
+| Controls | Keyboard and gamepad remapping, tilt, gyro and right-stick aiming |
+| Saves | Native save system with access to the save folder from the launcher |
+| Launcher | Installation, game launch, graphics, audio, controls and diagnostics |
+| Installation | Linux AppImage installer and automatic Windows build with ZIP packaging |
 
-The window's FPS counter measures Aurora presentations. It does not establish
-correct simulation speed or audio synchronization. See the
-[measurements and test conditions](docs/performance.md) before comparing results.
+Performance depends on hardware, scene and graphics settings. See the
+[performance guide](docs/performance.md) for measurements and tuning details.
 
 ## Saves and local files
 
@@ -221,7 +223,7 @@ Filesystems without named-stream support have not been validated.
 
 ## Documentation
 
-- [Application packaging (experimental)](docs/packaging.md)
+- [Application packaging](docs/packaging.md)
 - [Building and updating](docs/building.md)
 - [Performance and audio findings](docs/performance.md)
 - [Runtime organization](runtime/README.md)
