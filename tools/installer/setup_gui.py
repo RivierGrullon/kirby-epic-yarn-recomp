@@ -7,12 +7,13 @@ import sys
 
 from PyQt6.QtCore import Qt, QElapsedTimer, QSize, QThread, QTimer, QUrl
 from PyQt6.QtGui import QColor, QDesktopServices, QIcon
-from PyQt6.QtWidgets import (QApplication,QFileDialog,QFrame,QHBoxLayout,QLabel,QLineEdit,
+from PyQt6.QtWidgets import (QApplication,QCheckBox,QFileDialog,QFrame,QHBoxLayout,QLabel,QLineEdit,
     QListWidget,QListWidgetItem,QMainWindow,QPlainTextEdit,QProgressBar,QPushButton,QScrollArea,
     QStyle,QVBoxLayout,QWidget)
 from .setup_controller import Controller
 from .setup_layout import prepare_destination,finish_destination
 from .setup_model import PHASES
+from .setup_shortcuts import create_shortcuts
 
 
 class Preparation(QThread):
@@ -52,6 +53,8 @@ class SetupWindow(QMainWindow):
         label=QLabel('&Installation folder');label.setBuddy(self.destination);layout.addWidget(label)
         self.destination_button=QPushButton('Browse…');self.destination_button.clicked.connect(self.choose_destination)
         row=QHBoxLayout();row.addWidget(self.destination,1);row.addWidget(self.destination_button);layout.addLayout(row)
+        self.desktop_shortcut=QCheckBox('Also create a desktop shortcut')
+        layout.addWidget(self.desktop_shortcut)
         note=QLabel('Tools download once and are reused. Installation may take several minutes.')
         note.setWordWrap(True);note.setObjectName('secondary');layout.addWidget(note)
         line=QFrame();line.setFrameShape(QFrame.Shape.HLine);layout.addWidget(line)
@@ -82,7 +85,7 @@ class SetupWindow(QMainWindow):
         footer=QWidget();row=QHBoxLayout(footer);row.setContentsMargins(28,8,28,20)
         row.addWidget(self.install_button);row.addWidget(self.cancel_button);row.addStretch()
         row.addWidget(self.open_folder_button);row.addWidget(self.open_button);outer.addWidget(footer)
-        self.fields=(self.source,self.destination,self.file_button,self.folder_button,self.destination_button)
+        self.fields=(self.source,self.destination,self.file_button,self.folder_button,self.destination_button,self.desktop_shortcut)
         self.source.textChanged.connect(self.form_changed);self.destination.textChanged.connect(self.form_changed)
         self.timer=QTimer(self);self.timer.setInterval(1000);self.timer.timeout.connect(self.update_time)
         self.form_changed()
@@ -180,6 +183,12 @@ class SetupWindow(QMainWindow):
                 store.manifest(active['current'])
                 finish_destination(self.root,self.destination_path,session.result['data_root'])
                 self.launcher=self.root/'build/native'/('kirby-launcher.exe' if os.name=='nt' else 'kirby-launcher')
+                try:
+                    shortcuts=create_shortcuts(self.root,self.destination_path,desktop=self.desktop_shortcut.isChecked())
+                    for path in shortcuts:self.details.appendPlainText('Created shortcut: '+str(path))
+                except (OSError,ValueError) as error:
+                    session.label='Your installation is ready. Could not create shortcuts: '+str(error)
+                    self.details.appendPlainText(session.label)
             except (OSError,ValueError) as error:
                 self.controller.session.status='failed';self.controller.session.error='Game built, but setup could not finish: '+str(error)
         self.install_button.setText('Install again' if self.launcher else 'Try again');self.render()

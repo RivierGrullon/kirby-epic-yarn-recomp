@@ -30,6 +30,15 @@ and cancellation. Once setup succeeds, use Open launcher or `Play Kirby.sh` in t
 installation folder. The C++ launcher handles playing and settings; its Install
 page opens Kirby Setup rather than running a compiler.
 
+After a verified installation, setup adds **Kirby's Epic Yarn** to the current
+user's applications menu (Start menu on Windows). Select **Also create a desktop
+shortcut** to add it to the desktop as well. Setup uses the desktop's configured
+folders, including localized or redirected desktop locations. Linux entries use
+the installed `Play Kirby.sh`; Windows entries are native `.lnk` shortcuts to the
+installed launcher. Reinstalling updates the menu entry to the latest completed
+installation. A shortcut creation error is shown without disabling the installed
+game or the Open launcher button.
+
 The image includes Python, Qt, the authored launcher, an isolated console worker
 and a pinned tools download descriptor. No host Python or Qt installation is needed.
 Opening setup and playing an installed game do not
