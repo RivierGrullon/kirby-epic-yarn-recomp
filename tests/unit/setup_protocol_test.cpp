@@ -4,6 +4,7 @@
 #include "launcher_test_paths.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 
