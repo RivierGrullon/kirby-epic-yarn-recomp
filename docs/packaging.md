@@ -12,6 +12,87 @@ build is reused. Later launches use the selected native installation.
 The sections below cover installation, package contents and maintainer build
 instructions for each platform.
 
+## Build a player release
+
+Use the same clean Git commit on both platforms. Each installer ships a shallow
+source clone with its `.git` and tracked `.github` files. The game executable,
+translated game code, disc data and saves are excluded. The Windows packager
+and Linux packager both check that the launcher's source fingerprint matches
+the checkout. Start with a configured native CMake build for each platform.
+For a new build machine, follow the [developer build guide](building.md) first.
+
+### Windows x64
+
+Run in PowerShell from the repository root with x64 Python, Git and CMake on
+PATH. Use a fresh output directory for each packaging attempt.
+
+```powershell
+$revision = git rev-parse --short HEAD
+$out = "local/releases/$revision"
+python -m venv local/release-venv
+if ($LASTEXITCODE) { throw "Virtual environment creation failed" }
+$python = ".\local\release-venv\Scripts\python.exe"
+& $python -m pip install -r tools/requirements-setup.txt
+if ($LASTEXITCODE) { throw "Setup dependency installation failed" }
+cmake --build build/native --target kirby-launcher --parallel 4
+if ($LASTEXITCODE) { throw "Launcher build failed" }
+& $python tools/windows/package_setup.py --output "$out/Kirby-Setup-windows-x64"
+if ($LASTEXITCODE) { throw "Setup packaging failed" }
+$zip = Get-Item "$out/Kirby-Setup-windows-x64.zip"
+$hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip.FullName).Hash.ToLowerInvariant()
+"$hash  $($zip.Name)" | Set-Content -Encoding ascii -LiteralPath "$($zip.FullName).sha256"
+```
+
+Attach **Kirby-Setup-windows-x64.zip** and its **.zip.sha256** file. The
+similarly named `Kirby-Windows-x64.zip` from the developer build contains a
+precompiled game.
+
+### Linux x86-64 using Docker in WSL2
+
+Use a Linux checkout in the WSL filesystem, a Linux `build/native` tree,
+Python 3.11+, curl, Docker and `mksquashfs` (from `squashfs-tools`). Run
+the commands in Bash. Build these images on first use or after changing their
+inputs. The Docker daemon must be accessible from WSL.
+
+```bash
+set -e
+export KIRBY_CONTAINER_ENGINE=docker
+bash tools/container.sh --build
+docker build --network=host -t localhost/kirby-portable-tools:compact -f tools/Containerfile.portable tools
+docker build --network=host -t localhost/kirby-setup-tools:pyqt -f tools/Containerfile.setup tools
+```
+
+For releases using the existing alpha.2 tools, reuse their published descriptor.
+If the pinned tools change, follow [Build a private test package](#build-a-private-test-package)
+to generate a new tools archive and descriptor.
+
+```bash
+set -e
+export KIRBY_CONTAINER_ENGINE=docker
+out="local/releases/$(git rev-parse --short HEAD)"
+mkdir -p "$out"
+bash tools/container.sh cmake --build build/native --target kirby-launcher --parallel 2
+curl -fL --retry 3 -o "$out/tools.json" \
+  https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/download/v0.1.0-alpha.2/Kirby-tools-linux-x86_64.tar.xz.json
+python3 tools/package_portable.py --engine docker --output "$out/Kirby.AppDir" --tools-descriptor "$out/tools.json"
+python3 tools/build_appimage.py "$out/Kirby.AppDir" --output "$out/Kirby-Setup-linux-x86_64.AppImage"
+(cd "$out" && sha256sum -c Kirby-Setup-linux-x86_64.AppImage.sha256)
+QT_QPA_PLATFORM=offscreen "$out/Kirby-Setup-linux-x86_64.AppImage" --appimage-extract-and-run --self-test
+```
+
+Attach **Kirby-Setup-linux-x86_64.AppImage** and its **.AppImage.sha256** file.
+The reused tools archive must remain available at the URL in its descriptor.
+
+### Verify the release assets
+
+Extract the final Windows ZIP to a fresh folder and run its `Kirby-Setup.exe`.
+On Linux, open the final AppImage on a desktop with a supported Vulkan adapter.
+On each platform, select your own RK5E01 Rev 0 source, install into a fresh
+directory, open the launcher and start the game. Run setup again against the
+same directory and confirm it reuses the translation and build caches. The WSL
+GUI self-test covers application startup; first-frame verification requires a
+working graphics backend.
+
 ## Windows ZIP
 
 `tools/windows/build-windows.ps1` creates `local/releases/Kirby-Windows-x64.zip` after a successful
