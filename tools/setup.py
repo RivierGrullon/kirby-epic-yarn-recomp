@@ -85,7 +85,6 @@ def progress(event):
 
 def install_launcher(job, build, identity, image):
     import tomllib
-    from installer.container import run_container
     from installer.pipeline import BuildTools
     from installer.installations import file_digest
     from installer.jobs import run_process
@@ -93,8 +92,8 @@ def install_launcher(job, build, identity, image):
 
     tools = BuildTools(job, ROOT)
     tools.image_id = image
-    run_container(job, ROOT, ['cmake', '--build', build.relative_to(ROOT).as_posix(), '--target',
-                             'kirby-launcher', '--parallel', str(tools.jobs())], image_id=image)
+    tools.run_tool(['cmake', '--build', build.relative_to(ROOT).as_posix(), '--target',
+                    'kirby-launcher', '--parallel', str(tools.jobs())])
     name = 'kirby-launcher.exe' if WINDOWS else 'kirby-launcher'
     source = build/name
     expected = file_digest(source, job.check_cancel)

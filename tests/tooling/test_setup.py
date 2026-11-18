@@ -194,7 +194,7 @@ class LauncherPublicationTests(unittest.TestCase):
             return ('schema_version=1\nprogram="launcher"\n[build]\nsource_revision="'+'a'*40+
                     '"\nsource_modified=false\nsource_sha256="'+'b'*64+'"\n').encode()
         with (patch.object(setup,'ROOT',self.root),patch.object(setup,'WINDOWS',True),
-              patch('installer.container.run_container'),patch('installer.pipeline.BuildTools.jobs',return_value=1),
+              patch('installer.pipeline.BuildTools.run_tool'),patch('installer.pipeline.BuildTools.jobs',return_value=1),
               patch('installer.jobs.run_process',side_effect=verify)):
             result=setup.install_launcher(self.job,build,identity,'c'*64)
         self.assertEqual(result,destination/'kirby-launcher.exe')

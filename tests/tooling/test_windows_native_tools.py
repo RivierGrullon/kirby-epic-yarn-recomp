@@ -19,7 +19,6 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 from installer.jobs import Cancelled, Job
 from installer.pipeline import BuildTools
-from installer.container import run_container
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -121,11 +120,12 @@ class WindowsNativeToolsTests(unittest.TestCase):
         (self.root / 'tools/probe.py').write_text('import json,sys,snapshot_module; print(json.dumps([snapshot_module.VALUE,sys.argv[1:]]))')
         arguments = ['space name', '$(do-not-run)', 'semi;colon']
         with Job(self.root / 'local/setup', 'script', lambda e: None) as job:
-            result = run_container(job, self.root, ['python3', 'tools/probe.py', *arguments], image_id=tools.image_id, capture_limit=4096)
-            self.assertEqual(json.loads(result.output), ['checkout module', arguments])
-            inline = run_container(job, self.root, ['python3', '-c', 'import snapshot_module;print(snapshot_module.VALUE)'], capture_limit=4096)
-            self.assertEqual(inline.output.strip(), b'checkout module')
-        self.assertEqual(result.image_id, tools.image_id)
+            build = BuildTools(job, self.root)
+            self.assertEqual(build.image(), tools.image_id)
+            result = build.run_tool(['python3', 'tools/probe.py', *arguments], capture_limit=4096)
+            self.assertEqual(json.loads(result), ['checkout module', arguments])
+            inline = build.run_tool(['python3', '-c', 'import snapshot_module;print(snapshot_module.VALUE)'], capture_limit=4096)
+            self.assertEqual(inline.strip(), b'checkout module')
         self.assertFalse(list((self.root / 'local/setup/staging').glob('container-*')))
 
     @unittest.skipIf(os.name == 'nt', 'Executable fixtures use POSIX shebangs')
@@ -147,7 +147,7 @@ class WindowsNativeToolsTests(unittest.TestCase):
             self.assertEqual(build.image(), tools.image_id)
             identity = build.identity()
             self.assertRegex(identity['source_sha256'], r'^[0-9a-f]{64}$')
-            build.run(['python3', *build.game_command('local/setup/builds/test', 2)])
+            build.run_tool(['python3', *build.game_command('local/setup/builds/test', 2)])
         arguments = json.loads((self.root / 'local/native-args.json').read_text())
         self.assertEqual(arguments[arguments.index('--llvm-mingw-root') + 1], str(tools.mingw_root))
         self.assertEqual(arguments[arguments.index('--cppwinrt-include') + 1], str(tools.cppwinrt_include))
@@ -155,8 +155,10 @@ class WindowsNativeToolsTests(unittest.TestCase):
     def test_run_refuses_a_changed_toolchain_identity_before_starting_a_process(self):
         _, _, _ = self.prepared()
         with Job(self.root / 'local/setup', 'wrong', lambda e: None) as job:
+            build = BuildTools(job, self.root)
+            build.image_id = 'f' * 64
             with self.assertRaisesRegex(ValueError, 'identity changed'):
-                run_container(job, self.root, ['python3', '-c', 'raise Exception("must not run")'], image_id='f' * 64)
+                build.run_tool(['python3', '-c', 'raise Exception("must not run")'])
 
     @unittest.skipIf(os.name == 'nt', 'Executable fixtures use POSIX shebangs')
     def test_prepare_runs_cancellable_powershell_with_explicit_shared_cache(self):

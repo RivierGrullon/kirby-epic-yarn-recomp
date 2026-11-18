@@ -27,37 +27,47 @@ class BuildTools:
     def __init__(self, job, root):
         self.job, self.root = job, root
         self.image_id = None
-        self.portable = PortableTools.find(root)
-        self.native = WindowsTools.find(root)
+        self.local = WindowsTools.find(root) or PortableTools.find(root)
+
+    def run_tool(self, command, *, capture_limit=0, on_output=None):
+        if self.local is None:
+            return run_container(self.job, self.root, command, image_id=self.image_id,
+                                 capture_limit=capture_limit, on_output=on_output).output
+        # Revalidate pins before launching each process from a shared cache.
+        local = type(self.local).find(self.root)
+        if local is None or local.image_id != (self.image_id or self.local.image_id):
+            raise ValueError('Toolchain identity changed during setup')
+        return run_process(self.job, local.command(command), env=local.environment(), cwd=local.root,
+                           capture_limit=capture_limit, on_output=on_output)
 
     def bootstrap(self):
-        if self.portable is not None or self.native is not None:
-            self.run(['python3', 'tools/bootstrap.py'])
+        if self.local is not None:
+            self.run_tool(['python3', 'tools/bootstrap.py'])
             return
         recover_containers(self.job)
         run_process(self.job, [sys.executable, self.root/'tools/bootstrap.py'], cwd=self.root)
 
     def image(self):
-        local = self.native or self.portable
-        self.image_id = local.image_id if local is not None else toolchain_image(self.job)
+        self.image_id = self.local.image_id if self.local is not None else toolchain_image(self.job)
         return self.image_id
 
     def identity(self):
-        if WINDOWS or self.portable is not None:
+        if WINDOWS or self.local is not None:
             command = ['python3', '-c', "import sys,json;sys.path.insert(0,'tools');import build_info;"
                        "print(json.dumps(build_info.collect('.',compiler='pending',build_type='Release')))"]
-            record = json.loads(run_container(self.job, self.root, command,
-                                image_id=self.image_id, capture_limit=16384).output)
+            record = json.loads(self.run_tool(command, capture_limit=16384))
         else:
             record = build_info.collect(self.root, compiler='pending', build_type='Release')
         return {key: record[key] for key in ('source_revision', 'source_modified', 'source_sha256')}
 
     def jobs(self):
         host = host_compile_jobs()
+        if self.local is not None:
+            return host
         command = ['python3', '-c', "import sys;sys.path.insert(0,'tools');"
                    "from installer.inputs import host_compile_jobs;print(host_compile_jobs())"]
         try:
-            output = run_container(self.job, self.root, command, image_id=self.image_id, capture_limit=64).output
+            output = self.run_tool(command, capture_limit=64)
             available = int(output.strip())
             if not 1 <= available <= 4:
                 raise ValueError('Invalid compiler job count')
@@ -65,14 +75,10 @@ class BuildTools:
         except ValueError as error:
             raise ValueError('Check the memory assigned to the Docker/Podman machine. '+str(error)) from error
 
-    def run(self, arguments):
-        progress = ToolProgress('compile', self.job.emit) if 'tools/build_native.py' in arguments else None
-        return run_container(self.job, self.root, arguments, image_id=self.image_id, on_output=progress)
-
     def game_command(self, stage, jobs):
         args = ()
-        if self.native is not None:
-            args = windows_build_args(self.native.mingw_root, self.native.cppwinrt_include)
+        if isinstance(self.local, WindowsTools):
+            args = windows_build_args(self.local.mingw_root, self.local.cppwinrt_include)
         return native_command('windows' if WINDOWS else 'linux', jobs, jobs, stage=stage,
                               game_only=True, platform_args=args)
 
@@ -149,7 +155,7 @@ def execute_install(job, root, source, *, services=None, prepare_launcher=None):
         if shutil.disk_usage(layout.stage).free < 6*1024**3:
             raise ValueError('Native preparation requires at least 6 GiB of free disk space')
         job.emit(dict(stage='translate', state='started'))
-        tools.run(['python3', *translate_command(copied_dol.relative_to(root).as_posix(), jobs, stage=relative)])
+        tools.run_tool(['python3', *translate_command(copied_dol.relative_to(root).as_posix(), jobs, stage=relative)])
         if not any(layout.generated.iterdir()):
             raise ValueError('Translation did not generate native sources')
         _write_receipt(translation_receipt, dict(key=keys['translation'],
@@ -167,7 +173,7 @@ def execute_install(job, root, source, *, services=None, prepare_launcher=None):
         # An interrupted compiler must not leave a valid receipt from an older build.
         native_receipt.unlink(missing_ok=True)
         job.emit(dict(stage='compile', state='started', jobs=jobs))
-        tools.run(['python3', *tools.game_command(relative, jobs)])
+        tools.run_tool(['python3', *tools.game_command(relative, jobs)], on_output=ToolProgress('compile', job.emit))
     job.emit(dict(stage='compile', state='complete', reused=build_reused))
     if tools.identity() != identity:
         raise ValueError('Project sources changed during compilation; retry with the saved build cache')

@@ -24,7 +24,7 @@ from tooling.test_prepare import fixture
 
 
 class Tools:
-    native = None
+    local = None
     game_command = BuildTools.game_command
     def __init__(self,root):
         self.root=root;self.fail=None
@@ -33,7 +33,7 @@ class Tools:
     def image(self):return 'c'*64
     def identity(self):return dict(self.record)
     def jobs(self):return 1
-    def run(self,arguments):
+    def run_tool(self,arguments,**options):
         command='compile' if 'tools/build_native.py' in arguments else 'translate'
         if self.fail==command:raise ValueError('Synthetic '+command+' failed')
         stage=self.root/arguments[arguments.index('--stage-root')+1]
@@ -138,12 +138,12 @@ class InstallPipelineTests(unittest.TestCase):
         self.assertIsNone(self.store.read_active())
 
     def test_source_changes_during_build_do_not_publish_a_mixed_build(self):
-        original=self.tools.run
-        def change(arguments):
+        original=self.tools.run_tool
+        def change(arguments,**options):
             result=original(arguments)
             if 'tools/build_native.py' in arguments:self.tools.record['source_sha256']='e'*64
             return result
-        with self.job('changed') as job,patch.object(self.tools,'run',side_effect=change):
+        with self.job('changed') as job,patch.object(self.tools,'run_tool',side_effect=change):
             with self.assertRaisesRegex(ValueError,'sources changed'):
                 execute_install(job,self.root,self.source,services=self.tools)
         self.assertIsNone(self.store.read_active())
@@ -167,8 +167,8 @@ class InstallPipelineTests(unittest.TestCase):
             self.assertTrue(result['committed'])
 
     def test_windows_candidate_keeps_dlls_and_writable_temporary_files(self):
-        original=self.tools.run
-        def build(arguments):
+        original=self.tools.run_tool
+        def build(arguments,**options):
             result=original(arguments)
             if 'tools/build_native.py' in arguments:
                 self.assertEqual(arguments[arguments.index('--target')+1],'windows')
@@ -182,7 +182,7 @@ class InstallPipelineTests(unittest.TestCase):
             self.assertTrue(executable.stat().st_mode & stat.S_IWUSR)
             self.assertEqual((executable.parent/'dependency.DLL').read_bytes(),b'Windows runtime dependency')
             return dict(identity)
-        with (patch.object(self.tools,'run',side_effect=build),patch.object(self.tools,'verify',side_effect=verify),
+        with (patch.object(self.tools,'run_tool',side_effect=build),patch.object(self.tools,'verify',side_effect=verify),
               patch.object(pipeline,'WINDOWS',True),patch.object(pipeline,'executable_name',return_value='WiiCompiled.exe'),
               patch.object(installations,'WINDOWS',True),patch.object(installations,'executable_name',return_value='WiiCompiled.exe')):
             with self.job('windows') as job:
