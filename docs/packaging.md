@@ -169,7 +169,7 @@ Build the Windows installer **on Windows** with native x64 Python (3.12 recommen
 the committed authored sources and a matching `build/native/kirby-launcher.exe`:
 
 ```powershell
-python -m pip install -r tools/requirements-setup.txt pyinstaller==6.22.3
+python -m pip install -r tools/requirements-setup.txt
 python tools/windows/package_setup.py --output local/releases/Kirby-Setup
 ```
 
