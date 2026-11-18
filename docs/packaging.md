@@ -107,7 +107,7 @@ podman build --network=host -t localhost/kirby-setup-tools:pyqt \
 
 python3 tools/package_portable.py --output local/releases/Kirby.AppDir \
   --tools-output local/releases/Kirby-tools-linux-x86_64.tar.xz \
-  --tools-url https://github.com/OWNER/REPO/releases/download/TOOLS-VERSION/Kirby-tools-linux-x86_64.tar.xz
+  --tools-url https://github.com/OWNER/REPO/releases/download/GAME-VERSION/Kirby-tools-linux-x86_64.tar.xz
 python3 tools/build_appimage.py local/releases/Kirby.AppDir \
   --output local/releases/Kirby-linux-x86_64.AppImage
 ```
@@ -122,6 +122,12 @@ release can reuse that descriptor and archive without exporting the tools again:
 python3 tools/package_portable.py --output local/releases/Kirby-next.AppDir \
   --tools-descriptor local/releases/Kirby-tools-linux-x86_64.tar.xz.json
 ```
+
+For automated releases, use the separate **Update Linux tools** workflow and
+attach tools to an existing game release, then review the proposed
+`packaging/linux/toolchain-release.json` pin as described in
+[Renewing Linux tools](release.md#renewing-linux-tools). Normal installer releases
+reuse that pinned descriptor and do not regenerate the tools archive.
 
 Rebuild the tools when their dependencies change, using a new immutable URL.
 The packager rejects descriptors with a different translator source revision.
