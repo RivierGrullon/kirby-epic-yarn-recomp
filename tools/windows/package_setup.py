@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from package_portable import project_snapshot
@@ -46,8 +47,17 @@ def package(root,output):
             path=Path(importlib.metadata.distribution(name)._path)
             shutil.copytree(path,notices/path.name)
         env=dict(os.environ,QT_QPA_PLATFORM='offscreen',PATH=str(system))
-        subprocess.run([staged/'Kirby-Setup.exe','--self-test'],env=env,cwd=staged,check=True,timeout=30)
-        os.rename(staged,output)
+        subprocess.run([staged/'Kirby-Setup.exe','--self-test'],env=env,cwd=temporary,check=True,timeout=30)
+        # Windows can briefly retain a handle to the tested executable.
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                os.rename(staged,output)
+                break
+            except PermissionError:
+                if output.exists() or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.25)
     archive=Path(shutil.make_archive(str(output),'zip',root_dir=output.parent,base_dir=output.name))
     print('Windows setup ready:',archive)
     return archive
