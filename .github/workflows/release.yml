@@ -71,13 +71,11 @@ jobs:
         run: python -m pip install -r tools/requirements-setup.txt
       - name: Build and test Windows setup
         run: python tools/windows/package_setup.py --output local/releases/Kirby-Setup-windows-x86_64
-      - name: Archive Windows setup
+      - name: Create Windows ZIP checksum
         working-directory: local/releases
         shell: pwsh
         run: |
-          $archive = "Kirby-Setup-windows-x86_64.tar.gz"
-          tar -czf $archive Kirby-Setup-windows-x86_64
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $archive = "Kirby-Setup-windows-x86_64.zip"
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
       - name: Attach Windows setup to release
@@ -85,5 +83,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$env:RELEASE_TAG" --clobber `
-            local/releases/Kirby-Setup-windows-x86_64.tar.gz `
-            local/releases/Kirby-Setup-windows-x86_64.tar.gz.sha256
+            local/releases/Kirby-Setup-windows-x86_64.zip `
+            local/releases/Kirby-Setup-windows-x86_64.zip.sha256

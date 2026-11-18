@@ -5,7 +5,7 @@ Build both installers from the same clean commit. Packaging requires only the ch
 Publishing a GitHub Release or pre-release runs the **Release installers** workflow
 for its tagged commit. Each successful platform job attaches its x86-64 installers
 to that release. Linux provides an AppImage and a `.tar.gz` folder with an
-`AppRun` entry point. Windows provides a `.tar.gz` folder with `Kirby-Setup.exe`.
+`AppRun` entry point. Windows provides a `.zip` archive with `Kirby-Setup.exe`.
 Each installer has a companion `.sha256` file. These are setup packages: they
 compile the game and launcher after the player selects their own game source.
 
