@@ -57,6 +57,7 @@ def apply_snapshot_patch(patch, workspace):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--configure-only", action="store_true")
+    parser.add_argument("--game-only", action="store_true", help="Build WiiCompiled without the launcher")
     parser.add_argument("--target", choices=("linux", "windows"), default="windows" if os.name == "nt" else "linux")
     parser.add_argument("--llvm-mingw-root", type=Path, help="LLVM-MinGW installation (default: discover on PATH)")
     parser.add_argument("--cppwinrt-include", type=Path, help="Directory containing winrt/base.h (default: installed Windows SDK)")
@@ -160,7 +161,8 @@ def main():
                                      f"{mingw_root.as_posix()}/bin/x86_64-w64-mingw32-{tool}.exe")
         run_logged("configure",configure,layout=layout)
         if not args.configure_only:
-            run_logged("compile", ["cmake", "--build", build, "--target", "WiiCompiled", "kirby-launcher", "--parallel", str(max(1, args.jobs))],layout=layout)
+            targets = ["WiiCompiled"] if args.game_only else ["WiiCompiled", "kirby-launcher"]
+            run_logged("compile", ["cmake", "--build", build, "--target", *targets, "--parallel", str(max(1, args.jobs))],layout=layout)
             if args.target == 'windows':
                 # LLVM's C++ runtime and Dawn may be shared libraries. Keep DLLs
                 # next to the products so native Windows can resolve them.
