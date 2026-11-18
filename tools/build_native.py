@@ -47,10 +47,11 @@ def apply_snapshot_patch(patch, workspace):
             original = target.read_bytes()
             if b'\0' not in original and b'\r\n' in original:
                 target.write_bytes(original.replace(b'\r\n', b'\n'))
-    apply = ['git', 'apply', '--ignore-space-change', f'--directory={workspace.relative_to(ROOT).as_posix()}']
-    if subprocess.run([*apply, '--check'], input=content, cwd=ROOT, capture_output=True).returncode == 0:
-        subprocess.run(apply, input=content, cwd=ROOT, check=True)
-    elif subprocess.run([*apply, '--reverse', '--check'], input=content, cwd=ROOT, capture_output=True).returncode:
+    apply = ['git', 'apply', '--ignore-space-change']
+    options = dict(input=content, cwd=workspace, env=dict(os.environ, GIT_CEILING_DIRECTORIES=str(workspace.parent)))
+    if subprocess.run([*apply, '--check'], **options, capture_output=True).returncode == 0:
+        subprocess.run(apply, **options, check=True)
+    elif subprocess.run([*apply, '--reverse', '--check'], **options, capture_output=True).returncode:
         raise ValueError(f'{patch.name} does not apply cleanly; local source edits were left untouched')
 
 

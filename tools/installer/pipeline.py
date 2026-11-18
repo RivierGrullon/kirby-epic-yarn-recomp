@@ -9,7 +9,7 @@ import sys
 import tempfile
 
 import build_info
-from build_layout import BuildLayout
+from build_layout import BuildLayout, cache_directory_name, windows_build_cache
 from build_commands import native_command, translate_command
 import kirby
 from .container import recover_containers, run_container, toolchain_image
@@ -139,7 +139,15 @@ def execute_install(job, root, source, *, services=None, prepare_launcher=None):
     image = tools.image()
     identity = tools.identity()
     keys = build_keys(root, identity, image, job.check_cancel)
-    layout = BuildLayout(root, root/'local/setup/builds'/('cache-'+keys['cache']))
+    key = keys['cache']
+    if isinstance(tools.local, WindowsTools):
+        stage = windows_build_cache()/cache_directory_name(root, key)
+        layout = BuildLayout(root, stage, cache_key=key)
+        stage_arg = stage.as_posix()
+    else:
+        stage = Path('local/setup/builds')/('cache-'+key)
+        layout = BuildLayout(root, root/stage)
+        stage_arg = stage.as_posix()
     layout.ensure()
     copied_dol = layout.metadata/'main.dol'
     _copy(data/'sys/main.dol', copied_dol, job)
@@ -150,12 +158,11 @@ def execute_install(job, root, source, *, services=None, prepare_launcher=None):
     translation_reused = (isinstance(previous, dict) and previous.get('key') == keys['translation']
                           and previous.get('generated_sha256') == generated_digest(layout.generated, job.check_cancel))
     jobs = tools.jobs()
-    relative = layout.stage.relative_to(root).as_posix()
     if not translation_reused:
         if shutil.disk_usage(layout.stage).free < 6*1024**3:
             raise ValueError('Native preparation requires at least 6 GiB of free disk space')
         job.emit(dict(stage='translate', state='started'))
-        tools.run_tool(['python3', *translate_command(copied_dol.relative_to(root).as_posix(), jobs, stage=relative)])
+        tools.run_tool(['python3', *translate_command((stage/'metadata/main.dol').as_posix(), jobs, stage=stage_arg)])
         if not any(layout.generated.iterdir()):
             raise ValueError('Translation did not generate native sources')
         _write_receipt(translation_receipt, dict(key=keys['translation'],
@@ -173,7 +180,7 @@ def execute_install(job, root, source, *, services=None, prepare_launcher=None):
         # An interrupted compiler must not leave a valid receipt from an older build.
         native_receipt.unlink(missing_ok=True)
         job.emit(dict(stage='compile', state='started', jobs=jobs))
-        tools.run_tool(['python3', *tools.game_command(relative, jobs)], on_output=ToolProgress('compile', job.emit))
+        tools.run_tool(['python3', *tools.game_command(stage_arg, jobs)], on_output=ToolProgress('compile', job.emit))
     job.emit(dict(stage='compile', state='complete', reused=build_reused))
     if tools.identity() != identity:
         raise ValueError('Project sources changed during compilation; retry with the saved build cache')

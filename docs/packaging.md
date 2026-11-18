@@ -165,6 +165,11 @@ adapter; it does not require a container engine. The shared cache is under
 checked in full even though the directory name is short. The cached Python reads
 `KIRBY_PROJECT_ROOT`, so two installs do not share mutable module paths.
 
+Windows setup translates and compiles under `%LOCALAPPDATA%\KirbyNative\b\<id>`
+to keep native build paths short. Each installation owns its build cache and
+reuses it on retry. After startup verification, setup publishes the game and
+runtime files to the selected installation folder.
+
 Build the Windows installer **on Windows** with native x64 Python (3.12 recommended),
 the committed authored sources and a matching `build/native/kirby-launcher.exe`:
 

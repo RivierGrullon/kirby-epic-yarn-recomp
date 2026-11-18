@@ -92,7 +92,8 @@ def install_launcher(job, build, identity, image):
 
     tools = BuildTools(job, ROOT)
     tools.image_id = image
-    tools.run_tool(['cmake', '--build', build.relative_to(ROOT).as_posix(), '--target',
+    build_arg = build.relative_to(ROOT) if build.is_relative_to(ROOT) else build
+    tools.run_tool(['cmake', '--build', build_arg.as_posix(), '--target',
                     'kirby-launcher', '--parallel', str(tools.jobs())])
     name = 'kirby-launcher.exe' if WINDOWS else 'kirby-launcher'
     source = build/name
