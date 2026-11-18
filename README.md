@@ -140,8 +140,8 @@ The launcher lets you:
 - Select 1x–6x and 8x internal rendering resolution and Off/FXAA/4x MSAA/4x MSAA + FXAA under **Display**.
 - Rebind gamepad buttons, stick/trigger directions and keyboard keys, with
   conflict detection, swapping and reset.
-- Enable **Experimental performance mode** to reduce GPU copy waits and repeated
-  texture validation.
+- **Experimental performance mode** starts enabled to reduce GPU copy waits and repeated
+  texture validation. VSync starts disabled.
 - Display detected controllers and open saves, logs and the build guide.
 
 These actions are organized into **Play**, **Install**, **Display**, **Audio**,

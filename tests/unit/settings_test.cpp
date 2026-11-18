@@ -170,7 +170,7 @@ int main() {
     fs::remove(file);
     Write(legacy, data.string() + "\n42\n1\n");
     migrated = Kirby::LoadOrMigrateSettings(file, legacy, temp.path);
-    Check(migrated.masterVolume == 42 && migrated.vsync && !migrated.gpuResidentCopies,
+    Check(migrated.masterVolume == 42 && migrated.vsync && migrated.gpuResidentCopies,
           "Older three-line legacy file did not migrate");
     fs::remove(file);
     Write(legacy, "DATA\nnot a volume\n0\n");

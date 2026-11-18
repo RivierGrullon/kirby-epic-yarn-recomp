@@ -37,7 +37,7 @@ Only implemented Kirby options are written:
 ```toml
 [kirby]
 schema_version = 1
-gpu_resident_copies = false
+gpu_resident_copies = true
 
 [paths]
 dvd_root = "/path/to/extracted/DATA"
@@ -46,15 +46,16 @@ dvd_root = "/path/to/extracted/DATA"
 volume = 1.0
 
 [video]
-vsync = true
+vsync = false
 resolution_scale = 1
 msaa_samples = 1
 fxaa = false
 ```
 
 `audio.volume` is the master gain from 0.0 to 1.0. The launcher displays it as a
-percentage. `gpu_resident_copies` controls **Experimental performance mode**; its
-compatibility and frame pacing remain under investigation. `resolution_scale`
+percentage. **Experimental performance mode** (`gpu_resident_copies`) starts enabled
+and **VSync** starts disabled. Compatibility and frame pacing in experimental mode
+remain under investigation. You can change both options under **Display**. `resolution_scale`
 accepts integers 1 through 6 or 8; `msaa_samples` accepts 1 (off) or 4. `fxaa` is a boolean, defaulting to false. Missing keys use
 the defaults, so existing configuration files keep loading. Unsupported values
 are reported without overwriting the file. Separate stable 30/60 FPS modes,

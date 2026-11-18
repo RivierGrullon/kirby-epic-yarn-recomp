@@ -156,8 +156,8 @@ int main(int argc, char** argv) {
     std::string_view mode = "--headless";
     std::filesystem::path dataRoot = "disc/DATA";
     float masterVolume = 100;
-    bool vsync = true;
-    bool gpuResidentCopies = false;
+    bool vsync = Kirby::Settings::DefaultVsync;
+    bool gpuResidentCopies = Kirby::Settings::DefaultGpuResidentCopies;
     int resolutionScale = 1, msaaSamples = 1;
     bool fxaa = false;
     std::filesystem::path configPath = "local/user/settings.toml";

@@ -67,13 +67,13 @@ class SharedSettingsTests(unittest.TestCase):
             path = Path(directory) / "settings.toml"
             path.write_text('''[kirby]
 schema_version = 1
-gpu_resident_copies = true
+gpu_resident_copies = false
 [paths]
 dvd_root = "DATA with spaces"
 [audio]
 volume = 0.375
 [video]
-vsync = false
+vsync = true
 resolution_scale = 8
 msaa_samples = 4
 fxaa = true
@@ -84,11 +84,11 @@ fxaa = true
                 settings = tomllib.loads(result.stdout)
                 self.assertEqual(settings["paths"]["dvd_root"], str(Path(directory) / "DATA with spaces"))
                 self.assertEqual(settings["audio"]["volume"], 0.375)
-                self.assertFalse(settings["video"]["vsync"])
+                self.assertTrue(settings["video"]["vsync"])
                 self.assertEqual(settings["video"]["resolution_scale"], 8)
                 self.assertEqual(settings["video"]["msaa_samples"], 4)
                 self.assertTrue(settings["video"]["fxaa"])
-                self.assertTrue(settings["kirby"]["gpu_resident_copies"])
+                self.assertFalse(settings["kirby"]["gpu_resident_copies"])
                 self.assertNotIn("translated entry resolved", result.stdout)
             self.assertEqual(path.read_bytes(), before)
 
@@ -128,8 +128,8 @@ fxaa = true
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 settings = tomllib.loads(result.stdout)
                 self.assertEqual(settings["audio"]["volume"], 1.0)
-                self.assertTrue(settings["video"]["vsync"])
-                self.assertFalse(settings["kirby"]["gpu_resident_copies"])
+                self.assertFalse(settings["video"]["vsync"])
+                self.assertTrue(settings["kirby"]["gpu_resident_copies"])
                 self.assertEqual(settings['controller']['stick_activation'], 0.5)
                 self.assertEqual(settings['controller']['trigger_activation'], 0.5)
             self.assertFalse(path.parent.exists())

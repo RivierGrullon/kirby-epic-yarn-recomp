@@ -259,7 +259,7 @@ Settings LoadOrMigrateSettings(const fs::path& file, const fs::path& legacy,
     const auto text = Read(legacy);
     std::istringstream input(*text);
     std::string data;
-    int sync = 1, performance = 0;
+    int sync, performance = defaults.gpuResidentCopies;
     if (!std::getline(input, data))
         throw std::runtime_error("invalid legacy launcher.cfg; original file preserved");
     if (!data.empty() && data.back() == '\r') data.pop_back();

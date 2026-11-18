@@ -11,8 +11,10 @@ namespace Kirby {
 struct Settings {
     std::filesystem::path gameData = "disc/DATA";
     float masterVolume = 100;
-    bool vsync = true;
-    bool gpuResidentCopies = false;
+    static constexpr bool DefaultVsync = false;
+    static constexpr bool DefaultGpuResidentCopies = true;
+    bool vsync = DefaultVsync;
+    bool gpuResidentCopies = DefaultGpuResidentCopies;
     ControlBindings controls{};
     MotionSettings motion{};
     int resolutionScale = 1;
