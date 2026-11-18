@@ -1,0 +1,74 @@
+name: Release installers
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name }}
+
+jobs:
+  linux:
+    name: Linux x86_64 installers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Prepare packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y squashfs-tools libegl1 libgl1 libopengl0 libxkbcommon0 libfontconfig1
+          docker build --build-arg TOOLS_IMAGE=ubuntu:24.04 -f tools/Containerfile.setup -t localhost/kirby-setup-tools:pyqt tools
+      - name: Build Linux setup and AppImage
+        run: |
+          out=local/releases
+          setup=Kirby-Setup-linux-x86_64
+          mkdir -p "$out"
+          curl --fail --location --retry 3 --output "$out/tools.json" \
+            https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/download/v0.1.0-alpha.2/Kirby-tools-linux-x86_64.tar.xz.json
+          echo "b9b15e057768e2510ce08c2198bd534aa40c9a9c17ef6ab7c42e7eeb0250e39a  $out/tools.json" | sha256sum --check
+          python3 tools/package_portable.py --engine docker --output "$out/$setup" --tools-descriptor "$out/tools.json"
+          python3 tools/build_appimage.py "$out/$setup" --output "$out/$setup.AppImage"
+          tar -czf "$out/$setup.tar.gz" -C "$out" "$setup"
+      - name: Test packaged installers
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          setup=Kirby-Setup-linux-x86_64
+          local/releases/"$setup".AppImage --appimage-extract-and-run --self-test
+          tar -xzf local/releases/"$setup".tar.gz -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/$setup/AppRun" --self-test
+      - name: Attach Linux installers to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" --clobber \
+            local/releases/Kirby-Setup-linux-x86_64.AppImage \
+            local/releases/Kirby-Setup-linux-x86_64.tar.gz
+
+  windows:
+    name: Windows x86_64 setup
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install setup dependencies
+        run: python -m pip install -r tools/requirements-setup.txt
+      - name: Build and test Windows setup
+        run: python tools/windows/package_setup.py --output local/releases/Kirby-Setup-windows-x86_64
+      - name: Archive Windows setup
+        working-directory: local/releases
+        run: tar -czf Kirby-Setup-windows-x86_64.tar.gz Kirby-Setup-windows-x86_64
+      - name: Attach Windows setup to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$env:RELEASE_TAG" --clobber local/releases/Kirby-Setup-windows-x86_64.tar.gz
