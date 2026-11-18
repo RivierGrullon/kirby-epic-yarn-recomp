@@ -91,6 +91,9 @@ class WindowsBoundaryTests(unittest.TestCase):
             self.assertEqual(host_compile_jobs(), 3)
 
     def test_windows_extractor_is_native_dolphin_tool(self):
+        # Exercise PATH fallback independently of developer tool caches.
+        for adapter in ('WindowsTools', 'PortableTools'):
+            self.enterContext(patch(f'installer.sources.{adapter}.find', return_value=None))
         with patch('installer.sources.WINDOWS', True), patch('installer.sources.shutil.which', side_effect=lambda name: 'D:/Dolphin/DolphinTool.exe' if name == 'DolphinTool.exe' else None):
             self.assertEqual(_dolphin('source', 'output'), ['D:/Dolphin/DolphinTool.exe'])
         with patch('installer.sources.WINDOWS', True), patch('installer.sources.shutil.which', return_value=None):
