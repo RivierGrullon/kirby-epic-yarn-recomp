@@ -2,6 +2,12 @@
 
 Build both installers from the same clean commit. Packaging requires only the checkout and packaging tools. Players supply their game data at install time, when setup builds the game and launcher together.
 
+Publishing a GitHub Release or pre-release runs the **Release installers** workflow
+for its tagged commit. Each successful platform job attaches its x86-64 installers
+to that release. Linux provides an AppImage and a `.tar.gz` folder with an
+`AppRun` entry point. Windows provides a `.tar.gz` folder with `Kirby-Setup.exe`.
+The commands below are for manual builds.
+
 ## Windows x64
 
 Run from the repository root in PowerShell with x64 Python and Git.
