@@ -29,6 +29,10 @@ def reset_frozen_dll_directory():
             raise ctypes.WinError(ctypes.get_last_error())
 
 
+def windows_build_args(mingw, cppwinrt):
+    return ['--llvm-mingw-root', str(mingw), '--cppwinrt-include', str(cppwinrt)]
+
+
 class WindowsTools:
     REQUIRED = ('python', 'git', 'cmake', 'ninja', 'dotnet', 'mingw', 'sdk',
                 'dolphin', 'sevenzip', 'vcredist')
@@ -193,11 +197,6 @@ class WindowsTools:
             script = Path(arguments[1])
             script = script if script.is_absolute() else self.root / script
             rest = arguments[2:]
-            if script == self.root / 'tools/build_native.py':
-                if '--llvm-mingw-root' not in rest:
-                    rest += ['--llvm-mingw-root', str(self.mingw_root)]
-                if '--cppwinrt-include' not in rest:
-                    rest += ['--cppwinrt-include', str(self.cppwinrt_include)]
             runner = ('import runpy,sys;sys.path.insert(0,sys.argv[1]);'
                       'sys.argv=sys.argv[2:];runpy.run_path(sys.argv[0],run_name="__main__")')
             arguments = [arguments[0], '-c', runner, tools, str(script), *rest]

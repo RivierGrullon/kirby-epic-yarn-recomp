@@ -10,6 +10,7 @@ import tempfile
 
 import build_info
 from build_layout import BuildLayout
+from build_commands import native_command, translate_command
 import kirby
 from .container import recover_containers, run_container, toolchain_image
 from .inputs import build_keys, generated_digest, host_compile_jobs
@@ -18,7 +19,7 @@ from .jobs import run_process
 from .verification import verify_native
 from .platforms import WINDOWS, executable_name, is_link
 from .portable import PortableTools
-from .windows_tools import WindowsTools
+from .windows_tools import WindowsTools, windows_build_args
 from .progress import ToolProgress
 
 
@@ -67,6 +68,13 @@ class BuildTools:
     def run(self, arguments):
         progress = ToolProgress('compile', self.job.emit) if 'tools/build_native.py' in arguments else None
         return run_container(self.job, self.root, arguments, image_id=self.image_id, on_output=progress)
+
+    def game_command(self, stage, jobs):
+        args = ()
+        if self.native is not None:
+            args = windows_build_args(self.native.mingw_root, self.native.cppwinrt_include)
+        return native_command('windows' if WINDOWS else 'linux', jobs, jobs, stage=stage,
+                              game_only=True, platform_args=args)
 
     def verify(self, executable, data, identity):
         return verify_native(self.job, self.root, executable, data, identity)
@@ -141,8 +149,7 @@ def execute_install(job, root, source, *, services=None, prepare_launcher=None):
         if shutil.disk_usage(layout.stage).free < 6*1024**3:
             raise ValueError('Native preparation requires at least 6 GiB of free disk space')
         job.emit(dict(stage='translate', state='started'))
-        tools.run(['python3', 'tools/kirby.py', 'translate', '--stage-root', relative,
-                   '--dol', copied_dol.relative_to(root).as_posix(), '--threads', str(jobs)])
+        tools.run(['python3', *translate_command(copied_dol.relative_to(root).as_posix(), jobs, stage=relative)])
         if not any(layout.generated.iterdir()):
             raise ValueError('Translation did not generate native sources')
         _write_receipt(translation_receipt, dict(key=keys['translation'],
@@ -160,9 +167,7 @@ def execute_install(job, root, source, *, services=None, prepare_launcher=None):
         # An interrupted compiler must not leave a valid receipt from an older build.
         native_receipt.unlink(missing_ok=True)
         job.emit(dict(stage='compile', state='started', jobs=jobs))
-        tools.run(['python3', 'tools/build_native.py', '--stage-root', relative,
-                   '--jobs', str(jobs), '--translated-jobs', str(jobs),
-                   '--target', 'windows' if WINDOWS else 'linux'])
+        tools.run(['python3', *tools.game_command(relative, jobs)])
     job.emit(dict(stage='compile', state='complete', reused=build_reused))
     if tools.identity() != identity:
         raise ValueError('Project sources changed during compilation; retry with the saved build cache')

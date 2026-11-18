@@ -24,6 +24,8 @@ from tooling.test_prepare import fixture
 
 
 class Tools:
+    native = None
+    game_command = BuildTools.game_command
     def __init__(self,root):
         self.root=root;self.fail=None
         self.record=dict(source_revision='a'*40,source_modified=False,source_sha256='b'*64)
@@ -39,6 +41,8 @@ class Tools:
         if command=='translate':
             (layout.generated/'function.cpp').write_text('synthetic translated output')
         else:
+            if '--game-only' not in arguments:
+                raise AssertionError('The install worker should build only the game')
             layout.build.mkdir(exist_ok=True)
             (layout.build/'WiiCompiled').write_bytes(b'synthetic native output')
             (layout.build/'WiiCompiled').chmod(0o700)
