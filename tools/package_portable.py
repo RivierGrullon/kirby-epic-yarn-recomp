@@ -63,6 +63,7 @@ def project_snapshot(root, destination):
     forbidden = ('disc', 'generated', 'local', 'build')
     if any((Path(destination)/name).exists() for name in forbidden):
         raise ValueError('Release source tree contains private or generated outputs')
+    return subprocess.check_output(['git','-C',destination,'rev-parse','HEAD'],text=True).strip()
 
 
 def digest(path):
@@ -106,23 +107,11 @@ def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, 
     root, output = Path(root).resolve(), Path(output).absolute()
     if output.exists():
         raise ValueError('Package output already exists; choose a new path')
-    # Never include a dirty source snapshot or a launcher built from another tree.
-    from build_info import collect
-    expected = collect(root,compiler='pending',build_type='Release')
-    if expected['source_modified']:
-        raise ValueError('Commit project changes before packaging')
-    launcher=root/'build/native/kirby-launcher'
-    environment=dict(os.environ,LD_LIBRARY_PATH=str(root/'local/host-libs'))
-    import tomllib
-    information=tomllib.loads(subprocess.check_output([launcher,'--build-info'],env=environment,text=True))
-    for key in ('source_revision','source_modified','source_sha256'):
-        if information['build'][key] != expected[key]:
-            raise ValueError('Rebuild the launcher from the committed package sources')
     image = subprocess.check_output([engine,'image','inspect',image,'--format','{{.Id}}'],text=True).strip().removeprefix('sha256:')
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.appdir-',dir=output.parent) as temporary:
         appdir=Path(temporary)/'Kirby.AppDir';appdir.mkdir()
-        project=appdir/'project';project_snapshot(root,project)
+        revision=project_snapshot(root,appdir/'project')
         worker=appdir/'tools/runtime';worker.mkdir(parents=True)
         translator_revision=json.loads((root/'dependencies.json').read_text())['wiicompiled']['commit']
         if tools_descriptor is not None:
@@ -156,8 +145,6 @@ def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, 
                   "[(shutil.copytree(p,out/p.name,dirs_exist_ok=True)) for n in ('PyQt6','PyQt6-Qt6','PyQt6-sip') "
                   "for p in [pathlib.Path(importlib.metadata.distribution(n)._path)] if p.is_dir()]"],root)
         shutil.copytree(freeze/'licenses',appdir/'licenses/qt')
-        (project/'build/native').mkdir(parents=True)
-        shutil.copy2(launcher,project/'build/native/kirby-launcher')
         if (root/'local/host-libs').is_dir():
             shutil.copytree(root/'local/host-libs',appdir/'host-libs',symlinks=False)
         else:
@@ -174,7 +161,7 @@ def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, 
         shutil.copy2(artwork/'kirby-native.svg', appdir/svg_icon)
         (appdir/'kirby-native.png').symlink_to(png_icon)
         (appdir/'.DirIcon').symlink_to('kirby-native.png')
-        (appdir/'revision').write_text(expected['source_revision']+'\n')
+        (appdir/'revision').write_text(revision+'\n')
         # The separate tools archive retains component notices and corresponding source.
         shutil.copy2(root/'THIRD_PARTY.md',appdir/'THIRD_PARTY.md')
         shutil.copy2(root/'LICENSE',appdir/'LICENSE')

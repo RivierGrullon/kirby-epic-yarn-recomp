@@ -14,6 +14,8 @@ from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tools'))
+from installer import launcher
+
 spec=importlib.util.spec_from_file_location('kirby_setup_command',ROOT/'tools/setup.py')
 setup=importlib.util.module_from_spec(spec);spec.loader.exec_module(setup)
 
@@ -131,7 +133,7 @@ class LauncherPublicationTests(unittest.TestCase):
         for name in ('runtime.dll','kirby-launcher.exe'):
             (self.staging/name).write_bytes(b'new '+name.encode())
             (self.destination/name).write_bytes(b'old '+name.encode())
-        setup._publish_launcher(self.staging,self.destination,['runtime.dll','kirby-launcher.exe'],self.job)
+        launcher._publish_launcher(self.staging,self.destination,['runtime.dll','kirby-launcher.exe'],self.job)
         self.assertEqual((self.destination/'runtime.dll').read_bytes(),b'new runtime.dll')
         self.assertEqual((self.destination/'kirby-launcher.exe').read_bytes(),b'new kirby-launcher.exe')
 
@@ -147,7 +149,7 @@ class LauncherPublicationTests(unittest.TestCase):
             return replace(source,target)
         with patch.object(setup.os,'replace',side_effect=locked):
             with self.assertRaisesRegex(PermissionError,'running'):
-                setup._publish_launcher(self.staging,self.destination,['runtime.dll','added.dll','kirby-launcher.exe'],self.job)
+                launcher._publish_launcher(self.staging,self.destination,['runtime.dll','added.dll','kirby-launcher.exe'],self.job)
         self.assertEqual((self.destination/'runtime.dll').read_bytes(),b'old runtime')
         self.assertEqual((self.destination/'kirby-launcher.exe').read_bytes(),b'old launcher')
         self.assertFalse((self.destination/'added.dll').exists())
@@ -163,7 +165,7 @@ class LauncherPublicationTests(unittest.TestCase):
             return replace(source,target)
         with patch.object(setup.os,'replace',side_effect=locked):
             with self.assertRaisesRegex(ValueError,'could not restore'):
-                setup._publish_launcher(self.staging,self.destination,['runtime.dll','kirby-launcher.exe'],self.job)
+                launcher._publish_launcher(self.staging,self.destination,['runtime.dll','kirby-launcher.exe'],self.job)
         recovery=list(self.destination.glob('.launcher-recovery-*'))
         self.assertEqual(len(recovery),1)
         self.assertEqual((recovery[0]/'runtime.dll').read_bytes(),b'old')
@@ -175,7 +177,7 @@ class LauncherPublicationTests(unittest.TestCase):
             (self.destination/name).write_bytes(b'old')
         self.job.check_cancel.side_effect=Cancelled('cancelled')
         with self.assertRaises(Cancelled):
-            setup._publish_launcher(self.staging,self.destination,['runtime.dll','kirby-launcher.exe'],self.job)
+            launcher._publish_launcher(self.staging,self.destination,['runtime.dll','kirby-launcher.exe'],self.job)
         self.assertEqual((self.destination/'runtime.dll').read_bytes(),b'old')
         self.assertEqual((self.destination/'kirby-launcher.exe').read_bytes(),b'old')
 
@@ -193,10 +195,8 @@ class LauncherPublicationTests(unittest.TestCase):
             self.assertEqual((destination/'runtime.dll').read_bytes(),b'old library')
             return ('schema_version=1\nprogram="launcher"\n[build]\nsource_revision="'+'a'*40+
                     '"\nsource_modified=false\nsource_sha256="'+'b'*64+'"\n').encode()
-        with (patch.object(setup,'ROOT',self.root),patch.object(setup,'WINDOWS',True),
-              patch('installer.pipeline.BuildTools.run_tool'),patch('installer.pipeline.BuildTools.jobs',return_value=1),
-              patch('installer.jobs.run_process',side_effect=verify)):
-            result=setup.install_launcher(self.job,build,identity,'c'*64)
+        with patch.object(launcher,'WINDOWS',True), patch.object(launcher,'run_process',side_effect=verify):
+            result=launcher.install_launcher(self.job,self.root,build,identity)
         self.assertEqual(result,destination/'kirby-launcher.exe')
         self.assertEqual(result.read_bytes(),b'new launcher')
         self.assertEqual((destination/'runtime.dll').read_bytes(),b'new library')

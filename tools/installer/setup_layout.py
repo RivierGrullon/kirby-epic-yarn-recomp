@@ -73,10 +73,6 @@ def prepare_destination(bundle, destination):
         runtime=staged/'tools/runtime';runtime.mkdir(parents=True,exist_ok=True)
         for name in ('toolchain-download.json','ca-certificates.crt'):
             if (bundle.runtime/name).is_file():shutil.copy2(bundle.runtime/name,runtime/name)
-        output=staged/'build/native';output.mkdir(parents=True)
-        for path in (source/'build/native').glob('*'):
-            if path.name in ('kirby-launcher','kirby-launcher.exe') or path.suffix.lower()=='.dll':
-                shutil.copy2(path,output/path.name)
         libraries=staged/'local/host-libs'
         if bundle.libraries.is_dir():shutil.copytree(bundle.libraries,libraries,symlinks=False)
         marker=staged/'local/setup/source.json';marker.parent.mkdir(parents=True,exist_ok=True)

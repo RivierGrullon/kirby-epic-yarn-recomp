@@ -9,11 +9,9 @@ def translate_command(dol, jobs, *, stage=None):
     return command
 
 
-def native_command(target, jobs, translated_jobs, *, stage=None, game_only=False, platform_args=()):
+def native_command(target, jobs, translated_jobs, *, stage=None, platform_args=()):
     command = ['tools/build_native.py', '--target', target, '--jobs', str(jobs),
                '--translated-jobs', str(translated_jobs)]
     if stage is not None:
         command.extend(['--stage-root', str(stage)])
-    if game_only:
-        command.append('--game-only')
     return [*command, *platform_args]

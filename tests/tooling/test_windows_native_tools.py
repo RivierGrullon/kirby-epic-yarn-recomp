@@ -147,7 +147,7 @@ class WindowsNativeToolsTests(unittest.TestCase):
             self.assertEqual(build.image(), tools.image_id)
             identity = build.identity()
             self.assertRegex(identity['source_sha256'], r'^[0-9a-f]{64}$')
-            build.run_tool(['python3', *build.game_command('local/setup/builds/test', 2)])
+            build.run_tool(['python3', *build.build_command('local/setup/builds/test', 2)])
         arguments = json.loads((self.root / 'local/native-args.json').read_text())
         self.assertEqual(arguments[arguments.index('--llvm-mingw-root') + 1], str(tools.mingw_root))
         self.assertEqual(arguments[arguments.index('--cppwinrt-include') + 1], str(tools.cppwinrt_include))

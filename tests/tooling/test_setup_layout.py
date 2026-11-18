@@ -32,8 +32,7 @@ class SetupLayoutTests(unittest.TestCase):
         root=prepare_destination(self.bundle,self.destination)
         self.assertTrue((root/'.git/HEAD').is_file())
         launcher=root/'build/native'/self.launcher_name
-        self.assertEqual(launcher.read_bytes(),b'launcher')
-        if os.name!='nt':self.assertTrue(launcher.stat().st_mode & 0o111)
+        self.assertFalse(launcher.exists())
         self.assertEqual((root/'local/host-libs/libfixture.so').read_bytes(),b'library')
         self.assertFalse((root/'local/host-libs').is_symlink())
         self.assertTrue((root/'tools/runtime/ca-certificates.crt').is_file())
@@ -50,6 +49,10 @@ class SetupLayoutTests(unittest.TestCase):
 
     def test_shortcut_is_written_only_for_an_existing_launcher_and_survives_bundle_removal(self):
         root=prepare_destination(self.bundle,self.destination)
+        with self.assertRaisesRegex(ValueError, 'launcher is missing'):
+            finish_destination(root,self.destination)
+        (root/'build/native').mkdir(parents=True)
+        (root/'build/native'/self.launcher_name).touch()
         shortcut=finish_destination(root,self.destination)
         self.assertTrue(shortcut.is_file())
         if os.name=='nt':

@@ -21,6 +21,7 @@ from .platforms import WINDOWS, executable_name, is_link
 from .portable import PortableTools
 from .windows_tools import WindowsTools, windows_build_args
 from .progress import ToolProgress
+from .launcher import install_launcher
 
 
 class BuildTools:
@@ -75,12 +76,12 @@ class BuildTools:
         except ValueError as error:
             raise ValueError('Check the memory assigned to the Docker/Podman machine. '+str(error)) from error
 
-    def game_command(self, stage, jobs):
+    def build_command(self, stage, jobs):
         args = ()
         if isinstance(self.local, WindowsTools):
             args = windows_build_args(self.local.mingw_root, self.local.cppwinrt_include)
         return native_command('windows' if WINDOWS else 'linux', jobs, jobs, stage=stage,
-                              game_only=True, platform_args=args)
+                              platform_args=args)
 
     def verify(self, executable, data, identity):
         return verify_native(self.job, self.root, executable, data, identity)
@@ -121,7 +122,7 @@ def _native_files(directory, job):
             for name in names}
 
 
-def execute_install(job, root, source, *, services=None, prepare_launcher=None):
+def execute_install(job, root, source, *, services=None):
     """A failed/cancelled stage never changes the previous executable selection.
 
     Mutable compiler outputs are reusable caches. Only independent copies that
@@ -170,17 +171,19 @@ def execute_install(job, root, source, *, services=None, prepare_launcher=None):
     job.emit(dict(stage='translate', state='complete', reused=translation_reused))
     native_receipt = layout.metadata/'native.json'
     previous = _receipt(native_receipt)
+    launcher = layout.build/('kirby-launcher.exe' if WINDOWS else 'kirby-launcher')
     build_reused = False
     if translation_reused and isinstance(previous, dict) and previous.get('key') == keys['native']:
         try:
-            build_reused = previous.get('files') == _native_files(layout.build, job)
+            build_reused = (previous.get('files') == _native_files(layout.build, job)
+                            and previous.get('launcher_sha256') == file_digest(launcher, job.check_cancel)[0])
         except (OSError, ValueError):
             pass
     if not build_reused:
         # An interrupted compiler must not leave a valid receipt from an older build.
         native_receipt.unlink(missing_ok=True)
         job.emit(dict(stage='compile', state='started', jobs=jobs))
-        tools.run_tool(['python3', *tools.game_command(stage_arg, jobs)], on_output=ToolProgress('compile', job.emit))
+        tools.run_tool(['python3', *tools.build_command(stage_arg, jobs)], on_output=ToolProgress('compile', job.emit))
     job.emit(dict(stage='compile', state='complete', reused=build_reused))
     if tools.identity() != identity:
         raise ValueError('Project sources changed during compilation; retry with the saved build cache')
@@ -192,13 +195,13 @@ def execute_install(job, root, source, *, services=None, prepare_launcher=None):
         name = executable_name()
         (candidate/name).chmod(0o700 if WINDOWS else 0o500)
         build = tools.verify(candidate/name, data, identity)
-        if prepare_launcher is not None:
-            job.emit(dict(stage='launcher', state='started'))
-            prepare_launcher(layout.build, identity, image)
+        job.emit(dict(stage='launcher', state='started'))
+        install_launcher(job, root, layout.build, identity)
         job.check_cancel()
         if tools.identity() != identity:
             raise ValueError('Project sources changed during native verification; retry installation')
-        _write_receipt(native_receipt, dict(key=keys['native'], files=files))
+        _write_receipt(native_receipt, dict(key=keys['native'], files=files,
+                                            launcher_sha256=file_digest(launcher, job.check_cancel)[0]))
         manifest = dict(version=1, game_id='RK5E01', revision=0, dol_sha1=kirby.EXPECTED_SHA1,
                         data_root=str(data), project_sha256=identity['source_sha256'],
                         translation_key=keys['translation'], native_key=keys['native'],
