@@ -2065,3 +2065,49 @@ Local evidence is under `local/resolution-aa/gpu-tests/`, the four
 `local/resolution-aa/verified-summary.json`. Build, unit and integration logs are
 under ignored `build-logs/resolution-aa-*`. No Linux runtime or Aurora source
 patch was required by these results.
+
+## Space Land indexed-array storage budget (2026-11-17)
+
+Rendering the Space Land map in experimental performance mode aborted while
+recording graphics: approximately 8.39 MB was requested from Aurora's fixed
+8 MiB storage arena. Kirby's renderer already accepts individual
+indexed-array prefixes up to 16 MiB, and GPU-resident copies retain multiple
+uploads in one recording frame. The same overflow was reproduced with a
+synthetic indexed draw without any game data.
+
+`patches/aurora/kirby-storage-budget.patch` raises the shared storage budget to
+32 MiB. Aurora uses this value for its GPU buffer, all mapped staging regions,
+and the offsets of subsequent staging data. This adds 24 MiB to GPU storage and
+24 MiB to each of five staging buffers: **144 MiB of additional allocations**.
+The arena remains bounded; this change does not add dynamic spilling.
+
+The GPU regression records two different 10,080,012-byte position-array prefixes
+before the same readback. It checks red pixels on the left and blue pixels on
+the right, exercising both capacity and preservation of earlier draw snapshots.
+Run it with a built renderer fixture and a host graphics session:
+
+```bash
+KIRBY_GPU_STORAGE_TEST="$PWD/build/native/kirby_gx_renderer_test" \
+LD_LIBRARY_PATH="$PWD/local/host-libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+python3 -m unittest discover -s tests/integration -p test_gpu_storage.py -v
+```
+
+Performance was measured in Space Land at Meta Knight's entrance
+(`StageInfo = (50, 0, 6)`) on the Acer Nitro AN515-55 / RTX 3050 Laptop GPU.
+Both runs used Vulkan, 1x resolution, no MSAA or FXAA, VSync off, hidden windows
+and silent dummy audio. Scripted controller inputs reached the same map location;
+the debugger detached before measurement. Each reported interval covers 15 seconds
+after a three-second warm-up in the map, with no input or background build.
+
+| Mode | Native VI submissions/s | Median interval | P95 interval | Readbacks |
+| --- | --- | --- | --- | --- |
+| Experimental mode off, original build | 17.609 | 53.216 ms | 73.761 ms | 529 |
+| Experimental mode on, 32 MiB storage | 59.476 | 16.697 ms | 17.535 ms | 0 |
+
+The patched run completed the measurement and exited normally. These are
+stationary map measurements of native submissions, not compositor scanout, motion or audio
+validation, or a full-game performance guarantee. The capacity increase enables
+the existing experimental path; it does not by itself make the normal path faster.
+Local logs, frame CSVs, screenshots and reports remain under
+`local/save-analysis/funbil-key100/normal-benchmark-54s2sizb/` and
+`local/save-analysis/funbil-key100/resident-benchmark-m_e8dmn3/`.

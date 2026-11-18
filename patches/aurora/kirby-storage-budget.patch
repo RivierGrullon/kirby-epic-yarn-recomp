@@ -1,0 +1,12 @@
+--- a/aurora/lib/gfx/resources.hpp
++++ b/aurora/lib/gfx/resources.hpp
+@@ -7,5 +7,8 @@
+ inline constexpr uint64_t UniformBufferSize = 25165824; // 24 MiB
+ inline constexpr uint64_t VertexBufferSize = 5242880;   // 5 MiB
+ inline constexpr uint64_t IndexBufferSize = 2097152;    // 2 MiB
+-inline constexpr uint64_t StorageBufferSize = 8388608;  // 8 MiB
++// Kirby permits individual indexed-array prefixes up to 16 MiB. Its fully
++// unlocked world maps also upload several arrays before the next VI boundary;
++// GPU-resident copies keep those draws in one recording frame.
++inline constexpr uint64_t StorageBufferSize = 33554432; // 32 MiB
+ inline constexpr uint64_t TextureUploadSize = 25165824; // 24 MiB

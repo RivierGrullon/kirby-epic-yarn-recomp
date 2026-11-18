@@ -53,6 +53,7 @@ LD_LIBRARY_PATH="$PWD/local/host-libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" buil
 KIRBY_NATIVE_TEST="$PWD/build/native/WiiCompiled" \
 KIRBY_NATIVE_VIDEO_TEST="$PWD/build/native/WiiCompiled" \
 KIRBY_LAUNCHER_TEST="$PWD/build/native/kirby-launcher" \
+KIRBY_GPU_STORAGE_TEST="$PWD/build/native/kirby_gx_renderer_test" \
 LD_LIBRARY_PATH="$PWD/local/host-libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
 python3 -m unittest discover -s tests -v
 ```

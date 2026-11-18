@@ -128,7 +128,8 @@ void GpuFxaa() {
     std::cout << checks << " FXAA presentation checks passed; diagonal blend pixels=" << blended << '\n';
 }
 
-void GpuXfb(bool startHidden = false, int resolutionScale = 1, int msaaSamples = 1, bool waitForTrace = false) {
+void GpuXfb(bool startHidden = false, int resolutionScale = 1, int msaaSamples = 1, bool waitForTrace = false,
+            bool largeIndexedArray = false) {
     if (waitForTrace) {
 #ifndef TRACY_ENABLE
         throw std::runtime_error("GPU trace test requires TRACY_ENABLE=ON");
@@ -245,6 +246,43 @@ void GpuXfb(bool startHidden = false, int resolutionScale = 1, int msaaSamples =
               << ',' << unsigned(sample[2]) << ',' << unsigned(sample[3]) << '\n';
     Check(std::equal(red.begin(), red.end(), sample),
           "direct GX primitive produces red pixels in GPU readback");
+    if (largeIndexedArray) {
+        // A legal INDEX16 draw can reference a prefix larger than Aurora's old
+        // 8 MiB storage arena, even though it only draws four vertices.
+        constexpr uint32_t base = 0x100000, stride = 252, firstIndex = 39997;
+        const auto positions = [&](float left, float right) {
+            const float values[]{left,0,0, right,0,0, right,4,0, left,4,0};
+            for (unsigned vertex = 0; vertex < 4; ++vertex)
+                for (unsigned component = 0; component < 3; ++component) {
+                    const auto word = std::bit_cast<uint32_t>(values[vertex*3+component]);
+                    for (unsigned byte = 0; byte < 4; ++byte)
+                        memory[base+(firstIndex+vertex)*stride+component*4+byte] = word >> (24-byte*8);
+                }
+        };
+        positions(0,16);
+        GXSetVtxDesc(GX_VA_POS, GX_INDEX16);
+        GXFlush(); aurora::gx::fifo::drain();
+        Cp(renderer, 0xA0, base); Cp(renderer, 0xB0, stride);
+        std::vector<uint8_t> indexed{0x80,0,4};
+        for (unsigned vertex = 0; vertex < 4; ++vertex) {
+            const auto index = firstIndex+vertex;
+            indexed.push_back(index >> 8); indexed.push_back(index);
+        }
+        renderer.Feed(indexed);
+        // Keep two different 10 MiB snapshots alive in the same recording
+        // frame, as GPU-resident rendering does before the next VI boundary.
+        positions(16,32);
+        GXSetChanMatColor(GX_COLOR0A0, {0,0,255,255});
+        GXFlush(); aurora::gx::fifo::drain();
+        renderer.Feed(indexed);
+        Bp(renderer, 0x4B000080); Bp(renderer, 0x52004803);
+        const std::array<uint8_t,4> indexedBlue{41,239,41,110};
+        Check(std::equal(red.begin(), red.end(), memory.begin()+0x1000+2*64+8*2) &&
+              std::equal(indexedBlue.begin(), indexedBlue.end(), memory.begin()+0x1000+2*64+24*2),
+              "multiple indexed arrays exceeding 8 MiB retain independent GPU snapshots");
+        std::cout << checks << " large indexed-array Vulkan checks passed\n";
+        return;
+    }
     // CI4 texture and RGB565 palette come from guest RAM, not native GXTexObj pointers.
     std::fill_n(memory.begin()+0x400, 32, 0x11);
     std::fill_n(memory.begin()+0x500, 32, 0);
@@ -837,6 +875,7 @@ int main(int argc, char** argv) {
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-fxaa") { GpuFxaa(); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb") { GpuXfb(); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb-hidden") { GpuXfb(true); return 0; }
+        if (argc == 2 && std::string_view(argv[1]) == "--gpu-storage-hidden") { GpuXfb(true, 1, 1, false, true); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-trace-hidden") { GpuXfb(true, 1, 1, true); return 0; }
         if (argc == 4 && std::string_view(argv[1]) == "--gpu-quality") {
             GpuXfb(true, std::stoi(argv[2]), std::stoi(argv[3])); return 0;
