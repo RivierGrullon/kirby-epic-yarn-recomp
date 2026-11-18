@@ -47,16 +47,18 @@ def apply_snapshot_patch(patch, workspace):
             original = target.read_bytes()
             if b'\0' not in original and b'\r\n' in original:
                 target.write_bytes(original.replace(b'\r\n', b'\n'))
-    apply = ['git', 'apply', '--ignore-space-change', f'--directory={workspace.relative_to(ROOT).as_posix()}']
-    if subprocess.run([*apply, '--check'], input=content, cwd=ROOT, capture_output=True).returncode == 0:
-        subprocess.run(apply, input=content, cwd=ROOT, check=True)
-    elif subprocess.run([*apply, '--reverse', '--check'], input=content, cwd=ROOT, capture_output=True).returncode:
+    apply = ['git', 'apply', '--ignore-space-change']
+    options = dict(input=content, cwd=workspace, env=dict(os.environ, GIT_CEILING_DIRECTORIES=str(workspace.parent)))
+    if subprocess.run([*apply, '--check'], **options, capture_output=True).returncode == 0:
+        subprocess.run(apply, **options, check=True)
+    elif subprocess.run([*apply, '--reverse', '--check'], **options, capture_output=True).returncode:
         raise ValueError(f'{patch.name} does not apply cleanly; local source edits were left untouched')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--configure-only", action="store_true")
+    parser.add_argument("--game-only", action="store_true", help="Build WiiCompiled without the launcher")
     parser.add_argument("--target", choices=("linux", "windows"), default="windows" if os.name == "nt" else "linux")
     parser.add_argument("--llvm-mingw-root", type=Path, help="LLVM-MinGW installation (default: discover on PATH)")
     parser.add_argument("--cppwinrt-include", type=Path, help="Directory containing winrt/base.h (default: installed Windows SDK)")
@@ -160,7 +162,8 @@ def main():
                                      f"{mingw_root.as_posix()}/bin/x86_64-w64-mingw32-{tool}.exe")
         run_logged("configure",configure,layout=layout)
         if not args.configure_only:
-            run_logged("compile", ["cmake", "--build", build, "--target", "WiiCompiled", "kirby-launcher", "--parallel", str(max(1, args.jobs))],layout=layout)
+            targets = ["WiiCompiled"] if args.game_only else ["WiiCompiled", "kirby-launcher"]
+            run_logged("compile", ["cmake", "--build", build, "--target", *targets, "--parallel", str(max(1, args.jobs))],layout=layout)
             if args.target == 'windows':
                 # LLVM's C++ runtime and Dawn may be shared libraries. Keep DLLs
                 # next to the products so native Windows can resolve them.

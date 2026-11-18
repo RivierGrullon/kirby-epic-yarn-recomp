@@ -56,26 +56,13 @@ function Get-Package([string]$Name) {
     if (!(Test-Path -LiteralPath (Join-Path $Destination '.complete'))) {
         # Publish only complete packages. An interrupted extraction is never reused.
         if (Test-Path -LiteralPath $Destination) { throw "Incomplete tool directory: $Destination" }
-        # The SDK contains deeply nested filenames. Keep staging shorter than
-        # the installed package path for Windows PowerShell 5.1's ZIP reader.
         do {
             $Staging = Join-Path $Cache ('.s-' + [guid]::NewGuid().ToString('N').Substring(0,8))
         } while (Test-Path -LiteralPath $Staging)
-        if ($Spec.format -eq 'zip') {
-            $Zip = [IO.Compression.ZipFile]::OpenRead($Archive)
-            try {
-                foreach ($Member in $Zip.Entries) {
-                    if ((Join-Path $Destination $Member.FullName).Length -ge 260 -or
-                        (Join-Path $Staging $Member.FullName).Length -ge 260) {
-                        throw "The project path is too long to extract $Name. Move the checkout to a shorter path such as C:\Kirby and rerun. Cached downloads can be kept."
-                    }
-                }
-            } finally { $Zip.Dispose() }
-        }
         New-Item -ItemType Directory -Path $Staging | Out-Null
         Write-Host "Extracting $Name ..."
         if ($Spec.format -eq 'zip') {
-            [IO.Compression.ZipFile]::ExtractToDirectory($Archive, $Staging)
+            Invoke-Checked (Join-Path $env:SystemRoot 'System32\tar.exe') @('-xf', $Archive, '-C', $Staging)
         } elseif ($Spec.format -eq '7z') {
             $SevenZip = Get-Package 'sevenzip'
             Invoke-Checked $SevenZip @('x', '-y', "-o$Staging", $Archive)
@@ -121,7 +108,6 @@ try {
     New-Item -ItemType Directory -Force -Path (Join-Path $Cache 'downloads') | Out-Null
     $Lock = [IO.File]::Open((Join-Path $Cache 'build.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
 
     $Python = Get-Package 'python'
     # Select modules per process, so concurrent snapshots can share this Python.

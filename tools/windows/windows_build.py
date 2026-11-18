@@ -10,6 +10,8 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from kirby import ROOT, EXPECTED_SHA1, verify_hash
+from build_commands import native_command, translate_command
+from installer.windows_tools import windows_build_args
 from installer.jobs import Job
 from installer.sources import inspect_source
 from windows.package_windows import package
@@ -35,15 +37,13 @@ def build(source, *, jobs, translated_jobs, mingw, cppwinrt, redist):
             dol = source
         verify_hash(dol.read_bytes(), EXPECTED_SHA1)
         commands = [
-            ['bootstrap.py'],
-            ['kirby.py', 'translate', '--dol', str(dol), '--threads', str(jobs)],
-            ['build_native.py', '--target', 'windows', '--jobs', str(jobs),
-             '--translated-jobs', str(translated_jobs), '--llvm-mingw-root', str(mingw),
-             '--cppwinrt-include', str(cppwinrt)],
+            ['tools/bootstrap.py'],
+            translate_command(dol, jobs),
+            native_command('windows', jobs, translated_jobs, platform_args=windows_build_args(mingw, cppwinrt)),
         ]
         for command in commands:
             print(f"Running {command[0]} ...", flush=True)
-            subprocess.run([sys.executable, str(ROOT / 'tools' / command[0]), *command[1:]],
+            subprocess.run([sys.executable, *command],
                            cwd=ROOT, check=True)
         package(ROOT, redist)
     print(f"Build complete: {ROOT / 'build/native/kirby-launcher.exe'}")

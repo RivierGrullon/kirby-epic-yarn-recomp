@@ -12,6 +12,8 @@ build is reused. Later launches use the selected native installation.
 The sections below cover installation, package contents and maintainer build
 instructions for each platform.
 
+For release commands and upload filenames, see [Build a player release](release.md).
+
 ## Windows ZIP
 
 `tools/windows/build-windows.ps1` creates `local/releases/Kirby-Windows-x64.zip` after a successful
@@ -41,7 +43,7 @@ installed launcher. Reinstalling updates the menu entry to the latest completed
 installation. A shortcut creation error is shown without disabling the installed
 game or the Open launcher button.
 
-The image includes Python, Qt, the authored launcher, an isolated console worker
+The image includes Python, Qt, the authored sources, an isolated console worker
 and a pinned tools download descriptor. No host Python or Qt installation is needed.
 Opening setup and playing an installed game do not
 download tools. Importing a disc image or building a game downloads the private
@@ -81,7 +83,7 @@ Generated code, compiler caches, installations, settings and saves stay under th
 directory. Opening the same source version again preserves those files. Older
 version directories are retained; migration between source versions is not yet
 automatic. The developer checkout and its saves are not imported or modified.
-The launcher and its host libraries are copied into this installation; it keeps
+Setup compiles and verifies the launcher alongside the game. The installed launcher keeps
 working after setup closes and its AppImage unmounts. Its setup button remembers
 the original AppImage location. If that file is moved, open it manually to update
 the recorded location. The old AppImage writable-version layout remains supported
@@ -94,19 +96,14 @@ newer, including the Bazzite development environment. Other systems need testing
 
 ### Build a private test package
 
-These commands are for maintainers. Start with the prerequisites and native
-build cache described in [building.md](building.md), and commit the application
-sources before packaging. The package refuses a launcher with different source
-provenance.
+These commands are for maintainers. Start with a clean source checkout and
+the container toolchain image described in [building-advanced.md](building-advanced.md).
 
 ```sh
 podman build --network=host -t localhost/kirby-portable-tools:compact \
   -f tools/Containerfile.portable tools
 podman build --network=host -t localhost/kirby-setup-tools:pyqt \
   -f tools/Containerfile.setup tools
-
-# Rebuild the launcher after committing the packaging sources.
-bash tools/container.sh cmake --build build/native --target kirby-launcher --parallel 2
 
 python3 tools/package_portable.py --output local/releases/Kirby.AppDir \
   --tools-output local/releases/Kirby-tools-linux-x86_64.tar.xz \
@@ -130,8 +127,7 @@ Rebuild the tools when their dependencies change, using a new immutable URL.
 The packager rejects descriptors with a different translator source revision.
 
 The packager exports and reduces the private toolchain, then freezes the setup worker. It
-creates a fresh shallow source snapshot, and includes only the launcher from the
-native build. It excludes the disc, translated game code, native game executable,
+creates a fresh shallow source snapshot. It excludes the disc, translated game code, native game executable,
 settings, saves and developer caches. Existing component notices stay with their
 components. The toolchain builds PRoot 5.5.0 from pinned upstream source; the
 distribution's older 5.1 cannot restore archive symlink metadata through
@@ -142,7 +138,7 @@ checked against the SHA-256 pinned in `tools/build_appimage.py`.
 ### Verify outside the checkout
 
 Use a new data directory and an empty tool search path. The first command checks
-the real launcher without opening a visible window:
+the packaged setup GUI without opening a visible window:
 
 ```sh
 XDG_DATA_HOME="$PWD/local/package-test-data" PATH=/nonexistent QT_QPA_PLATFORM=offscreen \
@@ -165,16 +161,21 @@ adapter; it does not require a container engine. The shared cache is under
 checked in full even though the directory name is short. The cached Python reads
 `KIRBY_PROJECT_ROOT`, so two installs do not share mutable module paths.
 
+Windows setup translates and compiles under `%LOCALAPPDATA%\KirbyNative\b\<id>`
+to keep native build paths short. Each installation owns its build cache and
+reuses it on retry. After startup verification, setup publishes the game and
+runtime files to the selected installation folder.
+
 Build the Windows installer **on Windows** with native x64 Python (3.12 recommended),
-the committed authored sources and a matching `build/native/kirby-launcher.exe`:
+and a clean Git checkout:
 
 ```powershell
-python -m pip install -r tools/requirements-setup.txt pyinstaller==6.22.3
+python -m pip install -r tools/requirements-setup.txt
 python tools/windows/package_setup.py --output local/releases/Kirby-Setup
 ```
 
 This produces a ZIP containing `Kirby-Setup.exe`, its Python/Qt runtime, the console
-worker, authored source snapshot and launcher DLLs. It excludes the translated
+worker and authored source snapshot. It excludes the translated
 game executable, disc assets, generated code, saves and developer tools. Freeze
 checks do not replace testing the real installer on a clean Windows machine.
 

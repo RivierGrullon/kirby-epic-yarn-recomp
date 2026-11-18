@@ -96,14 +96,17 @@ class StagedBuildTests(unittest.TestCase):
         cmake.write_text(f'#!{sys.executable}\nimport json,pathlib,sys\na=sys.argv[1:]\n'
                          "if '--build' in a:\n"
                          " p=pathlib.Path(a[a.index('--build')+1]);(p/'WiiCompiled').write_bytes(b'staged build')\n"
+                         " (p/'targets.json').write_text(json.dumps(a[a.index('--target')+1:a.index('--parallel')]))\n"
                          "else:\n"
                          " p=pathlib.Path(a[a.index('-B')+1]);p.mkdir(parents=True,exist_ok=True);(p/'configure.json').write_text(json.dumps(a))\n")
         cmake.chmod(0o700)
         with patch.object(build_native,'ROOT',self.root), \
              patch.dict(os.environ,PATH=str(tools)+os.pathsep+os.environ['PATH']), \
-             patch.object(sys,'argv',['build_native.py','--stage-root',str(self.layout.stage)]), \
              contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(build_native.main(),0)
+            for flags, expected in (([], ['WiiCompiled', 'kirby-launcher']), (['--game-only'], ['WiiCompiled'])):
+                with self.subTest(flags=flags), patch.object(sys, 'argv', ['build_native.py', '--stage-root', str(self.layout.stage), *flags]):
+                    self.assertEqual(build_native.main(), 0)
+                    self.assertEqual(json.loads((self.layout.build/'targets.json').read_text()), expected)
         self.assertEqual(production.read_bytes(),b'keep runnable build')
         self.assertEqual((self.layout.build/'WiiCompiled').read_bytes(),b'staged build')
         configured=json.loads((self.layout.build/'configure.json').read_text())

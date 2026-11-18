@@ -4,9 +4,10 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
-from build_layout import BuildLayout
+from build_layout import BuildLayout, cache_directory_name
 
 
 class BuildLayoutTests(unittest.TestCase):
@@ -56,6 +57,25 @@ class BuildLayoutTests(unittest.TestCase):
         self.assertEqual(list(stage.iterdir()),[sentinel])
         self.assertEqual(sentinel.read_text(),'keep')
 
+    def test_short_windows_cache_reopens_only_for_its_checkout_and_full_key(self):
+        cache = self.root/'appdata/KirbyNative/b'
+        checkout = self.root/'long installation path/project'
+        (checkout/'local/setup').mkdir(parents=True)
+        key = 'a'*64
+        stage = cache/cache_directory_name(checkout, key)
+        with patch('build_layout.WINDOWS', True), patch('build_layout.windows_build_cache', return_value=cache):
+            BuildLayout(checkout, stage, cache_key=key).ensure()
+            BuildLayout(checkout, stage).ensure()  # Child processes only receive --stage-root.
+            marker = stage/'.layout.json'
+            record = json.loads(marker.read_text())
+            self.assertEqual(record['cache_key'], key)
+            self.assertEqual(len(stage.name), 16)
+            with self.assertRaisesRegex(ValueError, 'cache'):
+                BuildLayout(checkout, stage, cache_key='b'*64).ensure()
+            (checkout/'local/setup/project-id').unlink()
+            self.assertNotEqual(cache_directory_name(checkout, key), stage.name)
+            with self.assertRaisesRegex(ValueError, 'cache'):
+                BuildLayout(checkout, stage).ensure()
     def test_rejects_symlink_stage_or_parent_before_writing(self):
         base=self.root/'local/setup/builds';base.mkdir(parents=True)
         outside=self.root/'other';outside.mkdir()

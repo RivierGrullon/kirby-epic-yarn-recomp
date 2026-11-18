@@ -13,13 +13,12 @@ HARNESS = r'''
 param($ScriptPath, $Cache, $ManifestPath)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-Add-Type -AssemblyName System.IO.Compression.FileSystem
 $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
 $Ast = [Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$null, [ref]$null)
-$Function = $Ast.Find({ param($Node)
-    $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -eq 'Get-Package'
+$Functions = $Ast.FindAll({ param($Node)
+    $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -in @('Invoke-Checked','Get-Package')
 }, $true)
-. ([scriptblock]::Create($Function.Extent.Text))
+foreach ($Function in $Functions) { . ([scriptblock]::Create($Function.Extent.Text)) }
 Get-Package 'dotnet'
 '''
 
@@ -37,12 +36,13 @@ class WindowsToolPathTests(unittest.TestCase):
             downloads.mkdir(parents=True)
             archive = downloads / 'fixture.zip'
             with zipfile.ZipFile(archive, 'w') as z:
+                z.writestr('dotnet.exe', b'entry fixture')
                 z.writestr(member, b'sdk fixture')
             digest = hashlib.sha256(archive.read_bytes()).hexdigest()
             archive.rename(downloads / f'dotnet-{digest[:16]}.zip')
             manifest = root / 'manifest.json'
             manifest.write_text(json.dumps({'dotnet': dict(hash=digest, algorithm='SHA256',
-                                format='zip', entry=member, url='https://invalid.example/unused')}))
+                                format='zip', entry='dotnet.exe', url='https://invalid.example/unused')}))
             harness = root / 'test.ps1'
             harness.write_text(HARNESS)
             # PowerShell 7's module search path is not compatible with 5.1.
@@ -62,7 +62,6 @@ class WindowsToolPathTests(unittest.TestCase):
         result = self.extract(254)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_overlong_install_path_reports_action_before_extracting(self):
-        result = self.extract(265)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Move the checkout', result.stderr)
+    def test_sdk_member_longer_than_max_path_extracts(self):
+        result = self.extract(320)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

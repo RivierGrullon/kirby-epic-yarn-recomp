@@ -24,6 +24,8 @@ from tooling.test_prepare import fixture
 
 
 class Tools:
+    local = None
+    build_command = BuildTools.build_command
     def __init__(self,root):
         self.root=root;self.fail=None
         self.record=dict(source_revision='a'*40,source_modified=False,source_sha256='b'*64)
@@ -31,7 +33,7 @@ class Tools:
     def image(self):return 'c'*64
     def identity(self):return dict(self.record)
     def jobs(self):return 1
-    def run(self,arguments):
+    def run_tool(self,arguments,**options):
         command='compile' if 'tools/build_native.py' in arguments else 'translate'
         if self.fail==command:raise ValueError('Synthetic '+command+' failed')
         stage=self.root/arguments[arguments.index('--stage-root')+1]
@@ -39,7 +41,10 @@ class Tools:
         if command=='translate':
             (layout.generated/'function.cpp').write_text('synthetic translated output')
         else:
+            if '--game-only' in arguments:
+                raise AssertionError('The install worker must also build the launcher')
             layout.build.mkdir(exist_ok=True)
+            (layout.build/('kirby-launcher.exe' if pipeline.WINDOWS else 'kirby-launcher')).write_bytes(b'launcher')
             (layout.build/'WiiCompiled').write_bytes(b'synthetic native output')
             (layout.build/'WiiCompiled').chmod(0o700)
             (layout.build/'dsp_coef.bin').write_bytes(bytes(4096))
@@ -68,6 +73,10 @@ class InstallPipelineTests(unittest.TestCase):
             change=patch.object(module,name,value);change.start();self.addCleanup(change.stop)
         self.source=dict(data_root=str(self.data),source=str(self.data),source_kind='directory',dol_sha1=self.sha,
                          game_id='RK5E01',revision=0,asset_files=1,asset_bytes=4)
+        verify_launcher = patch('installer.launcher.run_process', side_effect=lambda *a,**kw: (
+            'schema_version=1\nprogram="launcher"\n[build]\nsource_revision="'+self.tools.record['source_revision']+
+            '"\nsource_sha256="'+self.tools.record['source_sha256']+'"\nsource_modified=false\n').encode())
+        verify_launcher.start();self.addCleanup(verify_launcher.stop)
         self.tools=Tools(self.root)
         self.store=InstallationStore(self.root)
         self.events=[]
@@ -82,11 +91,13 @@ class InstallPipelineTests(unittest.TestCase):
         self.assertEqual(self.store.read_active()['current'],identifier)
         self.assertEqual(self.store.executable(identifier).read_bytes(),b'synthetic native output')
         self.assertEqual(self.saved.read_bytes(),b'keep settings')
+        (self.root/'build/native/kirby-launcher').unlink()
         self.tools.fail='compile'
         with self.job('second') as job:
             repeated=execute_install(job,self.root,self.source,services=self.tools)
         self.assertEqual(repeated['installation_id'],identifier)
         self.assertTrue(repeated['build_reused'])
+        self.assertEqual((self.root/'build/native/kirby-launcher').read_bytes(),b'launcher')
 
     def test_failed_rebuild_keeps_previous_selection_and_configuration(self):
         with self.job('first') as job:execute_install(job,self.root,self.source,services=self.tools)
@@ -96,6 +107,16 @@ class InstallPipelineTests(unittest.TestCase):
             execute_install(job,self.root,self.source,services=self.tools)
         self.assertEqual(self.store.read_active(),previous)
         self.assertEqual(self.saved.read_bytes(),b'keep settings')
+
+    def test_missing_cached_launcher_rebuilds_without_retranslation(self):
+        with self.job('first') as job:
+            execute_install(job,self.root,self.source,services=self.tools)
+        next((self.root/'local/setup/builds').glob('cache-*/build/kirby-launcher')).unlink()
+        with self.job('repair') as job:
+            result=execute_install(job,self.root,self.source,services=self.tools)
+        self.assertTrue(result['translation_reused'])
+        self.assertFalse(result['build_reused'])
+        self.assertTrue((self.root/'build/native/kirby-launcher').is_file())
 
     def test_native_verification_failure_never_selects_an_executable(self):
         self.tools.fail='verify'
@@ -108,12 +129,12 @@ class InstallPipelineTests(unittest.TestCase):
             execute_install(job,self.root,self.source,services=self.tools)
         previous=self.store.read_active()
         self.tools.record['source_sha256']='d'*64
-        def fail_launcher(build,identity,image):
+        def fail_launcher(job,root,build,identity):
             self.assertTrue((build/'WiiCompiled').is_file())
             self.assertEqual(identity['source_sha256'],'d'*64)
             raise ValueError('Launcher unavailable')
-        with self.job('launcher-failed') as job,self.assertRaisesRegex(ValueError,'Launcher unavailable'):
-            execute_install(job,self.root,self.source,services=self.tools,prepare_launcher=fail_launcher)
+        with patch.object(pipeline,'install_launcher',side_effect=fail_launcher), self.job('launcher-failed') as job,self.assertRaisesRegex(ValueError,'Launcher unavailable'):
+            execute_install(job,self.root,self.source,services=self.tools)
         self.assertEqual(self.store.read_active(),previous)
 
     def test_cancel_before_selection_does_not_change_previous_build(self):
@@ -134,12 +155,12 @@ class InstallPipelineTests(unittest.TestCase):
         self.assertIsNone(self.store.read_active())
 
     def test_source_changes_during_build_do_not_publish_a_mixed_build(self):
-        original=self.tools.run
-        def change(arguments):
+        original=self.tools.run_tool
+        def change(arguments,**options):
             result=original(arguments)
             if 'tools/build_native.py' in arguments:self.tools.record['source_sha256']='e'*64
             return result
-        with self.job('changed') as job,patch.object(self.tools,'run',side_effect=change):
+        with self.job('changed') as job,patch.object(self.tools,'run_tool',side_effect=change):
             with self.assertRaisesRegex(ValueError,'sources changed'):
                 execute_install(job,self.root,self.source,services=self.tools)
         self.assertIsNone(self.store.read_active())
@@ -163,8 +184,8 @@ class InstallPipelineTests(unittest.TestCase):
             self.assertTrue(result['committed'])
 
     def test_windows_candidate_keeps_dlls_and_writable_temporary_files(self):
-        original=self.tools.run
-        def build(arguments):
+        original=self.tools.run_tool
+        def build(arguments,**options):
             result=original(arguments)
             if 'tools/build_native.py' in arguments:
                 self.assertEqual(arguments[arguments.index('--target')+1],'windows')
@@ -178,8 +199,8 @@ class InstallPipelineTests(unittest.TestCase):
             self.assertTrue(executable.stat().st_mode & stat.S_IWUSR)
             self.assertEqual((executable.parent/'dependency.DLL').read_bytes(),b'Windows runtime dependency')
             return dict(identity)
-        with (patch.object(self.tools,'run',side_effect=build),patch.object(self.tools,'verify',side_effect=verify),
-              patch.object(pipeline,'WINDOWS',True),patch.object(pipeline,'executable_name',return_value='WiiCompiled.exe'),
+        with (patch.object(self.tools,'run_tool',side_effect=build),patch.object(self.tools,'verify',side_effect=verify),
+              patch('installer.launcher.WINDOWS',True),patch.object(pipeline,'WINDOWS',True),patch.object(pipeline,'executable_name',return_value='WiiCompiled.exe'),
               patch.object(installations,'WINDOWS',True),patch.object(installations,'executable_name',return_value='WiiCompiled.exe')):
             with self.job('windows') as job:
                 result=execute_install(job,self.root,self.source,services=self.tools)

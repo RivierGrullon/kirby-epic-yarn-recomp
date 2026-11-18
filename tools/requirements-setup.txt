@@ -1,4 +1,5 @@
-# Runtime UI only. The worker keeps its stdlib-only dependency boundary.
+# Setup UI and packaging. The worker uses only the standard library.
+PyInstaller==6.22.3
 PyQt6==6.12.1
 PyQt6-Qt6==6.12.0
 PyQt6-sip==13.13.1
