@@ -38,11 +38,16 @@ int main() {
     Kirby::Settings settings{data, 37.5f, false, true};
     settings.resolutionScale = 3;
     settings.msaaSamples = 4;
+    settings.fullscreen = true;
     Kirby::SaveSettings(file, settings);
     const auto loaded = Kirby::LoadSettings(file);
     Check(loaded.gameData == data && loaded.masterVolume == 37.5f &&
           !loaded.vsync && loaded.gpuResidentCopies, "Settings did not round-trip");
     Check(loaded.resolutionScale == 3 && loaded.msaaSamples == 4, "Image quality settings did not round-trip");
+    Check(loaded.fullscreen, "Fullscreen preference did not round-trip");
+    Write(file, "[kirby]\nschema_version = 1\n");
+    Check(!Kirby::LoadSettings(file).fullscreen, "Older settings should default to windowed mode");
+    Kirby::SaveSettings(file, settings);
     for (const int samples : {1,4}) for (const bool fxaa : {false,true}) {
         settings.resolutionScale = 8; settings.msaaSamples = samples; settings.fxaa = fxaa;
         Kirby::SaveSettings(file, settings);
@@ -121,6 +126,7 @@ int main() {
             "[kirby]\nschema_version = 1\n[video]\nresolution_scale = 7\n",
             "[kirby]\nschema_version = 1\n[video]\nresolution_scale = 9\n",
             "[kirby]\nschema_version = 1\n[video]\nfxaa = 1\n",
+            "[kirby]\nschema_version = 1\n[video]\nfullscreen = 1\n",
             "[kirby]\nschema_version = 1\n[video]\nresolution_scale = 2.5\n",
             "[kirby]\nschema_version = 1\n[video]\nresolution_scale = true\n",
             "[kirby]\nschema_version = 1\n[video]\nmsaa_samples = 2\n",

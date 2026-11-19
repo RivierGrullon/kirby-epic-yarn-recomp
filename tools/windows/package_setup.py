@@ -27,13 +27,19 @@ def package(root,output):
     with tempfile.TemporaryDirectory(prefix='.setup-',dir=output.parent) as temporary:
         temporary=Path(temporary)
         for name,script,extra in (('kirby-setup-worker','tools/install.py',['--exclude-module','PyQt6']),
+                                  ('Kirby-Bridge','tools/launcher_bridge.py',['--exclude-module','PyQt6']),
                                   ('Kirby-Setup','tools/setup_gui.py',['--windowed'])):
             subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--name',name,
                 '--distpath',str(temporary/'dist'),'--workpath',str(temporary/'work'),
-                '--specpath',str(temporary/'spec'),'--contents-directory','python',*extra,script],cwd=root,env=freeze_env,check=True)
+                '--specpath',str(temporary/'spec'),'--contents-directory',
+                'bridge-python' if name=='Kirby-Bridge' else 'python',*extra,script],cwd=root,env=freeze_env,check=True)
         staged=temporary/'Kirby-Setup';shutil.copytree(temporary/'dist/Kirby-Setup',staged)
+        # Bridge uses bridge-python, so its freeze cannot replace Qt's Python files.
+        shutil.copytree(temporary/'dist/Kirby-Bridge',staged,dirs_exist_ok=True)
         shutil.copytree(temporary/'dist/kirby-setup-worker',staged/'tools/runtime')
         revision=project_snapshot(root,staged/'project')
+        from launcher_profiles import write_profile
+        write_profile(root,staged,revision)
         # Qt must load on a machine before the worker can install the VC++ runtime.
         # Bundle the native runtime DLLs available on the packaging machine.
         for name in ('msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','msvcp140_atomic_wait.dll',
@@ -48,6 +54,7 @@ def package(root,output):
             shutil.copytree(path,notices/path.name)
         env=dict(os.environ,QT_QPA_PLATFORM='offscreen',PATH=str(system))
         subprocess.run([staged/'Kirby-Setup.exe','--self-test'],env=env,cwd=temporary,check=True,timeout=30)
+        subprocess.run([staged/'Kirby-Bridge.exe','--bridge-help'],env=env,cwd=temporary,check=True,timeout=30)
         # Windows can briefly retain a handle to the tested executable.
         deadline = time.monotonic() + 10
         while True:

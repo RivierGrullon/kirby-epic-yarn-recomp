@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--appdir',type=Path)
     parser.add_argument('--self-test',action='store_true')
     parser.add_argument('--destination',type=Path,help='Reopen setup for an existing installation folder')
+    parser.add_argument('--managed',action='store_true',help='Keep third-party launcher saves in the destination folder')
     args=parser.parse_args()
     from PyQt6.QtCore import QTimer
     from PyQt6.QtWidgets import QApplication
@@ -57,7 +58,12 @@ def main():
     app=QApplication([sys.argv[0]]);app.setApplicationName('Kirby Setup');app.setOrganizationName('KirbyNative')
     configure_application(app)
     window=SetupWindow(bundle)
+    window.managed=args.managed
     if args.destination:window.destination.setText(str(args.destination))
+    if args.managed:
+        window.destination.setReadOnly(True)
+        window.destination_button.hide()
+        window.desktop_shortcut.hide()
     window.show()
     if args.self_test:QTimer.singleShot(150,window.close)
     return app.exec()

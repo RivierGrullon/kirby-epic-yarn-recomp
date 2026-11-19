@@ -32,6 +32,7 @@ class SetupWindow(QMainWindow):
     def __init__(self,bundle,parent=None):
         super().__init__(parent)
         self.bundle=bundle;self.controller=None;self.root=None;self.destination_path=None;self.launcher=None
+        self.managed=False
         self.closing=False;self.elapsed=QElapsedTimer();self.preparation=None
         self.setWindowTitle('Kirby Setup');self.resize(760,690);self.setMinimumSize(620,560)
         icon=bundle.project/'packaging/linux/yarn-mascot-icon.png'
@@ -182,9 +183,13 @@ class SetupWindow(QMainWindow):
                     raise ValueError('The selected installation changed. Run setup again.')
                 store.manifest(active['current'])
                 finish_destination(self.root,self.destination_path,session.result['data_root'])
+                if self.managed:
+                    from .external_launch import publish
+                    publish(self.root,self.destination_path,session.result['data_root'])
+                    self.open_button.setText('Play game')
                 self.launcher=self.root/'build/native'/('kirby-launcher.exe' if os.name=='nt' else 'kirby-launcher')
                 try:
-                    shortcuts=create_shortcuts(self.root,self.destination_path,desktop=self.desktop_shortcut.isChecked())
+                    shortcuts=[] if self.managed else create_shortcuts(self.root,self.destination_path,desktop=self.desktop_shortcut.isChecked())
                     for path in shortcuts:self.details.appendPlainText('Created shortcut: '+str(path))
                 except (OSError,ValueError) as error:
                     session.label='Your installation is ready. Could not create shortcuts: '+str(error)
@@ -203,6 +208,14 @@ class SetupWindow(QMainWindow):
 
     def open_launcher(self):
         if self.launcher is None:return
+        if self.managed:
+            from .external_launch import play_command
+            try:
+                command,environment,working=play_command(self.destination_path)
+                subprocess.Popen(command,cwd=working,env=environment,
+                    **({'creationflags':0x208} if os.name=='nt' else {'start_new_session':True}))
+            except (OSError,ValueError) as error:self.stage.setText('Could not start the game: '+str(error))
+            return
         environment=dict(os.environ)
         for key in list(environment):
             if key.startswith(('QT_','QML','PYTHON')):environment.pop(key,None)

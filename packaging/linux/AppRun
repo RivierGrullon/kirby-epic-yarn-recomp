@@ -2,4 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # No host Python, compiler, container engine, or external shell utilities needed.
 appdir=$(CDPATH= cd -- "${0%/*}" && pwd -P) || exit 1
+case "${1-}" in
+    --prepare|--play|--external-launcher|--bridge-help)
+        exec "$appdir/tools/bridge/Kirby-Bridge" --appdir "$appdir" "$@" ;;
+esac
 exec "$appdir/tools/setup/kirby-setup" --appdir "$appdir" "$@"

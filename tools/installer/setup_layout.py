@@ -85,8 +85,12 @@ def prepare_destination(bundle, destination):
 
 def update_game_data(root, data_root):
     """Change only the known paths setting, preserving every other preference."""
+    update_settings_data(Path(root)/'local/user/settings.toml', data_root)
+
+
+def update_settings_data(settings, data_root):
     import tomllib
-    settings=Path(root)/'local/user/settings.toml'
+    settings=Path(settings)
     if not settings.exists():
         return  # The launcher defaults to the verified installation's data root.
     if is_link(settings):raise ValueError('Settings must not be a link')

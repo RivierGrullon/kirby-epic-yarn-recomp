@@ -5,6 +5,9 @@
 namespace Launcher {
 Action DrawDisplay(State& state) {
     ImGui::BeginDisabled(state.selfTest || !state.settingsError.empty());
+    state.settingsDirty |= ImGui::Checkbox("Start in fullscreen", &state.config.fullscreen);
+    ImGui::TextWrapped("Open the game in borderless fullscreen on the next launch. Press Alt+Enter while playing to switch between fullscreen and windowed mode for that session.");
+    ImGui::Spacing();
     state.settingsDirty |= ImGui::Checkbox("VSync", &state.config.vsync);
     ImGui::TextWrapped("Synchronize presentation with the display. Turning this off can reduce stalls on some drivers.");
     ImGui::Spacing();
@@ -30,7 +33,7 @@ Action DrawDisplay(State& state) {
     ImGui::EndDisabled();
     ImGui::Spacing();
     ImGui::SeparatorText("Resolution and frame rate");
-    ImGui::TextWrapped("16:9 widescreen. The game opens at 960 x 540 and keeps its widescreen proportions when resized, adding black bars as needed.");
+    ImGui::TextWrapped("16:9 widescreen. Windowed mode opens at 960 x 540. Both modes keep widescreen proportions, adding black bars as needed.");
     ImGui::TextWrapped("Window size does not change the selected internal resolution. A validated 30/60 FPS selector is not available yet.");
     return Action::None;
 }

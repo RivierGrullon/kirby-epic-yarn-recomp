@@ -20,6 +20,7 @@ struct Settings {
     int resolutionScale = 1;
     int msaaSamples = 1;
     bool fxaa = false;
+    bool fullscreen = false;
 };
 
 // Errors throw without modifying the source file. Relative DATA paths are

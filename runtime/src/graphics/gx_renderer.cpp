@@ -40,7 +40,7 @@ GxRenderer::GxRenderer(GxStream::Resolve resolve, WriteMemory write) : resolve_(
     };
 }
 GxRenderer::~GxRenderer() { if (initialized_) { CloseXfb(); aurora_shutdown(); } }
-void GxRenderer::OpenWindow(bool startHidden, bool vsync, int resolutionScale, int msaaSamples, bool fxaa) {
+void GxRenderer::OpenWindow(bool startHidden, bool vsync, int resolutionScale, int msaaSamples, bool fxaa, bool fullscreen) {
     if (initialized_) throw std::runtime_error("Aurora window is already initialized");
     if (!ValidResolutionScale(resolutionScale) || (msaaSamples != 1 && msaaSamples != 4))
         throw std::runtime_error("Unsupported internal resolution or MSAA sample count");
@@ -57,6 +57,7 @@ void GxRenderer::OpenWindow(bool startHidden, bool vsync, int resolutionScale, i
     config.vsync = vsync;
     config.msaa = msaaSamples;
     config.startHidden = startHidden;
+    config.startFullscreen = fullscreen && !startHidden;
     const auto info = aurora_initialize(0, nullptr, &config);
     if (info.initializationStatus != AURORA_INITIALIZATION_SUCCESS)
         throw std::runtime_error(info.initializationError ? info.initializationError : "Aurora initialization failed");
