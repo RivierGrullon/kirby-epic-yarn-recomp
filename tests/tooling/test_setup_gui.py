@@ -6,7 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
 try:
@@ -36,6 +36,30 @@ emit('install','complete',result=dict(installation_id=identifier,committed=True,
  data_root=str(root/'DATA'),executable=str(root/'local/setup/installations'/identifier/exe)))
 if name=='crash':sys.exit(1)
 '''
+
+
+@unittest.skipIf(QApplication is None,'Install tools/requirements-setup.txt for Qt tests')
+class SetupEntryTests(unittest.TestCase):
+    def test_frozen_entry_handles_shallow_and_nested_application_paths(self):
+        import setup_gui
+        with tempfile.TemporaryDirectory() as directory:
+            base=Path(directory)
+            (base/'project').mkdir()
+            (base/'revision').write_text('a'*40)
+            for parents in ((base,), (base,base.parent),
+                            (base/'tools/setup',base/'tools',base)):
+                with (self.subTest(parents=parents),
+                      patch.object(sys,'argv',['Kirby-Setup.exe']),
+                      patch.object(sys,'frozen',True,create=True),
+                      patch.object(setup_gui,'Path') as path,
+                      patch.object(setup_gui,'configure_application'),
+                      patch('PyQt6.QtWidgets.QApplication') as app,
+                      patch('installer.setup_gui.SetupWindow') as window):
+                    path.return_value.resolve.return_value=Mock(parents=parents)
+                    app.return_value.exec.return_value=0
+                    self.assertEqual(setup_gui.main(),0)
+                    self.assertEqual(window.call_args.args[0].project,base/'project')
+                    window.return_value.show.assert_called_once()
 
 
 @unittest.skipIf(QApplication is None,'Install tools/requirements-setup.txt for Qt tests')

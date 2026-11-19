@@ -43,7 +43,8 @@ def main():
     if args.appdir or getattr(sys,'frozen',False):
         if args.appdir:base=args.appdir.resolve()
         else:
-            candidates=(Path(sys.executable).resolve().parent,Path(sys.executable).resolve().parents[2])
+            parents=Path(sys.executable).resolve().parents
+            candidates=(*parents[:1],*parents[2:3])
             base=next((path for path in candidates if (path/'project').is_dir()),None)
             if base is None:parser.error('Keep Kirby Setup with its complete application folder.')
         project=base/'project'
