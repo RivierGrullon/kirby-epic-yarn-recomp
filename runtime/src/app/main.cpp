@@ -160,6 +160,7 @@ int main(int argc, char** argv) {
     bool gpuResidentCopies = Kirby::Settings::DefaultGpuResidentCopies;
     int resolutionScale = 1, msaaSamples = 1;
     bool fxaa = false;
+    bool fullscreen = false, fullscreenOverride = false;
     std::filesystem::path configPath = "local/user/settings.toml";
     bool volumeOverride = false, dataOverride = false, vsyncOverride = false, copiesOverride = false;
     bool explicitConfig = false;
@@ -184,6 +185,8 @@ int main(int argc, char** argv) {
             }
         } else if (argument == "--no-vsync" || argument == "--vsync") {
             vsync = argument == "--vsync"; vsyncOverride = true;
+        } else if (argument == "--fullscreen" || argument == "--windowed") {
+            fullscreen = argument == "--fullscreen"; fullscreenOverride = true;
         } else if (argument == "--gpu-resident-copies" || argument == "--ram-copies") {
             gpuResidentCopies = argument == "--gpu-resident-copies"; copiesOverride = true;
         }
@@ -200,7 +203,7 @@ int main(int argc, char** argv) {
                  argument == "--probe-ipc-client" || argument == "--probe-stm-init" || argument == "--probe-system-config" || argument == "--probe-disc" || argument == "--probe-es-metadata" || argument == "--probe-ave") mode = argument;
         else {
             std::cerr << "Usage: WiiCompiled [--headless|--video|--video-hidden|--probe-alarms|--probe-ax-task|--probe-thread-fault|--probe-threads|--probe-wpad|--probe-sdl-controller|--monitor-controller|--probe-video-retrace|--verify-bootstrap|--probe-init|--probe-interrupt-init|--probe-exi-init|--probe-si-init|--probe-sram-init|--probe-boot-memory|--probe-audio-clock|--probe-dsp-init|--probe-ipc-client|--probe-stm-init|--probe-system-config|--probe-disc|--probe-es-metadata|--probe-ave] [--game-data DATA] [--volume 0..100] [--no-vsync] [--gpu-resident-copies] [--frame-log CSV] [--audio-log WAV] [--presentation-log CSV]\n";
-            std::cerr << "Settings: [--config TOML] or --print-settings TOML; CLI values override saved settings.\n";
+            std::cerr << "Settings: [--config TOML] or --print-settings TOML; [--fullscreen|--windowed]; CLI values override saved settings.\n";
             std::cerr << "Build identity: --build-info (no game or device startup).\n";
             return 2;
         }
@@ -213,6 +216,7 @@ int main(int argc, char** argv) {
             resolutionScale = settings.resolutionScale;
             msaaSamples = settings.msaaSamples;
             fxaa = settings.fxaa;
+            if (!fullscreenOverride) fullscreen = settings.fullscreen;
             if (!volumeOverride) masterVolume = settings.masterVolume;
             if (!dataOverride) dataRoot = settings.gameData;
             if (!vsyncOverride) vsync = settings.vsync;
@@ -223,7 +227,7 @@ int main(int argc, char** argv) {
     }
     if (mode == "--print-settings") {
         std::cout << Kirby::FormatSettings({dataRoot, masterVolume, vsync, gpuResidentCopies, controlBindings, motionSettings,
-                                           resolutionScale, msaaSamples, fxaa});
+                                           resolutionScale, msaaSamples, fxaa, fullscreen});
         return 0;
     }
 #ifdef _WIN32
@@ -803,7 +807,7 @@ int main(int argc, char** argv) {
                 std::memcpy(memory, bytes.data(), bytes.size());
             });
             if (mode == "--video" || mode == "--video-hidden") {
-                renderer->OpenWindow(mode == "--video-hidden", vsync, resolutionScale, msaaSamples, fxaa);
+                renderer->OpenWindow(mode == "--video-hidden", vsync, resolutionScale, msaaSamples, fxaa, fullscreen);
                 renderer->SetGpuResidentTextureCopies(gpuResidentCopies);
                 renderer->SetGpuResidentDisplayCopies(gpuResidentCopies);
                 renderer->SetTextureSnapshotReuse(gpuResidentCopies);

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Expose borderless fullscreen startup under Display and document the existing
+  Alt+Enter session toggle. Add `video.fullscreen` and runtime CLI overrides.
+- Package a third-party launcher bridge and RecompLauncher profile. Reuse the
+  verified installation worker, keep managed saves/settings stable across builds,
+  and document Quiver and Decomp Buddy catalog requirements. External launcher
+  end-to-end compatibility still requires release/hardware verification.
+
 ## 0.1.0-alpha.1 - 2026-11-16
 
 - Publish the first Linux x86-64 test AppImage with a launcher, private setup

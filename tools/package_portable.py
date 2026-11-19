@@ -139,6 +139,13 @@ def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, 
                   '--specpath','local/portable-freeze','--name','kirby-setup',
                   '--contents-directory','python','tools/setup_gui.py'],root)
         shutil.copytree(freeze/'dist/kirby-setup',appdir/'tools/setup')
+        container(engine,image,['/opt/freeze/bin/pyinstaller','--noconfirm','--clean',
+                  '--distpath','local/portable-freeze/dist','--workpath','local/portable-freeze/work',
+                  '--specpath','local/portable-freeze','--name','Kirby-Bridge',
+                  '--exclude-module','PyQt6','--contents-directory','python','tools/launcher_bridge.py'],root)
+        shutil.copytree(freeze/'dist/Kirby-Bridge',appdir/'tools/bridge')
+        from launcher_profiles import write_profile
+        write_profile(root,appdir,revision)
         # Preserve the exact Qt/PyQt wheel notices alongside the frozen components.
         container(engine,image,['/opt/freeze/bin/python','-c',
                   "import importlib.metadata,pathlib,shutil;out=pathlib.Path('local/portable-freeze/licenses');out.mkdir(exist_ok=True);"
@@ -150,8 +157,9 @@ def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, 
         else:
             (appdir/'host-libs').mkdir()
         artwork = root/'packaging/linux'
-        for name in ('AppRun', 'kirby-native.desktop'):
+        for name in ('AppRun', 'Play-Kirby.sh', 'kirby-native.desktop'):
             shutil.copy2(artwork/name, appdir/name)
+        (appdir/'Play-Kirby.sh').chmod(0o755)
         theme = Path('usr/share/icons/hicolor')
         png_icon = theme/'512x512/apps/kirby-native.png'
         svg_icon = theme/'scalable/apps/kirby-native.svg'

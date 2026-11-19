@@ -1,0 +1,66 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "min": "0.90.0-beta.65",
+  "repo": "RivierGrullon/kirby-epic-yarn-recomp",
+  "name": "Kirby's Epic Yarn Recompiled",
+  "game": {
+    "kind": "iso_or_folder",
+    "label": "Your own USA Wii copy, RK5E01 revision 0: .iso, .wbfs, .rvz, .7z, or a complete extracted DATA folder. Kirby Setup verifies sys/main.dol, not the whole-disc hash."
+  },
+  "start": {
+    "program": ["Kirby-Bridge.exe", "Kirby-Setup-linux-x86_64.AppImage", "AppRun"],
+    "args": ["--play", "--destination", "{install}/Game"]
+  },
+  "prepare": {
+    "program": ["Kirby-Bridge.exe", "Kirby-Setup-linux-x86_64.AppImage", "AppRun"],
+    "args": ["--prepare", "--game", "{game}", "--destination", "{install}/Game"],
+    "label": "Build and verify Kirby from your own disc (downloads build tools)",
+    "timeout": 7200,
+    "done": ["{install}/Game/kirby-managed.json"],
+    "version": "1"
+  },
+  "config": [{
+    "id": "main",
+    "format": "toml",
+    "file": [{"path": "{install}/Game/local/user/settings.toml"}]
+  }],
+  "settings": [
+    {
+      "id": "window", "label": "Window mode",
+      "help": "Alt+Enter switches modes during play. Big Picture starts fullscreen.",
+      "choices": [
+        {"label": "Windowed", "set": {"video/fullscreen": "false"}},
+        {"label": "Borderless fullscreen", "set": {"video/fullscreen": "true"}}
+      ],
+      "defaults": {"video/fullscreen": "false"}
+    },
+    {
+      "id": "vsync", "label": "VSync",
+      "choices": [
+        {"label": "Off", "set": {"video/vsync": "false"}},
+        {"label": "On", "set": {"video/vsync": "true"}}
+      ],
+      "defaults": {"video/vsync": "false"}
+    },
+    {
+      "id": "resolution", "label": "Internal resolution",
+      "help": "Higher values sharpen geometry and use more GPU memory; texture detail is unchanged.",
+      "choices": [
+        {"label": "1x (native)", "set": {"video/resolution_scale": "1"}},
+        {"label": "2x", "set": {"video/resolution_scale": "2"}},
+        {"label": "3x", "set": {"video/resolution_scale": "3"}},
+        {"label": "4x", "set": {"video/resolution_scale": "4"}},
+        {"label": "5x", "set": {"video/resolution_scale": "5"}},
+        {"label": "6x", "set": {"video/resolution_scale": "6"}},
+        {"label": "8x", "set": {"video/resolution_scale": "8"}}
+      ],
+      "defaults": {"video/resolution_scale": "1"}
+    }
+  ],
+  "folders": {
+    "game": [{"path": "{install}/Game"}],
+    "logs": [{"path": "{install}/Game/logs"}],
+    "saves": [{"path": "{install}/Game/local/user/nand/title/00010000/524b3545/data"}]
+  }
+}

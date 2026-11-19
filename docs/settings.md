@@ -17,7 +17,13 @@ The launcher accepts input only while its own window has focus. Gamepad polling
 in the background cannot change its settings or activate buttons while you play
 in another window. Losing focus also clears held input.
 
-The game opens in a 960×540 window and presents at 16:9, matching the default Wii
+**Display > Start in fullscreen** selects borderless fullscreen for the next
+game launch. Press **Alt+Enter** while playing to toggle fullscreen for that
+session; this existing Aurora shortcut does not change the saved startup preference.
+The runtime accepts `--fullscreen` and `--windowed` overrides after `--video`.
+Hidden verification windows stay hidden and do not enter fullscreen.
+
+By default the game opens in a 960×540 window and presents at 16:9, matching the default Wii
 widescreen setting. Resizing the window preserves that ratio with black bars as
 needed. **Display > Internal resolution** selects a fixed 1x–6x and 8x rendering multiplier,
 independent of window size. **Anti-aliasing** offers Off, FXAA, 4x MSAA, and 4x MSAA + FXAA. Both apply on
@@ -46,6 +52,7 @@ dvd_root = "/path/to/extracted/DATA"
 volume = 1.0
 
 [video]
+fullscreen = false
 vsync = false
 resolution_scale = 1
 msaa_samples = 1

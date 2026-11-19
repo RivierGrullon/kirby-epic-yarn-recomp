@@ -29,6 +29,9 @@ as a behavior reference; it does not run the native game.
 [Contributing](CONTRIBUTING.md) ·
 [Changelog](CHANGELOG.md)
 
+Third-party launchers: see [Quiver, RecompLauncher and Decomp Buddy](docs/integrations/launchers.md)
+for supported platforms, setup requirements and the release integration checklist.
+
 The native game and launcher run on **Windows and Linux**. Choose the setup
 instructions for your platform:
 
@@ -137,6 +140,7 @@ The launcher lets you:
 - Detect a verified native installation and its game data.
 - Start the native game in a visible window.
 - Set master volume and VSync for the next launch.
+- Start in borderless fullscreen under **Display**, or press **Alt+Enter** while playing to toggle modes for that session.
 - Select 1x–6x and 8x internal rendering resolution and Off/FXAA/4x MSAA/4x MSAA + FXAA under **Display**.
 - Rebind gamepad buttons, stick/trigger directions and keyboard keys, with
   conflict detection, swapping and reset.

@@ -70,6 +70,11 @@ Settings Parse(const std::string& text, const fs::path& file, Settings defaults)
     }
     if (shared.audioVolume) defaults.masterVolume = *shared.audioVolume * 100;
     if (shared.vsync) defaults.vsync = *shared.vsync;
+    if (present("video", "fullscreen")) {
+        const auto value = FindConfigValue<bool>(document, "video", "fullscreen");
+        if (!value) throw std::runtime_error("video.fullscreen must be a boolean");
+        defaults.fullscreen = *value;
+    }
     if (gpuCopies) defaults.gpuResidentCopies = *gpuCopies;
     for (const auto& [key, destination] : std::array{
             std::pair{"stick_activation", &defaults.controls.stickActivation},
@@ -156,6 +161,7 @@ std::string Update(std::string text, const Settings& settings) {
     volume << std::setprecision(std::numeric_limits<float>::max_digits10) << settings.masterVolume / 100;
     set("audio", "volume", volume.str());
     set("video", "vsync", settings.vsync ? "true" : "false");
+    set("video", "fullscreen", settings.fullscreen ? "true" : "false");
     set("video", "resolution_scale", std::to_string(settings.resolutionScale));
     set("video", "msaa_samples", std::to_string(settings.msaaSamples));
     set("video", "fxaa", settings.fxaa ? "true" : "false");

@@ -46,7 +46,8 @@ def runtime_file():
 def build(appdir, output):
     appdir,output=Path(appdir).resolve(),Path(output).absolute()
     for name in ('AppRun','revision','project/tools/kirby.py','tools/runtime/kirby-setup-worker',
-                 'tools/runtime/ca-certificates.crt','tools/setup/kirby-setup'):
+                 'tools/runtime/ca-certificates.crt','tools/setup/kirby-setup',
+                 'tools/bridge/Kirby-Bridge','recomplauncher.json','Play-Kirby.sh'):
         if not (appdir/name).is_file():
             raise ValueError('Incomplete AppDir: '+name)
     from installer.toolchain_download import descriptor
