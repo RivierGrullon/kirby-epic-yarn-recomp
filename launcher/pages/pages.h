@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 #include "state.h"
+#include "../language.h"
 #include <array>
 
 namespace Launcher {
@@ -9,7 +10,7 @@ inline constexpr std::array PageNames{"Play", "Install", "Display", "Audio", "Co
 static_assert(PageNames.size() == static_cast<size_t>(Page::Count));
 
 Action DrawLauncher(State& state, Page& selected);
-Action DrawPlay(State& state);
+Action DrawPlay(State& state, Page& selected);
 Action DrawInstall(State& state);
 Action DrawDisplay(State& state);
 Action DrawAudio(State& state);
