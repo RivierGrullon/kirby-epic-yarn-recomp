@@ -11,7 +11,7 @@ import sys
 from .installations import InstallationStore, read_json
 from .platforms import WINDOWS, is_link
 from .setup_layout import _atomic, prepare_destination, update_settings_data
-from .setup_model import Session, STAGES
+from .setup_model import PHASES, Session, STAGES
 
 MARKER = 'kirby-managed.json'
 
@@ -88,6 +88,15 @@ def restore_signals(previous):
         signal.signal(number, handler)
 
 
+def setup_fraction(session):
+    # Each of the setup screen's five phases is an equal share, filled by the current stage's own
+    # progress. It stays below 1 until the build is published, so a bar never looks done early.
+    if session.phase is None:
+        return 0.0
+    within = (session.progress or 0)/100
+    return min(0.99, (session.phase+within)/len(PHASES))
+
+
 def prepare(bundle, destination, source):
     source = Path(source).expanduser().absolute()
     if not source.exists():
@@ -102,6 +111,7 @@ def prepare(bundle, destination, source):
     command += ['--workspace', str(root/'local/setup'), '--install', str(source)]
     environment = dict(os.environ, KIRBY_PROJECT_ROOT=str(root))
     session = None
+    shown = 0.0
     with subprocess.Popen(command, cwd=root, env=environment, stdin=subprocess.DEVNULL,
                           stdout=subprocess.PIPE) as process:
         previous = wait_for(process)
@@ -116,7 +126,9 @@ def prepare(bundle, destination, source):
                 label = STAGES[event['stage']]
                 if session.progress is not None:
                     label += ' ('+session.progress_text+')'
-                print('progress 0 '+label, flush=True)
+                # A stage's own count restarts (download, then unpack): never move the bar back.
+                shown = max(shown, setup_fraction(session))
+                print(f'progress {shown:.2f} {label}', flush=True)
             code = process.wait()
         except BaseException:
             process.terminate()

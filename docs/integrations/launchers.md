@@ -35,7 +35,8 @@ existing installation locally, but doing so does not submit it to the public cat
 RecompLauncher explicitly supports a console preparation program. The bridge reuses
 Kirby's existing verified worker instead of implementing another build pipeline.
 The initial profile targets RecompLauncher **0.90.0-beta.65 or newer**, the SDK inspected here.
-It prints setup stage/progress text and returns nonzero on failure. The release
+It prints `progress <fraction> <stage>` lines, where each of setup's five phases is an
+equal fifth that never moves back, and returns nonzero on failure. The release
 packagers stamp `prepare.version` with the exact source revision so updates rebuild
 from the player's copy. The source template alone does not enable released builds.
 

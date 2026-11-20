@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
+import contextlib
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -123,6 +125,23 @@ class ExternalLaunchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'Synthetic build failure'):
                 external.prepare(bundle,self.destination,source)
             publish.assert_not_called()
+
+    def test_prepare_reports_setup_progress_that_never_moves_back(self):
+        root=self.base/'workspace';(root/'tools').mkdir(parents=True)
+        source=self.base/'own.iso';source.touch()
+        events=[dict(stage='prepare',state='progress',completed=50,total=100),
+                dict(stage='prepare',state='progress',completed=10,total=100),
+                dict(stage='compile',state='progress',completed=1,total=2,unit='tasks'),
+                dict(stage='install',state='failed',error='Synthetic build failure')]
+        lines=[json.dumps(dict(event,version=1,job_id='test',sequence=number)) for number,event in enumerate(events,1)]
+        (root/'tools/install.py').write_text('import sys\nprint('+repr('\n'.join(lines))+',flush=True)\nsys.exit(1)\n')
+        bundle=Bundle(root,self.base/'runtime',self.base/'libs','a'*40)
+        output=io.StringIO()
+        with patch.object(external,'prepare_destination',return_value=root),contextlib.redirect_stdout(output):
+            with self.assertRaisesRegex(ValueError,'Synthetic build failure'):
+                external.prepare(bundle,self.destination,source)
+        fractions=[line.split()[1] for line in output.getvalue().splitlines()]
+        self.assertEqual(fractions,['0.10','0.10','0.70','0.70'])
 
     @unittest.skipIf(os.name=='nt','POSIX AppRun dispatch')
     def test_apprun_keeps_normal_setup_and_dispatches_bridge_flags_literally(self):

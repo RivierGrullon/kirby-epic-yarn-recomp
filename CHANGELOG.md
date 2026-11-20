@@ -8,6 +8,8 @@
   verified installation worker, keep managed saves/settings stable across builds,
   and document Quiver and Decomp Buddy catalog requirements. External launcher
   end-to-end compatibility still requires release/hardware verification.
+- Report real setup progress from the bridge's `--prepare`, so a launcher's bar
+  moves through the five setup phases instead of staying at zero.
 
 ## 0.1.0-alpha.1 - 2026-11-16
 
