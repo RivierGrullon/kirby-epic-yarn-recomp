@@ -1,13 +1,18 @@
 # Build a player release
 
-Build both installers from the same clean commit. Packaging requires only the checkout and packaging tools. Players supply their game data at install time, when setup builds the game and launcher together.
+Build both installers from the same clean commit. CI downloads a desktop Qt SDK
+on each runner and builds `launcher/qt` directly, without disc files, the
+translator or generated game code. It ships this C++ frontend with its private
+Qt runtime. At install time the player's copy is used to build the game
+(`WiiCompiled`) and the matching native launcher host (`kirby-launcher`).
 
 Publishing a GitHub Release or pre-release runs the **Release installers** workflow
 for its tagged commit. Each successful platform job attaches its x86-64 installers
 to that release. Linux provides an AppImage and a `.tar.gz` folder with an
 `AppRun` entry point. Windows provides a `.zip` archive with `Kirby-Setup.exe`.
-Each installer has a companion `.sha256` file. These are setup packages: they
-compile the game and launcher after the player selects their own game source.
+Each installer includes the prebuilt frontend in `tools/qt-launcher/` and
+has a companion `.sha256` file. Setup places the frontend beside the native
+host in the player's installation.
 
 ## Reusing published Linux tools
 
@@ -92,7 +97,8 @@ Run from the repository root in PowerShell with x64 Python and Git.
 ```powershell
 $out = "local/releases/$(git rev-parse --short HEAD)"
 python -m pip install -r tools/requirements-setup.txt
-python tools/windows/package_setup.py --output "$out/Kirby-Setup-windows-x64"
+python tools/deploy_qt_launcher.py --qt-prefix $env:QT_ROOT_DIR --compiler $env:CXX --output "$out/qt-launcher"
+python tools/windows/package_setup.py --qt-frontend "$out/qt-launcher" --output "$out/Kirby-Setup-windows-x64"
 $zip = Get-Item "$out/Kirby-Setup-windows-x64.zip"
 $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
 "$hash  $($zip.Name)" | Set-Content "$($zip.FullName).sha256" -Encoding ascii
@@ -108,7 +114,8 @@ export KIRBY_CONTAINER_ENGINE=docker
 out="local/releases/$(git rev-parse --short HEAD)"
 mkdir -p "$out"
 python3 tools/release_toolchain.py resolve --output "$out/tools.json"
-python3 tools/package_portable.py --engine docker --output "$out/Kirby.AppDir" --tools-descriptor "$out/tools.json"
+python3 tools/deploy_qt_launcher.py --qt-prefix "$QT_ROOT_DIR" --output "$out/qt-launcher"
+python3 tools/package_portable.py --engine docker --output "$out/Kirby.AppDir" --tools-descriptor "$out/tools.json" --qt-frontend "$out/qt-launcher"
 python3 tools/build_appimage.py "$out/Kirby.AppDir" --output "$out/Kirby-Setup-linux-x86_64.AppImage"
 ```
 

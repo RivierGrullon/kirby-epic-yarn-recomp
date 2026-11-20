@@ -96,7 +96,8 @@ newer, including the Bazzite development environment. Other systems need testing
 
 ### Build a private test package
 
-These commands are for maintainers. Start with a clean source checkout and
+These commands are for maintainers. Set `QT_ROOT_DIR` to a desktop Qt SDK
+(CI uses Qt 6.8.3). Start with a clean source checkout and
 the container toolchain image described in [building-advanced.md](building-advanced.md).
 
 ```sh
@@ -105,7 +106,9 @@ podman build --network=host -t localhost/kirby-portable-tools:compact \
 podman build --network=host -t localhost/kirby-setup-tools:pyqt \
   -f tools/Containerfile.setup tools
 
+python3 tools/deploy_qt_launcher.py --qt-prefix "$QT_ROOT_DIR" --output local/qt-release/qt-launcher
 python3 tools/package_portable.py --output local/releases/Kirby.AppDir \
+  --qt-frontend local/qt-release/qt-launcher \
   --tools-output local/releases/Kirby-tools-linux-x86_64.tar.xz \
   --tools-url https://github.com/OWNER/REPO/releases/download/GAME-VERSION/Kirby-tools-linux-x86_64.tar.xz
 python3 tools/build_appimage.py local/releases/Kirby.AppDir \
@@ -120,6 +123,7 @@ release can reuse that descriptor and archive without exporting the tools again:
 
 ```sh
 python3 tools/package_portable.py --output local/releases/Kirby-next.AppDir \
+  --qt-frontend local/qt-release/qt-launcher \
   --tools-descriptor local/releases/Kirby-tools-linux-x86_64.tar.xz.json
 ```
 
@@ -177,11 +181,12 @@ and a clean Git checkout:
 
 ```powershell
 python -m pip install -r tools/requirements-setup.txt
-python tools/windows/package_setup.py --output local/releases/Kirby-Setup
+python tools/deploy_qt_launcher.py --qt-prefix $env:QT_ROOT_DIR --compiler $env:CXX --output local/qt-release/qt-launcher
+python tools/windows/package_setup.py --qt-frontend local/qt-release/qt-launcher --output local/releases/Kirby-Setup
 ```
 
 This produces a ZIP containing `Kirby-Setup.exe`, its Python/Qt runtime, the console
-worker and authored source snapshot. It excludes the translated
+worker, the deployed C++ frontend in `tools/qt-launcher/`, and an authored source snapshot. It excludes the translated
 game executable, disc assets, generated code, saves and developer tools. Freeze
 checks do not replace testing the real installer on a clean Windows machine.
 

@@ -7,6 +7,17 @@
 Play Kirby's Epic Yarn natively on PC with stable gameplay, configurable graphics,
 keyboard and controller support, and a dedicated launcher for settings and saves.
 
+The C++ Qt Widgets launcher defaults to English. Open **Basic settings**
+for language, fullscreen and volume. Choose English, 简体中文 or Español
+from the language selector. Advanced settings contains graphics, custom input
+and diagnostics. Hover over a control or a question-mark button for help.
+The launcher saves your language choice in
+`local/user/launcher-language.txt`. The setting applies to the launcher.
+
+Kirby Setup starts in English. Its own language selector switches between
+English, 简体中文 and Español, including during installation, and remembers your
+choice separately from the launcher.
+
 The Wii executable is translated from PowerPC to C++ and compiled for the host.
 The native runtime uses Aurora for graphics (Vulkan on Linux). Dolphin extracts your disc and serves
 as a behavior reference; it does not run the native game.
@@ -84,6 +95,10 @@ After setup, select **Open launcher** or use **Kirby's Epic Yarn** in the
 applications menu. Enable **Also create a desktop shortcut** during setup to
 create one on the desktop. `Play Kirby.sh` is also available in your
 installation folder.
+
+Download the `Kirby-Setup-*` package for your platform. It includes the
+precompiled Qt launcher and its runtime. Setup builds the game and its
+native launcher host locally.
 
 If mounting AppImages is unavailable, run:
 

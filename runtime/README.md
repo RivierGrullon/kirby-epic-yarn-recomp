@@ -178,6 +178,17 @@ Display quality uses shared `video.resolution_scale` (1–6 or 8) and `msaa_samp
 multisampled attachments; presentation retains 16:9 independently of EFB size.
 Display copies and eligible packed RGBA8 effect textures retain their scaled GPU
 images. RAM readback still packs the guest's native dimensions and strides.
+`patches/aurora/scaled-copy-filter.patch` keeps the vertical filter taps one
+render pixel apart in those scaled copies. Previously their spacing grew with
+the resolution multiplier, softening the image even at 8x. This follows the
+scaled-VRAM-copy spacing in Dolphin's
+[`TextureCacheBase::CopyEFBToCacheEntry`](https://github.com/dolphin-emu/dolphin/blob/master/Source/Core/VideoCommon/TextureCacheBase.cpp);
+filter coefficients, brightness, clamps and 1x behavior are retained. Readback
+continues to sample these GPU images at native dimensions; it is not a separate
+hardware-exact native-filter path at enhanced resolutions.
+The GPU quality fixture checks a one-render-pixel line with nonidentity filter
+taps in both display and RGBA8 texture copies, including MSAA, so it detects
+blur even when texture dimensions are correct.
 `patches/aurora/msaa-copy-readback.patch` resolves color before copy/readback,
 uses depth sample zero consistently with Aurora's existing depth snapshots, and
 adds multisampled depth-copy shader/layout variants. It also removes invalid

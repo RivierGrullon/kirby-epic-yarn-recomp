@@ -7,6 +7,7 @@
 #include "kirby/app/build_info.h"
 #include "pages/pages.h"
 #include "input_focus.h"
+#include "desktop_service.h"
 #include "build_probe.h"
 #include "platform.h"
 #include <cryptopp/sha.h>
@@ -51,7 +52,9 @@ bool Verify(const fs::path& data, std::string& status) {
     try {
         Kirby::ValidateWindowsInput(data);
         status = "RK5E01 Rev 0 (USA) verified"; return true;
-    } catch (const std::exception& error) { status = error.what(); return false; }
+    } catch (const std::exception& error) {
+        status = std::string("Data verification failed: ") + error.what(); return false;
+    }
 #else
     std::ifstream input(data/"sys/main.dol",std::ios::binary);
     CryptoPP::SHA1 hash;std::array<char,65536> buffer{};
@@ -189,17 +192,35 @@ int main(int argc, char** argv) {
             job.Current().status==Launcher::Setup::Status::Cancelled ? 2 : 1;
     }
     const bool selfTest = argc == 2 && std::string_view(argv[1]) == "--self-test";
-    if (argc != 1 && !selfTest) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --check-source SOURCE | --print-settings TOML | --build-info | --check-native-build EXECUTABLE]\n"); return 2; }
+    const bool service = argc == 2 && std::string_view(argv[1]) == "--ui-service";
+    if (argc != 1 && !selfTest && !service) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --check-source SOURCE | --print-settings TOML | --build-info | --check-native-build EXECUTABLE]\n"); return 2; }
     const fs::path developerExecutable = Launcher::FromUtf8(SDL_GetBasePath()) / Launcher::GameExecutable;
     const bool portable = fs::is_regular_file(developerExecutable.parent_path() / "kirby-portable.txt");
     const fs::path root = portable ? developerExecutable.parent_path() : developerExecutable.parent_path().parent_path().parent_path();
     if (!portable && !fs::exists(root / "tools/kirby.py")) {
         std::fprintf(stderr,"Keep the launcher in this project's build/native or build/windows folder\n"); return 2;
     }
+    if (!service) {
+#ifdef _WIN32
+        const auto frontend = developerExecutable.parent_path()/"qt-launcher/kirby-ui.exe";
+#else
+        const auto frontend = developerExecutable.parent_path()/"qt-launcher/kirby-ui";
+#endif
+        if (fs::is_regular_file(frontend)) {
+            const auto program=Launcher::Utf8(frontend);
+            const char* args[]{program.c_str(),selfTest?"--self-test":nullptr,nullptr};
+            auto* ui=SDL_CreateProcess(args,false);
+            if (!ui) { std::cerr<<SDL_GetError()<<'\n'; return 1; }
+            int result=0;
+            if (selfTest && !SDL_WaitProcess(ui,true,&result)) result=1;
+            SDL_DestroyProcess(ui); return result;
+        }
+    }
     Launcher::State state{root, developerExecutable, root / "local/user/settings.toml", Kirby::Settings{root / "disc/DATA"}};
     auto& executable=state.executable;
     state.selfTest = selfTest;
     state.portable = portable;
+    if (!selfTest) Launcher::SetLanguage(Launcher::ReadLanguage(state.settingsFile.parent_path()));
     state.launcherBuild=Kirby::ParseBuildInformation(Kirby::BuildInformation(Kirby::BuildProgram::Launcher));
     if (selfTest) {
         // Render a fixture record without launching a query or touching user data.
@@ -228,8 +249,20 @@ int main(int argc, char** argv) {
         try { Kirby::SaveSettings(settings, config); settingsDirty = false; return true; }
         catch (const std::exception& error) { settingsError = error.what(); return false; }
     };
+    if (service) {
+        GameProcess* child=nullptr;
+        const int result=Launcher::DesktopService(state,Verify,
+            [&] { child=StartGame(executable,settings,root); return child!=nullptr; },
+            [&]() -> std::optional<int> {
+                int code=0;
+                if (!child || !PollGame(child,&code)) return {};
+                CloseGame(child); child=nullptr; return code;
+            });
+        if (child) CloseGame(child);
+        SDL_Quit(); return result;
+    }
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) { std::fprintf(stderr,"%s\n",SDL_GetError()); return 1; }
-    SDL_Window* window = SDL_CreateWindow("Kirby - native launcher", 960, 680,
+    SDL_Window* window = SDL_CreateWindow("Kirby's Epic Yarn", 1080, 720,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | (selfTest ? SDL_WINDOW_HIDDEN : 0));
     SDL_Renderer* renderer = window ? SDL_CreateRenderer(window, nullptr) : nullptr;
     if (!renderer) { std::fprintf(stderr,"%s\n",SDL_GetError()); SDL_Quit(); return 1; }
@@ -237,20 +270,8 @@ int main(int argc, char** argv) {
     SDL_SetRenderVSync(renderer, 1);
     IMGUI_CHECKVERSION(); ImGui::CreateContext();
     auto& io = ImGui::GetIO(); io.IniFilename = nullptr;
-    io.FontGlobalScale = 1.15f;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
-    ImGui::StyleColorsDark();
-    auto& style = ImGui::GetStyle();
-    style.WindowRounding = 10; style.FrameRounding = 7; style.ChildRounding = 10;
-    style.FramePadding = {12, 9}; style.ItemSpacing = {12, 12}; style.WindowPadding = {20,20};
-    style.Colors[ImGuiCol_WindowBg] = {0.055f,0.06f,0.09f,1};
-    style.Colors[ImGuiCol_ChildBg] = {0.085f,0.09f,0.13f,1};
-    style.Colors[ImGuiCol_Button] = {0.52f,0.20f,0.38f,1};
-    style.Colors[ImGuiCol_ButtonHovered] = {0.68f,0.28f,0.48f,1};
-    style.Colors[ImGuiCol_ButtonActive] = {0.78f,0.35f,0.55f,1};
-    style.Colors[ImGuiCol_Header] = {0.36f,0.15f,0.28f,1};
-    style.Colors[ImGuiCol_HeaderHovered] = style.Colors[ImGuiCol_ButtonHovered];
-    style.Colors[ImGuiCol_HeaderActive] = style.Colors[ImGuiCol_ButtonActive];
+    state.fabric.Load(renderer, root);
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer); ImGui_ImplSDLRenderer3_Init(renderer);
     auto selection = std::make_shared<Selection>();
     bool running = true; unsigned frames = 0;
@@ -337,8 +358,10 @@ int main(int argc, char** argv) {
         if (selfTest) {
             // Exercise every page at both layout sizes without file/process actions.
             page = static_cast<Launcher::Page>((frames / 3) % Launcher::PageNames.size());
-            if (frames == 0) SDL_SetWindowSize(window, 960, 680);
-            if (frames == Launcher::PageNames.size() * 3) SDL_SetWindowSize(window, 640, 520);
+            const auto pass = frames / (Launcher::PageNames.size() * 3);
+            Launcher::SetLanguage(static_cast<Launcher::Language>(pass / 2));
+            if (frames % (Launcher::PageNames.size() * 3) == 0)
+                SDL_SetWindowSize(window, pass % 2 ? 640 : 1080, pass % 2 ? 520 : 720);
         }
         ImGui::BeginDisabled(state.closing);
         const auto action = Launcher::DrawLauncher(state, page);
@@ -411,15 +434,16 @@ int main(int argc, char** argv) {
         } catch (const std::exception& error) { state.gameStatus = error.what(); }
         ImGui::Render();
         SDL_SetRenderScale(renderer,io.DisplayFramebufferScale.x,io.DisplayFramebufferScale.y);
-        SDL_SetRenderDrawColor(renderer,14,15,23,255); SDL_RenderClear(renderer);
+        SDL_SetRenderDrawColor(renderer,247,244,231,255); SDL_RenderClear(renderer);
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(),renderer); SDL_RenderPresent(renderer);
-        if (selfTest && ++frames == Launcher::PageNames.size() * 6) running = false;
+        if (selfTest && ++frames == Launcher::PageNames.size() * 18) running = false;
         SDL_Delay(5);
     }
     if (settingsDirty && !saveSettings()) std::fprintf(stderr,"Settings: %s\n",settingsError.c_str());
     buildProbe.Cancel();
     if (game) CloseGame(game);
     state.motionPreview.Close();
+    state.fabric.Close();
     ImGui_ImplSDLRenderer3_Shutdown(); ImGui_ImplSDL3_Shutdown(); ImGui::DestroyContext();
     SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
     return 0;

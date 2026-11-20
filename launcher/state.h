@@ -5,6 +5,7 @@
 #include "kirby/app/build_info.h"
 #include "setup/job.h"
 #include "motion_preview.h"
+#include "fabric.h"
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -32,6 +33,8 @@ struct State {
     bool closing=false;
     std::string installationId,installationError;
     MotionPreview motionPreview;
+    Fabric fabric;
+    bool languageSaveError = false;
 };
 
 enum class Action {

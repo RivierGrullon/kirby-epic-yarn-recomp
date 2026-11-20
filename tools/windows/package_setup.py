@@ -13,9 +13,10 @@ import time
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from package_portable import project_snapshot
+from installer.qt_frontend import copy_payload
 
 
-def package(root,output):
+def package(root,output,qt_frontend):
     if os.name!='nt':raise ValueError('Build Windows setup on Windows with native Python and PyInstaller')
     root,output=Path(root).resolve(),Path(output).absolute()
     if output.exists():raise ValueError('Setup output already exists')
@@ -28,7 +29,7 @@ def package(root,output):
         temporary=Path(temporary)
         for name,script,extra in (('kirby-setup-worker','tools/install.py',['--exclude-module','PyQt6']),
                                   ('Kirby-Bridge','tools/launcher_bridge.py',['--exclude-module','PyQt6']),
-                                  ('Kirby-Setup','tools/setup_gui.py',['--windowed'])):
+                                  ('Kirby-Setup','tools/setup_gui.py',['--windowed','--icon',str(root/'launcher/assets/launcher.ico')])):
             subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--name',name,
                 '--distpath',str(temporary/'dist'),'--workpath',str(temporary/'work'),
                 '--specpath',str(temporary/'spec'),'--contents-directory',
@@ -37,6 +38,7 @@ def package(root,output):
         # Bridge uses bridge-python, so its freeze cannot replace Qt's Python files.
         shutil.copytree(temporary/'dist/Kirby-Bridge',staged,dirs_exist_ok=True)
         shutil.copytree(temporary/'dist/kirby-setup-worker',staged/'tools/runtime')
+        copy_payload(qt_frontend, staged/'tools/qt-launcher')
         revision=project_snapshot(root,staged/'project')
         from launcher_profiles import write_profile
         write_profile(root,staged,revision)
@@ -55,6 +57,7 @@ def package(root,output):
         env=dict(os.environ,QT_QPA_PLATFORM='offscreen',PATH=str(system))
         subprocess.run([staged/'Kirby-Setup.exe','--self-test'],env=env,cwd=temporary,check=True,timeout=30)
         subprocess.run([staged/'Kirby-Bridge.exe','--bridge-help'],env=env,cwd=temporary,check=True,timeout=30)
+        subprocess.run([staged/'tools/qt-launcher/kirby-ui.exe','--self-test'],env=env,cwd=temporary,check=True,timeout=60)
         # Windows can briefly retain a handle to the tested executable.
         deadline = time.monotonic() + 10
         while True:
@@ -73,8 +76,10 @@ def package(root,output):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--qt-frontend',type=Path,default=Path('build/native/qt-launcher'),
+                        help='Deployed C++ frontend directory, including the Qt runtime')
     args=parser.parse_args()
-    try:package(Path(__file__).resolve().parents[2],args.output)
+    try:package(Path(__file__).resolve().parents[2],args.output,args.qt_frontend)
     except (OSError,ValueError,subprocess.SubprocessError) as error:parser.exit(1,str(error)+'\n')
 
 

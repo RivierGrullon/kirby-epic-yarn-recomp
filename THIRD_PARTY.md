@@ -3,7 +3,10 @@
 The standalone setup UI uses PyQt6 (GPL-3.0-only), Qt6 from the PyQt6-Qt6 wheel
 (LGPL v3 as declared by that wheel), and PyQt6-sip (BSD-2-Clause). Frozen setup
 packages retain the installed wheels' metadata and license files under `licenses/qt`.
-These are installer dependencies; the native game and launcher do not link Qt.
+The desktop launcher uses the C++ Qt 6 Widgets SDK. Windows builds deploy its
+shared libraries and plugins beside `qt-launcher/kirby-ui.exe`. The game and
+the native settings and verification host build independently of this SDK.
+The launcher icon uses the project's existing yarn mascot artwork.
 
 | Project | Use | License location |
 | --- | --- | --- |
@@ -224,3 +227,11 @@ separate KEY-Recomp runtime is imported. The Windows build uses locally installe
 Microsoft Windows SDK C++/WinRT headers under their SDK license; those headers
 are not copied into this repository or a distribution. Existing Aurora, SDL,
 WiiCompiled and key revisions/licenses are unchanged.
+
+## Launcher font
+
+The native launcher's `launcher/assets/launcher-ui.ttf` is a static subset of
+[Noto Sans SC](https://github.com/google/fonts/tree/main/ofl/notosanssc) at
+weight 500, covering the Chinese, English and Spanish interfaces of the
+launcher and Kirby Setup. It is
+distributed under the [SIL Open Font License 1.1](licenses/LICENSE-launcher-font.txt).

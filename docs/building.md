@@ -68,3 +68,22 @@ Docker or Podman must be running. The game itself runs on the host.
 Windows tool downloads are automatic. Linux prerequisites, manual commands,
 job limits, build staging and troubleshooting are in the
 [advanced build guide](building-advanced.md).
+
+## Building the Qt desktop launcher
+
+On Windows, install a Qt 6.4+ MinGW desktop kit and its matching MinGW compiler.
+The native build discovers kits under `C:/Qt`; for another location, pass
+`-DKIRBY_QT_PREFIX=<kit>` and `-DKIRBY_QT_CXX=<kit compiler>/g++.exe` when
+configuring CMake. Linux source builders can install the Qt 6 Widgets
+development package, Ninja and `qtpaths6`, or set `KIRBY_QT_PREFIX`.
+
+Build the `kirby-launcher` target as usual. Its separate Qt project uses the
+kit compiler and writes `qt-launcher/` beside the original launcher entry.
+Keep this directory intact when copying a build. On Linux the Qt Widgets
+runtime and its desktop platform plugin must be available on the host.
+Release builds bundle Qt and its XCB plugin; the Linux desktop still supplies
+its graphics and X11/XWayland libraries (including `libopengl0` and
+`libxcb-cursor0` on Ubuntu).
+Source builds without a desktop kit retain the SDL launcher. Release installers
+already carry the compiled Qt frontend and copy it beside the native host,
+so players do not need this SDK. Setup uses its existing PyQt environment.
