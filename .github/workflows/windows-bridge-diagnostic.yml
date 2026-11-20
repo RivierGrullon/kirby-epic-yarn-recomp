@@ -8,20 +8,23 @@ permissions:
   contents: read
 
 jobs:
-  released-bridge:
+  patched-bridge:
     runs-on: windows-2022
     timeout-minutes: 12
     steps:
-      - name: Download and verify public v0.1.4 ZIP
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Freeze the patched ZIP
         shell: pwsh
         run: |
-          $library = Join-Path $env:RUNNER_TEMP 'Recomp Library'
-          New-Item -ItemType Directory -Path $library -Force | Out-Null
-          $zip = Join-Path $library 'Kirby-Setup-windows-x86_64.zip'
-          Invoke-WebRequest 'https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/download/v0.1.4/Kirby-Setup-windows-x86_64.zip' -OutFile $zip
-          if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne 'ad5b22851fa79b9e68ffba95b04ddbd59cf551a16634b66bc89e5e2f35fad51d') { throw 'Published ZIP checksum changed' }
-          Expand-Archive -LiteralPath $zip -DestinationPath $library
-      - name: Run published prepare and inspect the worker log
+          python -m pip install -r tools/requirements-setup.txt
+          python tools/windows/package_setup.py --output (Join-Path $env:RUNNER_TEMP 'Recomp Library/Kirby-Setup-windows-x86_64')
+      - name: Verify frozen prepare from PowerShell 7 reaches game input validation
         shell: pwsh
         run: |
           @'
@@ -34,21 +37,22 @@ jobs:
           scratch = package / ".recomplauncher-tmp"
           scratch.mkdir()
           data = library / "Prueba USA" / "DATA"
-          data.mkdir(parents=True)
+          (data / "sys").mkdir(parents=True)
+          (data / "sys" / "boot.bin").write_bytes(b"synthetic header")
           child_env = dict(os.environ, RECOMPLAUNCHER="1", RECOMPLAUNCHER_MODE="desktop",
                            TEMP=str(scratch), TMP=str(scratch), TMPDIR=str(scratch))
           destination = package / "Game"
           command = [package / "Kirby-Bridge.exe", "--prepare", "--game", data, "--destination", destination]
-          print(f"Shell module search path inherited: {'PSMODULEPATH' in child_env}", flush=True)
-          child_env.pop("PSMODULEPATH", None)
+          if "PSMODULEPATH" not in child_env:
+              raise SystemExit("The PowerShell 7 module path is required for this regression test")
           try:
               result = subprocess.run(command, cwd=package, env=child_env,
                                       creationflags=subprocess.CREATE_NO_WINDOW, timeout=530,
                                       capture_output=True, text=True, errors="replace")
               print(result.stdout, result.stderr, flush=True)
               print(f"Bridge exit code: {result.returncode}", flush=True)
-              if result.returncode != 1:
-                  raise SystemExit("Expected the empty DATA fixture to fail")
+              if result.returncode != 1 or "RK5E01 Rev 0 Wii boot header required" not in result.stderr:
+                  raise SystemExit("Expected the patched bridge to prepare its tools and reject the synthetic header")
           finally:
               for log in destination.glob(".kirby/*/local/setup/logs/*.log"):
                   print(log.read_text(encoding="utf-8", errors="replace")[-12000:], flush=True)
