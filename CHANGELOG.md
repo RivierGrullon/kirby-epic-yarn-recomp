@@ -16,6 +16,8 @@
   through the bridge.
 - Put the version in release file names, like
   `Kirby-Setup-0.1.5-linux-x86_64.AppImage`.
+- RecompLauncher profile: find the disc by its RK5E01 ID, add anti-aliasing and
+  experimental performance mode, and explain the bridge's exit codes.
 
 ## 0.1.0-alpha.1 - 2026-11-16
 

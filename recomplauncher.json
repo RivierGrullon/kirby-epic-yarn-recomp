@@ -77,17 +77,15 @@
         {"label": "Off", "set": {"kirby/gpu_resident_copies": "false"}}
       ],
       "defaults": {"kirby/gpu_resident_copies": "true"}
-    },
-    {
-      "id": "volume", "label": "Volume",
-      "help": "Master volume, from 0 (silent) to 1 (full).",
-      "slider": {"key": "audio/volume", "min": 0, "max": 1, "step": 0.05, "format": "%.2f"},
-      "defaults": {"audio/volume": "1.0"}
     }
   ],
   "folders": {
     "game": [{"path": "{install}/Game"}],
     "logs": [{"path": "{install}/Game/logs"}],
     "saves": [{"path": "{install}/Game/local/user/nand/title/00010000/524b3545/data"}]
+  },
+  "exit_codes": {
+    "20": "Kirby isn't set up yet, or its build is missing. Set it up again from the game's page.",
+    "21": "Kirby Bridge couldn't start the game. Its files may be incomplete: reinstall it from the game's page."
   }
 }

@@ -116,6 +116,10 @@ class ExternalLaunchTests(unittest.TestCase):
         self.assertEqual(result.returncode,20,result.stderr)
         self.assertIn('Run Kirby Setup before playing',result.stderr)
 
+    def test_profile_explains_the_bridge_exit_codes(self):
+        profile=json.loads((REPO/'recomplauncher.json').read_text())
+        self.assertEqual(sorted(profile['exit_codes']),['20','21'])
+
     def test_packaged_profile_uses_the_exact_source_revision(self):
         write_profile(REPO,self.base,'e'*40)
         profile=json.loads((self.base/'recomplauncher.json').read_text())
