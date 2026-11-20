@@ -164,7 +164,8 @@ class WindowsNativeToolsTests(unittest.TestCase):
     def test_prepare_runs_cancellable_powershell_with_explicit_shared_cache(self):
         module = self.adapter()
         powershell = Path(self.temp.name) / 'powershell.exe'
-        powershell.write_text('#!' + sys.executable + '\n' + '''import json,sys,pathlib
+        powershell.write_text('#!' + sys.executable + '\n' + '''import json,os,sys,pathlib
+assert not any(key.upper() == 'PSMODULEPATH' for key in os.environ), 'Inherited PowerShell module path'
 args=sys.argv[1:]
 root=pathlib.Path(args[args.index('-File')+1]).parents[2]
 cache=pathlib.Path(args[args.index('-CacheRoot')+1])
@@ -176,9 +177,12 @@ for name,spec in json.loads((root/'tools/windows/windows-dependencies.json').rea
     (package/'.complete').write_text(spec['hash'])
 ''')
         powershell.chmod(0o700)
-        with patch('installer.windows_tools.shutil.which', return_value=str(powershell)):
+        module_path = str(Path(self.temp.name) / 'PowerShell 7/Modules')
+        with (patch('installer.windows_tools.shutil.which', return_value=str(powershell)),
+              patch.dict(os.environ, {'PSModulePath': module_path})):
             with Job(self.root / 'local/setup', 'prepare', lambda e: None) as job:
                 tools = module.WindowsTools.prepare(self.root, job)
+            self.assertEqual(os.environ['PSModulePath'], module_path)
             arguments = json.loads((tools.base / 'invocation.json').read_text())
             self.assertIn('-ToolsOnly', arguments)
             self.assertEqual(arguments[arguments.index('-CacheRoot') + 1], str(tools.base))
