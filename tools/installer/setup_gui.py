@@ -5,12 +5,14 @@ from pathlib import Path
 import subprocess
 import sys
 
-from PyQt6.QtCore import Qt, QElapsedTimer, QSize, QThread, QTimer, QUrl
-from PyQt6.QtGui import QColor, QDesktopServices, QIcon
-from PyQt6.QtWidgets import (QApplication,QCheckBox,QFileDialog,QFrame,QHBoxLayout,QLabel,QLineEdit,
-    QListWidget,QListWidgetItem,QMainWindow,QPlainTextEdit,QProgressBar,QPushButton,QScrollArea,
-    QStyle,QVBoxLayout,QWidget)
+from PyQt6.QtCore import Qt, QElapsedTimer, QLibraryInfo, QLocale, QSettings, QThread, QTimer, QTranslator, QUrl
+from PyQt6.QtGui import QDesktopServices, QIcon
+from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
+                             QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar, QScrollArea,
+                             QVBoxLayout, QWidget)
+from .setup_theme import Banner, Card, FabricButton, LanguagePicker, Linen, PhaseList, button_patch, label
 from .setup_controller import Controller
+from .setup_i18n import LANGUAGES, translate
 from .setup_layout import prepare_destination,finish_destination
 from .setup_model import PHASES
 from .setup_shortcuts import create_shortcuts
@@ -29,87 +31,281 @@ class Preparation(QThread):
 
 
 class SetupWindow(QMainWindow):
-    def __init__(self,bundle,parent=None):
+    def __init__(self,bundle,parent=None,*,preferences=None):
         super().__init__(parent)
         self.bundle=bundle;self.controller=None;self.root=None;self.destination_path=None;self.launcher=None
         self.managed=False
         self.closing=False;self.elapsed=QElapsedTimer();self.preparation=None
-        self.setWindowTitle('Kirby Setup');self.resize(760,690);self.setMinimumSize(620,560)
-        icon=bundle.project/'packaging/linux/yarn-mascot-icon.png'
-        if icon.is_file():self.setWindowIcon(QIcon(str(icon)))
-        shell=QWidget();self.setCentralWidget(shell);outer=QVBoxLayout(shell);outer.setContentsMargins(0,0,0,0)
-        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
-        body=QWidget();scroll.setWidget(body);outer.addWidget(scroll,1);layout=QVBoxLayout(body)
-        layout.setContentsMargins(28,24,28,24);layout.setSpacing(12)
-        title=QLabel('Kirby Setup');title.setObjectName('title');layout.addWidget(title)
-        intro=QLabel('Install Kirby’s Epic Yarn from your own USA copy (RK5E01 Rev 0).')
-        intro.setWordWrap(True);layout.addWidget(intro)
-        self.source=QLineEdit();self.source.setPlaceholderText('Select your disc image or extracted DATA folder')
+        self.preferences = preferences if preferences is not None else QSettings('KirbyNative', 'Kirby Setup')
+        saved = self.preferences.value('ui/language', 'en')
+        self.language = saved if isinstance(saved, str) and saved in LANGUAGES else 'en'
+        self.qt_translator = QTranslator(self)
+        self.progress_session = None
+        self.elapsed_seconds = None
+        self.setWindowTitle('Kirby Setup')
+        self.setMinimumSize(620, 520)
+        self.resize(980, 650)
+        icon = bundle.project/'packaging/linux/yarn-mascot-icon.png'
+        if icon.is_file():
+            self.setWindowIcon(QIcon(str(icon)))
+
+        shell = Linen()
+        self.setCentralWidget(shell)
+        outer = QVBoxLayout(shell)
+        outer.setContentsMargins(26, 12, 26, 15)
+        outer.setSpacing(9)
+        brand = QHBoxLayout()
+        emblem = QLabel()
+        emblem.setPixmap(button_patch('#ed9caf', 32))
+        brand.addWidget(emblem)
+        brand.addWidget(label('Kirby’s Epic Yarn', 'brand'), 1)
+        language_label = label('Language')
+        brand.addWidget(language_label)
+        self.languages = LanguagePicker()
+        self.languages.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.languages.setMinimumWidth(126)
+        self.languages.setAccessibleName('Language')
+        for code, name in LANGUAGES.items():
+            self.languages.addItem(name, code)
+        self.languages.setCurrentIndex(self.languages.findData(self.language))
+        language_label.setBuddy(self.languages)
+        brand.addWidget(self.languages)
+        outer.addLayout(brand)
+
+        scroll = QScrollArea()
+        self.scroll = scroll
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.viewport().setObjectName('viewport')
+        outer.addWidget(scroll, 1)
+        body = QWidget()
+        body.setObjectName('paper')
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(1, 3, 3, 4)
+        layout.setSpacing(13)
+        banner = Banner(bundle.project)
+        layout.addWidget(banner)
+        self.columns = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self.columns.setSpacing(14)
+        layout.addLayout(self.columns)
+        form = QVBoxLayout()
+        form.setSpacing(11)
+        self.columns.addLayout(form, 3)
+
+        self.source = QLineEdit()
+        self.source.setPlaceholderText('Disc image or extracted DATA folder')
         self.source.setAccessibleName('Game source')
-        self.file_button=QPushButton('Choose disc…');self.folder_button=QPushButton('DATA folder…')
-        self.file_button.clicked.connect(self.choose_file);self.folder_button.clicked.connect(self.choose_data)
-        label=QLabel('&Your game copy');label.setBuddy(self.source);layout.addWidget(label)
-        row=QHBoxLayout();row.addWidget(self.source,1);row.addWidget(self.file_button);row.addWidget(self.folder_button);layout.addLayout(row)
-        self.destination=QLineEdit(str(Path.home()/'Games/Kirby Native'));self.destination.setAccessibleName('Installation folder')
-        label=QLabel('&Installation folder');label.setBuddy(self.destination);layout.addWidget(label)
-        self.destination_button=QPushButton('Browse…');self.destination_button.clicked.connect(self.choose_destination)
-        row=QHBoxLayout();row.addWidget(self.destination,1);row.addWidget(self.destination_button);layout.addLayout(row)
-        self.desktop_shortcut=QCheckBox('Also create a desktop shortcut')
-        layout.addWidget(self.desktop_shortcut)
-        note=QLabel('Tools download once and are reused. Installation may take several minutes.')
-        note.setWordWrap(True);note.setObjectName('secondary');layout.addWidget(note)
-        line=QFrame();line.setFrameShape(QFrame.Shape.HLine);layout.addWidget(line)
-        self.stage=QLabel('Ready to install');self.stage.setWordWrap(True);self.stage.setTextFormat(Qt.TextFormat.PlainText)
-        layout.addWidget(self.stage)
-        self.progress=QProgressBar();self.progress.setRange(0,100);self.progress.setValue(0)
-        self.progress.setAccessibleName('Current installation step progress');layout.addWidget(self.progress)
-        self.time_label=QLabel('');self.time_label.setObjectName('secondary');layout.addWidget(self.time_label)
-        self.steps=QListWidget();self.steps.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.steps.setSelectionMode(QListWidget.SelectionMode.NoSelection);self.steps.setFixedHeight(130)
-        self.steps.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        for name in PHASES:
-            item=QListWidgetItem(name+' · Waiting');item.setSizeHint(QSize(0,24));self.steps.addItem(item)
-        self.steps.setAccessibleName('Installation steps');layout.addWidget(self.steps)
-        self.details_button=QPushButton('Show details');self.details_button.setCheckable(True)
+        source_card = Card('&Your game copy', '#e6c586', self.source)
+        source_card.body.addWidget(self.source)
+        formats = 'Choose a Wii disc image (.wbfs, .iso, .rvz) or a .7z archive.'
+        self.source.setToolTip(formats)
+        self.file_button = FabricButton('Choose disc…')
+        self.file_button.setToolTip(formats)
+        self.folder_button = FabricButton('DATA folder…')
+        self.folder_button.setToolTip('Select the DATA folder if your game is already extracted.')
+        self.file_button.clicked.connect(self.choose_file)
+        self.folder_button.clicked.connect(self.choose_data)
+        choices = QHBoxLayout()
+        choices.addWidget(self.file_button)
+        choices.addWidget(self.folder_button)
+        choices.addStretch()
+        source_card.body.addLayout(choices)
+        form.addWidget(source_card)
+
+        self.destination = QLineEdit(str(Path.home()/'Games/Kirby Native'))
+        self.destination.setAccessibleName('Installation folder')
+        location = Card('&Installation folder', '#a8c8d8', self.destination)
+        self.destination_button = FabricButton('Browse…')
+        self.destination_button.clicked.connect(self.choose_destination)
+        folder = QHBoxLayout()
+        folder.addWidget(self.destination, 1)
+        folder.addWidget(self.destination_button)
+        location.body.addLayout(folder)
+        self.desktop_shortcut = QCheckBox('Also create a desktop shortcut')
+        location.body.addWidget(self.desktop_shortcut)
+        form.addWidget(location)
+        form.addStretch()
+
+        progress_card = Card('Installation progress', '#b9cda6')
+        self.stage = label('Ready to install', 'stage')
+        self.stage.setAccessibleName('Installation status')
+        progress_card.body.addWidget(self.stage)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(10)
+        self.progress.setAccessibleName('Current installation step progress')
+        progress_card.body.addWidget(self.progress)
+        self.progress_label = label('', 'secondary')
+        self.progress_label.hide()
+        progress_card.body.addWidget(self.progress_label)
+        self.steps = PhaseList()
+        progress_card.body.addWidget(self.steps)
+        self.time_label = label('', 'secondary')
+        self.time_label.hide()
+        progress_card.body.addWidget(self.time_label)
+        self.details_button = FabricButton('Show details')
+        self.details_button.setCheckable(True)
         self.details_button.toggled.connect(self.toggle_details)
-        self.logs_button=QPushButton('Open logs');self.logs_button.setEnabled(False);self.logs_button.clicked.connect(self.open_logs)
-        row=QHBoxLayout();row.addWidget(self.details_button);row.addWidget(self.logs_button);row.addStretch();layout.addLayout(row)
-        self.details=QPlainTextEdit();self.details.setReadOnly(True);self.details.setMaximumBlockCount(2000)
-        self.details.setMinimumHeight(100);self.details.hide();layout.addWidget(self.details)
+        self.logs_button = FabricButton('Open logs')
+        self.logs_button.clicked.connect(self.open_logs)
+        self.logs_button.setEnabled(False)
+        self.logs_button.hide()
+        tools = QHBoxLayout()
+        tools.addWidget(self.details_button)
+        tools.addWidget(self.logs_button)
+        tools.addStretch()
+        progress_card.body.addLayout(tools)
+        progress_card.body.addStretch()
+        self.columns.addWidget(progress_card, 2)
+        self.details = QPlainTextEdit()
+        self.details.setReadOnly(True)
+        self.details.setAccessibleName('Installation details')
+        self.details.setMaximumBlockCount(2000)
+        self.details.setMinimumHeight(110)
+        self.details.hide()
+        layout.addWidget(self.details)
         layout.addStretch()
-        self.install_button=QPushButton('Install');self.install_button.setObjectName('primary');self.install_button.setDefault(True)
+        scroll.setWidget(body)
+
+        footer = QHBoxLayout()
+        self.footer_note = label('Tools download once and can be reused.', 'secondary')
+        self.footer_note.setToolTip('The first installation may take several minutes.')
+        footer.addWidget(self.footer_note, 1)
+        self.install_button = FabricButton('Install', primary=True)
+        self.install_button.setMinimumWidth(118)
+        self.install_button.setDefault(True)
         self.install_button.clicked.connect(self.install)
-        self.cancel_button=QPushButton('Cancel');self.cancel_button.setEnabled(False);self.cancel_button.clicked.connect(self.cancel)
-        self.open_button=QPushButton('Open launcher');self.open_button.setEnabled(False);self.open_button.clicked.connect(self.open_launcher)
-        self.open_folder_button=QPushButton('Open folder');self.open_folder_button.setEnabled(False)
+        self.cancel_button = FabricButton('Cancel')
+        self.cancel_button.clicked.connect(self.cancel)
+        self.open_folder_button = FabricButton('Open folder')
         self.open_folder_button.clicked.connect(lambda:QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.destination_path))))
-        footer=QWidget();row=QHBoxLayout(footer);row.setContentsMargins(28,8,28,20)
-        row.addWidget(self.install_button);row.addWidget(self.cancel_button);row.addStretch()
-        row.addWidget(self.open_folder_button);row.addWidget(self.open_button);outer.addWidget(footer)
+        self.open_button = FabricButton('Open launcher', primary=True)
+        self.open_button.clicked.connect(self.open_launcher)
+        for button in (self.install_button, self.cancel_button, self.open_folder_button, self.open_button):
+            footer.addWidget(button)
+        for button in (self.cancel_button, self.open_folder_button, self.open_button):
+            button.setEnabled(False)
+            button.hide()
+        outer.addLayout(footer)
+        # Retain source captions so changing language updates the existing widgets in place.
+        self.captions = {w: w.text() for w in (
+            language_label, banner.heading, banner.intro, source_card.heading, location.heading,
+            progress_card.heading, self.file_button, self.folder_button, self.destination_button,
+            self.desktop_shortcut, self.details_button, self.logs_button, self.footer_note,
+            self.cancel_button, self.open_folder_button, self.open_button, self.install_button, self.stage)}
+        self.tooltips = {w: w.toolTip() for w in (self.source, self.file_button, self.folder_button, self.footer_note)}
+        self.accessible_names = {w: w.accessibleName() for w in (
+            self.languages, self.source, self.destination, self.stage, self.progress, self.details)}
+        self.languages.currentIndexChanged.connect(self.choose_language)
         self.fields=(self.source,self.destination,self.file_button,self.folder_button,self.destination_button,self.desktop_shortcut)
         self.source.textChanged.connect(self.form_changed);self.destination.textChanged.connect(self.form_changed)
         self.timer=QTimer(self);self.timer.setInterval(1000);self.timer.timeout.connect(self.update_time)
         self.form_changed()
+        self.retranslate()
+
+    def text(self, source):
+        return translate(source, self.language)
+
+    def caption(self, widget, source):
+        self.captions[widget] = source
+        value = self.text(source)
+        if (widget is self.stage and widget.property('status') == 'failed'
+                and self.language != 'en' and value == source):
+            value = self.text('Installation stopped: {detail}').format(detail=source)
+        widget.setText(value)
+
+    def choose_language(self, index):
+        code = self.languages.itemData(index)
+        if code not in LANGUAGES or code == self.language:
+            return
+        self.language = code
+        self.retranslate()
+        self.preferences.setValue('ui/language', code)
+        self.preferences.sync()
+        if self.preferences.status() != QSettings.Status.NoError:
+            self.statusBar().showMessage(self.text('Could not save the language preference.'), 5000)
+
+    def retranslate(self):
+        locale = QLocale(self.language)
+        self.setLocale(locale)
+        app = QApplication.instance()
+        app.removeTranslator(self.qt_translator)
+        directory = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+        if self.language != 'en' and self.qt_translator.load(locale, 'qtbase', '_', directory):
+            app.installTranslator(self.qt_translator)
+        self.setWindowTitle(self.text('Kirby Setup'))
+        self.source.setPlaceholderText(self.text('Disc image or extracted DATA folder'))
+        for widget, source in self.captions.items():
+            self.caption(widget, source)
+        for widget, source in self.tooltips.items():
+            widget.setToolTip(self.text(source))
+        for widget, source in self.accessible_names.items():
+            widget.setAccessibleName(self.text(source))
+        self.steps.set_language(self.text)
+        self.show_progress_text()
+        self.show_elapsed_time()
+
+    def chooser_options(self):
+        # Native pickers follow the desktop language. Qt pickers can follow Setup's choice.
+        system = QLocale.system().uiLanguages()
+        if system and QLocale(system[0]).language() == self.locale().language() and (
+                self.language != 'zh-CN' or QLocale(system[0]).script() == self.locale().script()):
+            return QFileDialog.Option(0)
+        return QFileDialog.Option.DontUseNativeDialog
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'columns'):
+            self.arrange_columns()
+
+    def arrange_columns(self):
+        direction = QBoxLayout.Direction.LeftToRight
+        if self.width() < 820:
+            direction = (QBoxLayout.Direction.BottomToTop if self.elapsed.isValid() or self.controller is not None
+                         else QBoxLayout.Direction.TopToBottom)
+        self.columns.setDirection(direction)
+
+    def set_status(self, text, status):
+        if self.stage.property('status') != status:
+            self.stage.setProperty('status', status)
+            self.stage.style().unpolish(self.stage)
+            self.stage.style().polish(self.stage)
+        self.caption(self.stage, text)
 
     def form_changed(self):
         busy=self.preparation is not None or (self.controller is not None and self.controller.busy)
         self.install_button.setEnabled(bool(self.source.text().strip() and self.destination.text().strip()) and not busy)
+        if not busy and self.controller is None and not self.elapsed.isValid():
+            self.caption(self.stage, 'Ready to install' if self.install_button.isEnabled() else
+                         'Choose your game copy and installation folder.')
 
     def choose_file(self):
-        value,_=QFileDialog.getOpenFileName(self,'Choose your disc image','',
-            'Wii disc images (*.wbfs *.iso *.rvz *.7z);;All files (*)')
+        filters = self.text('Wii disc images')+' (*.wbfs *.iso *.rvz *.7z);;'+self.text('All files')+' (*)'
+        value,_=QFileDialog.getOpenFileName(self,self.text('Choose your disc image'),'',filters,
+                                            options=self.chooser_options())
         if value:self.source.setText(value)
 
     def choose_data(self):
-        value=QFileDialog.getExistingDirectory(self,'Choose your extracted DATA folder')
+        value=QFileDialog.getExistingDirectory(self,self.text('Choose your extracted DATA folder'),
+            options=self.chooser_options() | QFileDialog.Option.ShowDirsOnly)
         if value:self.source.setText(value)
 
     def choose_destination(self):
-        value=QFileDialog.getExistingDirectory(self,'Choose installation folder',self.destination.text())
+        value=QFileDialog.getExistingDirectory(self,self.text('Choose installation folder'),self.destination.text(),
+            options=self.chooser_options() | QFileDialog.Option.ShowDirsOnly)
         if value:self.destination.setText(value)
 
     def toggle_details(self,checked):
-        self.details.setVisible(checked);self.details_button.setText('Hide details' if checked else 'Show details')
+        self.details.setVisible(checked);self.caption(self.details_button, 'Hide details' if checked else 'Show details')
+        if checked:
+            QTimer.singleShot(0, self.reveal_details)
+
+    def reveal_details(self):
+        if self.details.isVisible():
+            self.scroll.ensureWidgetVisible(self.details)
 
     def install(self):
         if self.preparation is not None or (self.controller is not None and self.controller.busy):return
@@ -118,10 +314,27 @@ class SetupWindow(QMainWindow):
         self.destination_path=Path(self.destination.text()).expanduser().absolute()
         self.preparation=Preparation(self.bundle,self.destination_path,source,self)
         self.preparation.finished.connect(self.prepared)
+        self.open_button.setDefault(False)
+        self.install_button.set_primary(True)
+        self.install_button.setDefault(True)
         for field in self.fields:field.setEnabled(False)
         self.install_button.setEnabled(False);self.open_button.setEnabled(False);self.open_folder_button.setEnabled(False)
-        self.stage.setText('Preparing your installation folder…');self.progress.setRange(0,0)
+        self.open_button.hide()
+        self.open_folder_button.hide()
+        self.logs_button.hide()
+        self.logs_button.setEnabled(False)
+        self.progress_label.hide()
+        self.progress_session = None
+        self.elapsed_seconds = None
+        self.time_label.clear()
+        self.time_label.hide()
+        self.steps.set_states(['pending']*len(PHASES))
+        self.set_status('Preparing your installation folder…', 'running')
+        self.caption(self.install_button, 'Preparing…')
+        self.progress.setRange(0,0)
         self.details.clear();self.launcher=None;self.elapsed.start();self.timer.start()
+        self.caption(self.footer_note, '')
+        self.arrange_columns()
         self.preparation.start()
 
     def prepared(self):
@@ -141,36 +354,68 @@ class SetupWindow(QMainWindow):
             self.controller.output.connect(self.details.appendPlainText)
             self.controller.start(preparation.source)
         except (OSError,ValueError,subprocess.SubprocessError) as error:
-            self.timer.stop();self.progress.setRange(0,100);self.progress.setValue(0);self.progress.setFormat('Stopped')
+            self.timer.stop();self.progress.setRange(0,100);self.progress.setValue(0)
             for field in self.fields:field.setEnabled(True)
-            self.stage.setText(str(error));self.details.appendPlainText(str(error));self.install_button.setText('Try again')
+            self.set_status(str(error), 'failed');self.details.appendPlainText(str(error));self.caption(self.install_button, 'Try again')
             self.form_changed()
 
     def render(self):
         if self.controller is None:return
         session=self.controller.session;busy=self.controller.busy
         for field in self.fields:field.setEnabled(not busy)
+        self.cancel_button.setVisible(busy)
         self.cancel_button.setEnabled(busy and not self.controller.cancelling)
+        self.install_button.setVisible(not busy)
+        self.open_button.setVisible(not busy and self.launcher is not None)
+        self.open_folder_button.setVisible(not busy and self.launcher is not None)
         self.open_button.setEnabled(not busy and self.launcher is not None)
         self.open_folder_button.setEnabled(not busy and self.launcher is not None)
-        self.stage.setText('Cancelling safely…' if busy and self.controller.cancelling else session.error or session.label)
+        status = session.label if session.status == 'cancelled' else session.error or session.label
+        self.set_status('Cancelling safely…' if busy and self.controller.cancelling else status, session.status)
         if busy and session.progress is None:self.progress.setRange(0,0)
         else:
             self.progress.setRange(0,100)
             self.progress.setValue(100 if session.status=='ready' else session.progress or 0)
-            self.progress.setFormat('Finished' if session.status=='ready' else 'Stopped' if session.status=='failed'
-                                    else 'Cancelled' if session.status=='cancelled' else session.progress_text)
-        labels={'pending':'Waiting','running':'In progress','done':'Done','failed':'Failed'}
-        colors={'pending':'#bcb6c9','running':'#ffc3dc','done':'#99dfb3','failed':'#ffb2b7'}
-        for i,status in enumerate(session.phases):
-            self.steps.item(i).setText(PHASES[i]+' · '+labels[status])
-            self.steps.item(i).setForeground(QColor(colors[status]))
+        self.progress_session = session
+        self.show_progress_text()
+        states = list(session.phases)
+        if session.status == 'cancelled' and session.phase is not None:
+            states[session.phase] = 'cancelled'
+        self.steps.set_states(states)
+        self.logs_button.setVisible(session.log_path is not None)
         self.logs_button.setEnabled(session.log_path is not None)
         self.form_changed();self.update_time()
 
+    def show_progress_text(self):
+        session = self.progress_session
+        if session is None:
+            return
+        terminal = {'ready': 'Finished', 'failed': 'Stopped', 'cancelled': 'Cancelled'}
+        value = self.text(terminal.get(session.status, 'Working…'))
+        measured = session.status not in terminal and session.progress is not None
+        if measured:
+            if session.unit == 'tasks':
+                template = self.text('{percent}% · {done} / {total} build tasks')
+                done, total = (self.locale().toString(n) for n in (session.completed, session.total))
+            else:
+                template = self.text('{percent}% · {done} / {total} MiB')
+                done, total = (self.locale().toString(n/1048576, 'f', 1) for n in (session.completed, session.total))
+            value = template.format(percent=session.progress, done=done, total=total)
+        self.progress.setFormat(value)
+        self.progress.setAccessibleDescription(value)
+        self.progress_label.setText(value if measured else '')
+        self.progress_label.setVisible(measured)
+
     def update_time(self):
         if self.elapsed.isValid():
-            seconds=self.elapsed.elapsed()//1000;self.time_label.setText(f'Elapsed: {seconds//60} min {seconds%60:02d} sec')
+            self.elapsed_seconds = self.elapsed.elapsed()//1000
+            self.show_elapsed_time()
+
+    def show_elapsed_time(self):
+        if self.elapsed_seconds is not None:
+            minutes, seconds = divmod(self.elapsed_seconds, 60)
+            self.time_label.setText(self.text('Elapsed: {minutes} min {seconds:02d} sec').format(minutes=minutes, seconds=seconds))
+            self.time_label.show()
 
     def finished(self,status):
         self.timer.stop()
@@ -186,7 +431,7 @@ class SetupWindow(QMainWindow):
                 if self.managed:
                     from .external_launch import publish
                     publish(self.root,self.destination_path,session.result['data_root'])
-                    self.open_button.setText('Play game')
+                    self.caption(self.open_button, 'Play game')
                 self.launcher=self.root/'build/native'/('kirby-launcher.exe' if os.name=='nt' else 'kirby-launcher')
                 try:
                     shortcuts=[] if self.managed else create_shortcuts(self.root,self.destination_path,desktop=self.desktop_shortcut.isChecked())
@@ -196,7 +441,11 @@ class SetupWindow(QMainWindow):
                     self.details.appendPlainText(session.label)
             except (OSError,ValueError) as error:
                 self.controller.session.status='failed';self.controller.session.error='Game built, but setup could not finish: '+str(error)
-        self.install_button.setText('Install again' if self.launcher else 'Try again');self.render()
+        self.caption(self.install_button, 'Install again' if self.launcher else 'Try again')
+        self.install_button.set_primary(self.launcher is None)
+        self.install_button.setDefault(self.launcher is None)
+        self.open_button.setDefault(self.launcher is not None)
+        self.render()
         if self.closing:self.close()
 
     def cancel(self):
@@ -214,7 +463,7 @@ class SetupWindow(QMainWindow):
                 command,environment,working=play_command(self.destination_path)
                 subprocess.Popen(command,cwd=working,env=environment,
                     **({'creationflags':0x208} if os.name=='nt' else {'start_new_session':True}))
-            except (OSError,ValueError) as error:self.stage.setText('Could not start the game: '+str(error))
+            except (OSError,ValueError) as error:self.set_status('Could not start the game: '+str(error), 'failed')
             return
         environment=dict(os.environ)
         for key in list(environment):
@@ -227,11 +476,13 @@ class SetupWindow(QMainWindow):
         try:
             subprocess.Popen([str(self.launcher)],cwd=self.root,env=environment,
                 **({'creationflags':0x208} if os.name=='nt' else {'start_new_session':True}))
-        except OSError as error:self.stage.setText('Could not open the launcher: '+str(error))
+        except OSError as error:self.set_status('Could not open the launcher: '+str(error), 'failed')
 
     def closeEvent(self,event):
         if self.preparation is not None:
-            self.closing=True;self.stage.setText('Finishing folder preparation before closing…');event.ignore()
+            self.closing=True;self.set_status('Finishing folder preparation before closing…', 'running');event.ignore()
         elif self.controller and self.controller.busy:
             self.closing=True;self.controller.cancel();event.ignore()
-        else:event.accept()
+        else:
+            QApplication.instance().removeTranslator(self.qt_translator)
+            event.accept()

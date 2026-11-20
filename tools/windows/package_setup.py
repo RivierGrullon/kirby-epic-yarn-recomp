@@ -29,7 +29,7 @@ def package(root,output,qt_frontend):
         temporary=Path(temporary)
         for name,script,extra in (('kirby-setup-worker','tools/install.py',['--exclude-module','PyQt6']),
                                   ('Kirby-Bridge','tools/launcher_bridge.py',['--exclude-module','PyQt6']),
-                                  ('Kirby-Setup','tools/setup_gui.py',['--windowed'])):
+                                  ('Kirby-Setup','tools/setup_gui.py',['--windowed','--icon',str(root/'launcher/assets/launcher.ico')])):
             subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--name',name,
                 '--distpath',str(temporary/'dist'),'--workpath',str(temporary/'work'),
                 '--specpath',str(temporary/'spec'),'--contents-directory',

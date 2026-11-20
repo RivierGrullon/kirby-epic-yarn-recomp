@@ -14,6 +14,10 @@ and diagnostics. Hover over a control or a question-mark button for help.
 The launcher saves your language choice in
 `local/user/launcher-language.txt`. The setting applies to the launcher.
 
+Kirby Setup starts in English. Its own language selector switches between
+English, 简体中文 and Español, including during installation, and remembers your
+choice separately from the launcher.
+
 The Wii executable is translated from PowerPC to C++ and compiled for the host.
 The native runtime uses Aurora for graphics (Vulkan on Linux). Dolphin extracts your disc and serves
 as a behavior reference; it does not run the native game.

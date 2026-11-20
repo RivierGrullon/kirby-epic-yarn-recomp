@@ -232,5 +232,6 @@ WiiCompiled and key revisions/licenses are unchanged.
 
 The native launcher's `launcher/assets/launcher-ui.ttf` is a static subset of
 [Noto Sans SC](https://github.com/google/fonts/tree/main/ofl/notosanssc) at
-weight 500, covering its Chinese, English and Spanish interface. It is
+weight 500, covering the Chinese, English and Spanish interfaces of the
+launcher and Kirby Setup. It is
 distributed under the [SIL Open Font License 1.1](licenses/LICENSE-launcher-font.txt).
