@@ -1,0 +1,24 @@
+diff --git a/aurora/lib/dolphin/gx/GXFrameBuffer.cpp b/aurora/lib/dolphin/gx/GXFrameBuffer.cpp
+--- a/aurora/lib/dolphin/gx/GXFrameBuffer.cpp
++++ b/aurora/lib/dolphin/gx/GXFrameBuffer.cpp
+@@ -148,7 +148,9 @@ void copy_disp(GXBool clear, u32 copyControl) noexcept {
+                          GX_TF_RGBA8, g_gxState.pixelFmt,
+                          {
+                              .copyFilter = filter,
+-                             .copyFilterRowStride = static_cast<float>(rect.height) / std::max(src.height, 1),
++                             // Scaled GPU copies filter adjacent render pixels, not native rows.
++                             // A native-row stride magnifies the blur as internal resolution rises.
++                             .copyFilterRowStride = 1.f,
+                              .clampTop = (copyControl & GX_CLAMP_TOP) != 0,
+                              .clampBottom = (copyControl & GX_CLAMP_BOTTOM) != 0,
+                          });
+@@ -183,7 +185,8 @@ void copy_tex(const void* dest, GXBool clear, u32 copyControl) noexcept {
+                          clear_depth_value(), texCopyFmt, g_gxState.pixelFmt,
+                          {
+                              .copyFilter = copy_filter_taps(),
+-                             .copyFilterRowStride = static_cast<float>(rect.height) / std::max(src.height, 1),
++                             // Keep effect textures at the same filter footprint as display copies.
++                             .copyFilterRowStride = 1.f,
+                              .clampTop = (copyControl & GX_CLAMP_TOP) != 0,
+                              .clampBottom = (copyControl & GX_CLAMP_BOTTOM) != 0,
+                              .persistent = persistent,

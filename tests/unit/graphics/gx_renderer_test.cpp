@@ -36,6 +36,71 @@ void Bp(Kirby::GxRenderer& renderer, uint32_t value) {
     const uint8_t packet[]{0x61,uint8_t(value >> 24),uint8_t(value >> 16),uint8_t(value >> 8),uint8_t(value)};
     renderer.Feed(packet);
 }
+// Inspect the retained GPU copy at its actual resolution, before native RAM packing.
+std::vector<uint8_t> ReadCopyPixels(const aurora::gfx::TextureHandle& texture) {
+    const unsigned rowBytes = texture->size.width * 4;
+    const unsigned pitch = (rowBytes + 255) & ~255u;
+    const unsigned height = texture->size.height;
+    struct Result {
+        std::vector<uint8_t> pixels;
+        std::atomic_bool complete = false;
+        bool success = false;
+    };
+    auto result = std::make_shared<Result>();
+    result->pixels.resize(rowBytes * height);
+    aurora::gfx::render_worker::enqueue_work([=] {
+        using namespace aurora::webgpu;
+        const wgpu::BufferDescriptor descriptor{
+            .label = "Scaled copy verification",
+            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+            .size = uint64_t(pitch) * height,
+        };
+        auto buffer = g_device.CreateBuffer(&descriptor);
+        auto encoder = g_device.CreateCommandEncoder();
+        // GX copies are sampleable attachments without CopySrc usage. Present
+        // one-to-one into a readable target, using the real presentation shader.
+        auto output = create_render_texture(texture->size.width, height, false);
+        const wgpu::RenderPassColorAttachment attachment{
+            .view = output.view, .loadOp = wgpu::LoadOp::Clear, .storeOp = wgpu::StoreOp::Store,
+        };
+        const wgpu::RenderPassDescriptor passDescriptor{.colorAttachmentCount = 1, .colorAttachments = &attachment};
+        auto pass = encoder.BeginRenderPass(&passDescriptor);
+        pass.SetPipeline(presentation_copy_pipeline(false));
+        const TextureWithSampler source{texture->texture, texture->sampleTextureView,
+                                        texture->size, texture->format, output.sampler};
+        pass.SetBindGroup(0, create_copy_bind_group(source));
+        pass.SetViewport(0, 0, texture->size.width, height, 0, 1); pass.Draw(3); pass.End();
+        const wgpu::TexelCopyTextureInfo from{.texture = output.texture};
+        const wgpu::TexelCopyBufferInfo to{
+            .layout = {.bytesPerRow = pitch, .rowsPerImage = height}, .buffer = buffer,
+        };
+        encoder.CopyTextureToBuffer(&from, &to, &texture->size);
+        const auto commands = encoder.Finish(); g_queue.Submit(1, &commands);
+        buffer.MapAsync(wgpu::MapMode::Read, 0, uint64_t(pitch) * height,
+            wgpu::CallbackMode::AllowSpontaneous,
+            [=](wgpu::MapAsyncStatus status, wgpu::StringView) {
+                if (status == wgpu::MapAsyncStatus::Success) {
+                    const auto* data = static_cast<const uint8_t*>(buffer.GetConstMappedRange());
+                    if (data) {
+                        for (unsigned y = 0; y < height; ++y)
+                            std::copy_n(data + y * pitch, rowBytes, result->pixels.begin() + y * rowBytes);
+                        result->success = true;
+                    }
+                    buffer.Unmap();
+                }
+                result->complete.store(true, std::memory_order_release);
+            });
+    });
+    aurora_wait_for_frame_worker();
+    const auto deadline = SDL_GetTicks() + 5000;
+    while (!result->complete.load(std::memory_order_acquire) && SDL_GetTicks() < deadline) {
+        aurora::gfx::render_worker::enqueue_work([] { aurora::webgpu::g_instance.ProcessEvents(); });
+        aurora_wait_for_frame_worker(); SDL_Delay(1);
+    }
+    Check(result->complete.load(std::memory_order_acquire) && result->success,
+          "scaled GPU copy readback completes successfully");
+    return std::move(result->pixels);
+}
 void GpuFxaa() {
     // Exercise the actual final-presentation shaders even with a hidden window.
     Kirby::GxRenderer renderer([](uint32_t,uint32_t) { return std::span<const uint8_t>{}; });
@@ -856,6 +921,46 @@ void GpuXfb(bool startHidden = false, int resolutionScale = 1, int msaaSamples =
               "4x MSAA smooths polygon edges while the native non-MSAA baseline stays binary");
     std::cout << "[test] triangle edge pixels=" << partial << "; scale=" << resolutionScale
               << "; samples=" << msaaSamples << '\n';
+    // A one-render-pixel white line must not acquire ghost lines one *native*
+    // pixel away at higher resolutions. Exercise nonidentity BP filter taps;
+    // uniform colors and copy dimensions alone cannot detect this regression.
+    GXSetZMode(GX_FALSE,GX_ALWAYS,GX_TRUE);
+    GXFlush(); aurora::gx::fifo::drain();
+    Bp(renderer,0x52004803); // clear to black after the triangle
+    const float lineBottom = 16.f + 1.f / resolutionScale;
+    std::vector<uint8_t> line{0x80,0,4};
+    for (float f : {0.f,16.f,0.f, 32.f,16.f,0.f, 32.f,lineBottom,0.f, 0.f,lineBottom,0.f}) {
+        const auto word = std::bit_cast<uint32_t>(f);
+        for (int shift : {24,16,8,0}) line.push_back(word >> shift);
+    }
+    renderer.Feed(line);
+    Bp(renderer,0x53000000 | 16 | (32<<12)); Bp(renderer,0x54000000 | (16<<6));
+    Bp(renderer,0x52004003);
+    const auto checkFilter = [&](const aurora::gfx::TextureHandle& texture) {
+        const auto pixels = ReadCopyPixels(texture);
+        const unsigned width = 32 * resolutionScale, center = 16 * resolutionScale;
+        Check(texture->size.width == width && texture->size.height == width,
+              "filtered copy retains the requested internal resolution");
+        std::cout << "[test] filtered line rows:";
+        for (unsigned y = 0; y < width; ++y) {
+            const auto value = pixels[(y * width + width / 2) * 4];
+            if (value) std::cout << ' ' << y << '=' << unsigned(value);
+        }
+        std::cout << '\n';
+        for (unsigned y = 0; y < width; ++y) {
+            const auto at = (y * width + width / 2) * 4;
+            const int expected = y == center ? 127 : (y + 1 == center || y == center + 1) ? 63 : 0;
+            Check(std::abs(int(pixels[at]) - expected) <= 1,
+                  "copy filter spreads a thin line only to adjacent render pixels, at every scale");
+            Check(pixels[at] == pixels[at+1] && pixels[at] == pixels[at+2] && pixels[at+3] == 255,
+                  "scaled copy filtering preserves neutral color and opaque alpha");
+        }
+    };
+    checkFilter(aurora::gx::g_gxState.displayCopyTexture);
+    Bp(renderer,0x4B003000); Bp(renderer,0x4D000010); Bp(renderer,0x52000063);
+    checkFilter(aurora::gx::g_gxState.copyTextures.at(memory.data()+0x60000).handle);
+    Bp(renderer,0x53000000 | (32<<12) | (32<<18)); Bp(renderer,0x54000000);
+    Bp(renderer,0x4D000002);
     const auto writesBeforeInvalid = writes;
     Bp(renderer, 0x4B800000);
     Throws([&] { Bp(renderer, 0x52004803); }, "unmapped XFB stops before GPU submission or memory write");
