@@ -35,13 +35,17 @@ jobs:
           scratch.mkdir()
           data = library / "Prueba USA" / "DATA"
           data.mkdir(parents=True)
-          destination = package / "Game"
           child_env = dict(os.environ, RECOMPLAUNCHER="1", RECOMPLAUNCHER_MODE="desktop",
                            TEMP=str(scratch), TMP=str(scratch), TMPDIR=str(scratch))
+          destination = package / "Game"
           command = [package / "Kirby-Bridge.exe", "--prepare", "--game", data, "--destination", destination]
+          print(f"Shell module search path inherited: {'PSMODULEPATH' in child_env}", flush=True)
+          child_env.pop("PSMODULEPATH", None)
           try:
               result = subprocess.run(command, cwd=package, env=child_env,
-                                      creationflags=subprocess.CREATE_NO_WINDOW, timeout=530)
+                                      creationflags=subprocess.CREATE_NO_WINDOW, timeout=530,
+                                      capture_output=True, text=True, errors="replace")
+              print(result.stdout, result.stderr, flush=True)
               print(f"Bridge exit code: {result.returncode}", flush=True)
               if result.returncode != 1:
                   raise SystemExit("Expected the empty DATA fixture to fail")
