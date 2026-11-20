@@ -14,6 +14,8 @@
   else), apart from the game's, so launchers can say what went wrong.
 - Keep the four previous game logs as `game.1.log` to `game.4.log` when playing
   through the bridge.
+- Put the version in release file names, like
+  `Kirby-Setup-0.1.5-linux-x86_64.AppImage`.
 
 ## 0.1.0-alpha.1 - 2026-11-16
 

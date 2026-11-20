@@ -113,3 +113,6 @@ python3 tools/build_appimage.py "$out/Kirby.AppDir" --output "$out/Kirby-Setup-l
 ```
 
 Smoke-test the extracted Windows setup archive and the Linux AppImage, then attach the installers and their matching `.sha256` files to the GitHub release.
+The **Release installers** workflow uploads them with the version in the name,
+like `Kirby-Setup-0.1.5-linux-x86_64.AppImage` for tag `v0.1.5`, and writes each
+checksum for that name. Do the same when attaching them by hand.

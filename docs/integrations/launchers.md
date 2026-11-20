@@ -74,6 +74,8 @@ subsequent play. Set the library's executable to that entry, not the setup GUI o
 worker. In Quiver, choose the **Linux tarball** for this flow: the AppImage's normal
 entry intentionally stays an installer. Do not filter Windows onto the Linux build.
 Catalog preferred programs are `Kirby-Bridge.exe` (Windows) and `Play-Kirby.sh` (Linux).
+Release files carry their version (`Kirby-Setup-0.1.5-windows-x86_64.zip`), so a
+catalog entry that names a release file should match it by pattern, not exact name.
 
 Managed data relative to the release folder:
 

@@ -19,9 +19,10 @@ from package_toolchain import build as archive_toolchain
 ROOT = Path(__file__).resolve().parents[1]
 PIN = 'packaging/linux/toolchain-release.json'
 ARCHIVE = 'Kirby-tools-linux-x86_64.tar.xz'
-INSTALLER_ASSETS = ('Kirby-Setup-linux-x86_64.AppImage', 'Kirby-Setup-linux-x86_64.tar.gz',
-                    'Kirby-Setup-windows-x86_64.tar.gz', 'Kirby-Setup-windows-x86_64.zip',
-                    'Kirby-Setup-windows-x64.zip')
+# Older releases name installers Kirby-Setup-linux-x86_64.AppImage; newer ones carry their
+# version after Kirby-Setup- (Kirby-Setup-0.1.5-linux-x86_64.AppImage). Both count.
+INSTALLER_ASSET = re.compile(r'Kirby-Setup-([0-9A-Za-z._-]+-)?'
+                             r'(linux-x86_64\.(AppImage|tar\.gz)|windows-x86_64\.(zip|tar\.gz)|windows-x64\.zip)')
 INPUT_FILES = ('tools/Containerfile', 'tools/Containerfile.portable',
                'tools/package_toolchain.py', 'tools/installer/portable.py')
 EXPORT_FUNCTIONS = ('extract_rootfs', 'digest', 'export_tools')
@@ -124,7 +125,7 @@ def validate_release(record, tag, asset_id=None):
     if record.get('immutable'):
         raise ValueError('Destination release is immutable; select a mutable game release')
     assets = {asset['name'] for asset in record.get('assets', [])}
-    if not assets.intersection(INSTALLER_ASSETS):
+    if not any(INSTALLER_ASSET.fullmatch(name) for name in assets):
         raise ValueError('Destination must already contain a game installer; wait for Release installers to finish')
     archive = tools_archive_name(asset_id)
     names = (archive, archive+'.sha256', archive+'.json', archive+'.json.sha256')
