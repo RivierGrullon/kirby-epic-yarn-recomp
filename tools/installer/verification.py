@@ -8,7 +8,7 @@ import tomllib
 
 from kirby import EXPECTED_SHA1
 from .jobs import run_process
-from .platforms import WINDOWS
+from .platforms import WINDOWS, host_environment
 
 
 def check_elf(path):
@@ -39,10 +39,8 @@ def check_pe(path):
 def verify_native(job,root,executable,data_root,identity):
     root=Path(root);executable=Path(executable).resolve()
     (check_pe if WINDOWS else check_elf)(executable)
-    environment=dict(os.environ,SDL_AUDIO_DRIVER='dummy')
-    libraries=root/'local/host-libs'
-    if not WINDOWS and libraries.is_dir():
-        environment['LD_LIBRARY_PATH']=str(libraries)+(os.pathsep+environment['LD_LIBRARY_PATH'] if environment.get('LD_LIBRARY_PATH') else '')
+    environment=host_environment(root/'local/host-libs')
+    environment['SDL_AUDIO_DRIVER']='dummy'
     document=run_process(job,[executable,'--build-info'],capture_limit=16384,timeout=10,env=environment)
     info=tomllib.loads(document.decode('utf-8'))
     try:

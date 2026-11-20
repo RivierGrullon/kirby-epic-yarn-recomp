@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import shutil
 import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
@@ -17,6 +18,14 @@ class SetupLayoutTests(unittest.TestCase):
         (self.project/'tools').mkdir(parents=True);(self.project/'tools/kirby.py').write_text('# source')
         (self.project/'.git').mkdir();(self.project/'.git/HEAD').write_text('a'*40+'\n')
         self.runtime=self.base/'bundle/tools/runtime';self.runtime.mkdir(parents=True)
+        self.frontend=self.runtime.parent/'qt-launcher'
+        files=('kirby-ui.exe','Qt6Core.dll','Qt6Gui.dll','Qt6Widgets.dll','platforms/qwindows.dll','platforms/qoffscreen.dll') if os.name=='nt' else (
+            'kirby-ui','qt.conf','lib/libQt6Core.so.6','lib/libQt6Gui.so.6','lib/libQt6Widgets.so.6',
+            'plugins/platforms/libqxcb.so','plugins/platforms/libqoffscreen.so')
+        self.ui_name=files[0]
+        for name in files:
+            path=self.frontend/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'Qt fixture')
+        (self.frontend/self.ui_name).chmod(0o755)
         (self.runtime/'toolchain-download.json').write_text('{}')
         (self.runtime/'ca-certificates.crt').write_bytes(b'certificates')
         self.launcher_name='kirby-launcher.exe' if os.name=='nt' else 'kirby-launcher'
@@ -51,7 +60,7 @@ class SetupLayoutTests(unittest.TestCase):
         root=prepare_destination(self.bundle,self.destination)
         with self.assertRaisesRegex(ValueError, 'launcher is missing'):
             finish_destination(root,self.destination)
-        (root/'build/native').mkdir(parents=True)
+        (root/'build/native').mkdir(parents=True,exist_ok=True)
         (root/'build/native'/self.launcher_name).touch()
         shortcut=finish_destination(root,self.destination)
         self.assertTrue(shortcut.is_file())
@@ -62,6 +71,22 @@ class SetupLayoutTests(unittest.TestCase):
             self.assertIn('.kirby/',shortcut.read_text())
             self.assertNotIn(str(self.project),shortcut.read_text())
             self.assertTrue(shortcut.stat().st_mode & 0o111)
+
+    def test_bundled_frontend_survives_unmount_and_missing_file_is_repaired(self):
+        root=prepare_destination(self.bundle,self.destination)
+        program=root/'build/native/qt-launcher'/self.ui_name
+        self.assertEqual(program.read_bytes(),b'Qt fixture')
+        program.unlink()
+        self.assertEqual(prepare_destination(self.bundle,self.destination),root)
+        shutil.rmtree(self.frontend)
+        self.assertEqual(program.read_bytes(),b'Qt fixture')
+        self.assertEqual((program.parent/'.bundled-revision').read_text().strip(),self.bundle.revision)
+
+    def test_incomplete_release_cannot_publish_a_partial_destination(self):
+        (self.frontend/self.ui_name).unlink()
+        with self.assertRaisesRegex(ValueError,'Incomplete Qt launcher'):
+            prepare_destination(self.bundle,self.destination)
+        self.assertFalse((self.destination/'.kirby'/self.bundle.revision[:12]).exists())
 
     def test_destination_cannot_recurse_into_sources_or_follow_a_symlink(self):
         with self.assertRaises(ValueError):prepare_destination(self.bundle,self.project/'destination')

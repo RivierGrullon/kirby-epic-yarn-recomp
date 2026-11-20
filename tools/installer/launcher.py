@@ -8,7 +8,7 @@ import uuid
 
 from .installations import file_digest
 from .jobs import run_process
-from .platforms import WINDOWS, is_link
+from .platforms import WINDOWS, host_environment, is_link
 
 
 def install_launcher(job, root, build, identity):
@@ -33,9 +33,7 @@ def install_launcher(job, root, build, identity):
             shutil.copyfile(library, staging/library.name, follow_symlinks=False)
             if file_digest(staging/library.name) != digest:
                 raise ValueError('Launcher library changed while copying')
-        environment = dict(os.environ)
-        if not WINDOWS and (root/'local/host-libs').is_dir():
-            environment['LD_LIBRARY_PATH'] = str(root/'local/host-libs')+os.pathsep+environment.get('LD_LIBRARY_PATH', '')
+        environment = host_environment(root/'local/host-libs')
         document = run_process(job, [candidate, '--build-info'], capture_limit=16384, timeout=10, env=environment)
         info = tomllib.loads(document.decode('utf-8'))
         if (info.get('schema_version') != 1 or info.get('program') != 'launcher'
@@ -43,8 +41,50 @@ def install_launcher(job, root, build, identity):
                 or any(info['build'].get(key) != value for key, value in identity.items())):
             raise ValueError('Launcher build information does not match the game build')
         job.check_cancel()
-        _publish_launcher(staging, destination, [library.name for library in libraries]+[name], job)
+        names = [library.name for library in libraries]+[name]
+        qt = build/'qt-launcher'
+        if (qt.is_dir() and not (destination/'qt-launcher/.bundled-revision').is_file()
+                and qt.resolve() != (destination/'qt-launcher').resolve()):
+            _publish_with_qt(qt, staging, destination, names, job)
+        else:
+            _publish_launcher(staging, destination, names, job)
     return destination/name
+
+
+def _publish_with_qt(source, staging, destination, names, job):
+    """Publish the Qt kit as a unit, including platform plugins and translations."""
+    target = destination/'qt-launcher'
+    new = staging/'qt-launcher'
+    prior = staging/'previous-qt'
+    if is_link(source) or is_link(target) or (target.exists() and not target.is_dir()):
+        raise ValueError('Invalid Qt launcher directory')
+    if not (source/('kirby-ui.exe' if WINDOWS else 'kirby-ui')).is_file():
+        raise ValueError('Qt launcher executable is missing')
+    new.mkdir()
+    for parent, directories, files in os.walk(source):
+        folder = Path(parent)
+        output = new/folder.relative_to(source)
+        for name in directories + files:
+            if is_link(folder/name):
+                raise ValueError('Qt launcher files must not be links')
+        output.mkdir(exist_ok=True)
+        for name in files:
+            digest = file_digest(folder/name, job.check_cancel)
+            shutil.copy2(folder/name, output/name)
+            if file_digest(output/name, job.check_cancel) != digest:
+                raise ValueError('Qt launcher changed while copying')
+    job.check_cancel()
+    if target.exists():
+        target.rename(prior)
+    try:
+        new.rename(target)
+        _publish_launcher(staging, destination, names, job)
+    except BaseException:
+        if target.exists():
+            target.rename(new)
+        if prior.exists():
+            prior.rename(target)
+        raise
 
 
 def _publish_launcher(staging, destination, names, job):

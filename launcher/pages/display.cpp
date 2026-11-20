@@ -5,36 +5,37 @@
 namespace Launcher {
 Action DrawDisplay(State& state) {
     ImGui::BeginDisabled(state.selfTest || !state.settingsError.empty());
-    state.settingsDirty |= ImGui::Checkbox("Start in fullscreen", &state.config.fullscreen);
-    ImGui::TextWrapped("Open the game in borderless fullscreen on the next launch. Press Alt+Enter while playing to switch between fullscreen and windowed mode for that session.");
+    state.settingsDirty |= ImGui::Checkbox(Tr("Start in fullscreen"), &state.config.fullscreen);
+    ImGui::TextWrapped("%s", Tr("Open the game in borderless fullscreen on the next launch. Press Alt+Enter while playing to switch between fullscreen and windowed mode for that session."));
     ImGui::Spacing();
-    state.settingsDirty |= ImGui::Checkbox("VSync", &state.config.vsync);
-    ImGui::TextWrapped("Synchronize presentation with the display. Turning this off can reduce stalls on some drivers.");
+    state.settingsDirty |= ImGui::Checkbox(Tr("VSync"), &state.config.vsync);
+    ImGui::TextWrapped("%s", Tr("Synchronize presentation with the display. Turning this off can reduce stalls on some drivers."));
     ImGui::Spacing();
-    state.settingsDirty |= ImGui::Checkbox("Experimental performance mode", &state.config.gpuResidentCopies);
-    ImGui::TextWrapped("Reduces GPU copy waits and repeated texture processing. Compatibility testing is ongoing.");
+    state.settingsDirty |= ImGui::Checkbox(Tr("Experimental performance mode"), &state.config.gpuResidentCopies);
+    ImGui::TextWrapped("%s", Tr("Reduces GPU copy waits and repeated texture processing. Compatibility testing is ongoing."));
     ImGui::Spacing();
-    ImGui::SeparatorText("Image quality");
+    ImGui::SeparatorText(Tr("Image quality"));
     int scale = int(std::ranges::find(Kirby::ResolutionScales, state.config.resolutionScale) - Kirby::ResolutionScales.begin());
-    if (ImGui::Combo("Internal resolution", &scale,
-                     "1x (native)\0" "2x\0" "3x\0" "4x\0" "5x\0" "6x\0" "8x\0")) {
+    const char* scales[]{Tr("1x (native)"), "2x", "3x", "4x", "5x", "6x", "8x"};
+    if (ImGui::Combo(Tr("Internal resolution"), &scale, scales, IM_ARRAYSIZE(scales))) {
         state.config.resolutionScale = Kirby::ResolutionScales[scale];
         state.settingsDirty = true;
     }
-    ImGui::TextWrapped("Renders geometry at a higher resolution for sharper edges. Higher multipliers use more GPU time and memory; original texture detail is unchanged.");
+    ImGui::TextWrapped("%s", Tr("Renders geometry at a higher resolution for sharper edges. Higher multipliers use more GPU time and memory; original texture detail is unchanged."));
     int aa = (state.config.msaaSamples == 4 ? 2 : 0) + (state.config.fxaa ? 1 : 0);
-    if (ImGui::Combo("Anti-aliasing", &aa, "Off\0" "FXAA\0" "4x MSAA\0" "4x MSAA + FXAA\0")) {
+    const char* modes[]{Tr("Off"), "FXAA", "4x MSAA", "4x MSAA + FXAA"};
+    if (ImGui::Combo(Tr("Anti-aliasing"), &aa, modes, IM_ARRAYSIZE(modes))) {
         state.config.msaaSamples = aa >= 2 ? 4 : 1;
         state.config.fxaa = (aa & 1) != 0;
         state.settingsDirty = true;
     }
-    ImGui::TextWrapped("Smooths polygon edges. Can be combined with internal resolution scaling. Changes apply on the next game launch.");
-    ImGui::TextWrapped("FXAA smooths edges in the final image at a low GPU cost, but can soften fine details. MSAA smooths geometry edges; the combined mode applies both.");
+    ImGui::TextWrapped("%s", Tr("Smooths polygon edges. Can be combined with internal resolution scaling. Changes apply on the next game launch."));
+    ImGui::TextWrapped("%s", Tr("FXAA smooths edges in the final image at a low GPU cost, but can soften fine details. MSAA smooths geometry edges; the combined mode applies both."));
     ImGui::EndDisabled();
     ImGui::Spacing();
-    ImGui::SeparatorText("Resolution and frame rate");
-    ImGui::TextWrapped("16:9 widescreen. Windowed mode opens at 960 x 540. Both modes keep widescreen proportions, adding black bars as needed.");
-    ImGui::TextWrapped("Window size does not change the selected internal resolution. A validated 30/60 FPS selector is not available yet.");
+    ImGui::SeparatorText(Tr("Resolution and frame rate"));
+    ImGui::TextWrapped("%s", Tr("16:9 widescreen. Windowed mode opens at 960 x 540. Both modes keep widescreen proportions, adding black bars as needed."));
+    ImGui::TextWrapped("%s", Tr("Window size does not change the selected internal resolution. A validated 30/60 FPS selector is not available yet."));
     return Action::None;
 }
 } // namespace Launcher

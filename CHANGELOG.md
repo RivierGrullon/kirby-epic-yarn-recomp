@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Keep vertical copy-filter taps one render pixel apart for scaled display and
+  effect copies. Higher internal resolutions no longer magnify the filter's
+  blur; native 1x filtering and the game's brightness coefficients are retained.
 - Expose borderless fullscreen startup under Display and document the existing
   Alt+Enter session toggle. Add `video.fullscreen` and runtime CLI overrides.
 - Package a third-party launcher bridge and RecompLauncher profile. Reuse the

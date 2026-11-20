@@ -4,7 +4,7 @@ ARG TOOLS_IMAGE=localhost/kirby-portable-tools:compact
 FROM ${TOOLS_IMAGE}
 COPY requirements-setup.txt /tmp/requirements-setup.txt
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3-dev python3-venv binutils ca-certificates \
+    python3-dev python3-venv binutils ca-certificates libbz2-1.0 \
     libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 \
     libxcb-render-util0 libxcb-xinerama0 libgl1 libegl1 libopengl0 libdbus-1-3 libglib2.0-0t64 fontconfig \
     && rm -rf /var/lib/apt/lists/*

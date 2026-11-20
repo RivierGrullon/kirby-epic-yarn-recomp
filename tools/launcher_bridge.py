@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 from installer.external_launch import MARKER, NotSetUp, play, prepare, selection
+from installer.platforms import host_environment
 from installer.setup_layout import Bundle
 
 # The bridge's own exit codes, apart from the game's (0 to 2) and signals (128 and up), so a
@@ -61,12 +62,13 @@ def main(arguments=None):
             return 0
         extra = ['--fullscreen'] if args.fullscreen else ['--windowed'] if args.windowed else []
         if args.play:
-            return play(destination, extra)
+            return play(destination, extra, libraries=bundle.libraries)
         if (destination/MARKER).is_file():
             root,_,_=selection(destination)
             if root.name == bundle.revision[:12]:
-                return play(destination, extra)
-        return subprocess.call([*bundle.command, '--destination', str(destination), '--managed'])
+                return play(destination, extra, libraries=bundle.libraries)
+        return subprocess.call([*bundle.command, '--destination', str(destination), '--managed'],
+                               env=host_environment())
     except NotSetUp as error:
         print('Kirby Bridge: '+str(error), file=sys.stderr)
         return NOT_SET_UP

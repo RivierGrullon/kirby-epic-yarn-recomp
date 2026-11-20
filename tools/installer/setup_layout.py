@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 
 from .platforms import WINDOWS, is_link
+from .qt_frontend import install_bundled
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,8 @@ def prepare_destination(bundle, destination):
     if root.exists():
         if is_link(marker) or not marker.is_file() or json.loads(marker.read_text()) != {'revision':bundle.revision}:
             raise ValueError('This installation folder contains unrecognized files; choose another folder')
+        if bundle.packaged:
+            install_bundled(bundle, root)
         if bundle.command:
             _atomic(root/'local/setup-command.json',json.dumps(dict(version=1,arguments=[*bundle.command,'--destination',str(destination)])).encode('utf-8'))
         return root
@@ -75,6 +78,8 @@ def prepare_destination(bundle, destination):
             if (bundle.runtime/name).is_file():shutil.copy2(bundle.runtime/name,runtime/name)
         libraries=staged/'local/host-libs'
         if bundle.libraries.is_dir():shutil.copytree(bundle.libraries,libraries,symlinks=False)
+        if bundle.packaged:
+            install_bundled(bundle, staged)
         marker=staged/'local/setup/source.json';marker.parent.mkdir(parents=True,exist_ok=True)
         marker.write_text(json.dumps({'revision':bundle.revision})+'\n')
         if bundle.command:

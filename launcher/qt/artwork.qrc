@@ -1,0 +1,5 @@
+<RCC><qresource prefix="/yarn">
+  <file alias="mascot.png">../../packaging/linux/yarn-mascot-icon.png</file>
+  <file alias="launcher.ico">../assets/launcher.ico</file>
+  <file alias="font.ttf">../assets/launcher-ui.ttf</file>
+</qresource></RCC>

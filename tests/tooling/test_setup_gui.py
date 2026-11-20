@@ -72,6 +72,8 @@ class SetupGuiTests(unittest.TestCase):
         from installer.setup_controller import Controller
         self.temp=tempfile.TemporaryDirectory(prefix='Qt worker literal $ ');self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name);self.script=self.root/'worker.py';self.script.write_text(WORKER)
+        from PyQt6.QtCore import QSettings
+        self.preferences=QSettings(str(self.root/'ui.ini'),QSettings.Format.IniFormat)
         self.controller=Controller(self.root,[sys.executable,'-u',str(self.script)],grace_ms=100)
         self.addCleanup(self.stop)
 
@@ -122,7 +124,7 @@ class SetupGuiTests(unittest.TestCase):
         from installer.setup_gui import SetupWindow
         from installer.setup_layout import Bundle
         bundle=Bundle(self.root,self.root/'runtime',self.root/'libs','a'*40)
-        window=SetupWindow(bundle);window.show();self.app.processEvents()
+        window=SetupWindow(bundle,preferences=self.preferences);window.show();self.app.processEvents()
         self.assertFalse(window.install_button.isEnabled())
         self.assertFalse(window.open_button.isEnabled())
         self.assertEqual(window.progress.maximum(),100)
@@ -135,7 +137,7 @@ class SetupGuiTests(unittest.TestCase):
         from installer.setup_layout import Bundle
         from PyQt6.QtCore import QTimer
         source=self.root/'own.wbfs';source.write_bytes(b'fixture')
-        window=SetupWindow(Bundle(self.root,self.root/'runtime',self.root/'libs','a'*40))
+        window=SetupWindow(Bundle(self.root,self.root/'runtime',self.root/'libs','a'*40),preferences=self.preferences)
         window.source.setText(str(source));window.destination.setText(str(self.root/'destination'))
         ticks=[];timer=QTimer();timer.timeout.connect(lambda:ticks.append(window.preparation is not None));timer.start(5)
         def prepare(bundle,destination):time.sleep(.2);return self.root
@@ -148,7 +150,7 @@ class SetupGuiTests(unittest.TestCase):
     def test_closing_the_window_waits_for_worker_cancellation(self):
         from installer.setup_gui import SetupWindow
         from installer.setup_layout import Bundle
-        window=SetupWindow(Bundle(self.root,self.root/'runtime',self.root/'libs','a'*40))
+        window=SetupWindow(Bundle(self.root,self.root/'runtime',self.root/'libs','a'*40),preferences=self.preferences)
         window.controller=self.controller
         self.controller.changed.connect(window.render);self.controller.finished.connect(window.finished)
         window.show();self.controller.start(self.root/'cancel.wbfs')
@@ -156,6 +158,75 @@ class SetupGuiTests(unittest.TestCase):
         window.close();self.wait(lambda:not self.controller.busy and not window.isVisible())
         self.assertEqual(self.controller.session.status,'cancelled')
         window.deleteLater();self.app.processEvents()
+
+    def test_compact_progress_view_keeps_failure_and_retry_accessible(self):
+        from PyQt6.QtWidgets import QBoxLayout,QScrollArea
+        from installer.setup_gui import SetupWindow
+        from installer.setup_layout import Bundle
+        window=SetupWindow(Bundle(self.root,self.root/'runtime',self.root/'libs','a'*40),preferences=self.preferences)
+        self.addCleanup(window.close)
+        window.source.setText(str(self.root/'fail.wbfs'))
+        window.resize(620,520);window.show();self.app.processEvents()
+        self.assertEqual(window.columns.direction(),QBoxLayout.Direction.TopToBottom)
+        self.assertEqual(window.findChild(QScrollArea).horizontalScrollBar().maximum(),0)
+        window.details_button.click()
+        self.assertTrue(window.details.isVisible())
+        window.controller=self.controller
+        self.controller.changed.connect(window.render);self.controller.finished.connect(window.finished)
+        self.controller.start(self.root/'fail.wbfs')
+        self.assertTrue(window.cancel_button.isVisible())
+        self.assertFalse(window.install_button.isVisible())
+        self.wait(lambda:not self.controller.busy)
+        self.assertEqual(window.stage.property('status'),'failed')
+        self.assertIn('Synthetic compilation',window.stage.text())
+        self.assertTrue(window.install_button.isVisible() and window.install_button.isEnabled())
+        self.assertFalse(window.open_button.isVisible())
+        self.assertFalse(window.cancel_button.isVisible())
+
+    def test_language_default_switch_and_restart(self):
+        from installer.setup_gui import SetupWindow
+        from installer.setup_layout import Bundle
+        bundle=Bundle(self.root,self.root/'runtime',self.root/'libs','a'*40)
+        self.preferences.setValue('ui/language','invalid')
+        window=SetupWindow(bundle,preferences=self.preferences)
+        self.assertEqual((window.languages.currentText(),window.install_button.text()),('English','Install'))
+        source=str(self.root/'my copy.wbfs')
+        window.source.setText(source);window.details_button.click()
+        window.languages.setCurrentIndex(window.languages.findData('zh-CN'))
+        self.assertEqual(window.install_button.text(),'安装')
+        self.assertEqual(window.stage.text(),'可以开始安装')
+        self.assertEqual(window.details_button.text(),'收起详情')
+        self.assertEqual(window.steps.rows[0][1].text(),'安装工具')
+        self.assertEqual(window.source.text(),source)
+        window.close()
+        reopened=SetupWindow(bundle,preferences=self.preferences)
+        self.assertEqual(reopened.languages.currentText(),'简体中文')
+        reopened.languages.setCurrentIndex(reopened.languages.findData('en'))
+        self.assertEqual(reopened.install_button.text(),'Install')
+        reopened.close()
+
+    def test_switch_to_spanish_during_installation_then_cancel(self):
+        from installer.setup_gui import SetupWindow
+        from installer.setup_layout import Bundle
+        window=SetupWindow(Bundle(self.root,self.root/'runtime',self.root/'libs','a'*40),preferences=self.preferences)
+        self.addCleanup(window.close)
+        window.controller=self.controller
+        self.controller.changed.connect(window.render);self.controller.finished.connect(window.finished)
+        window.show();window.elapsed.start();self.controller.start(self.root/'cancel.wbfs')
+        self.wait(lambda:self.controller.session.progress==50)
+        window.languages.setCurrentIndex(window.languages.findData('es'))
+        self.assertEqual(window.progress.value(),50)
+        self.assertEqual(window.stage.text(),'Compilando el juego')
+        self.assertIn('5 de 10 tareas',window.progress_label.text())
+        self.assertIn('Tiempo transcurrido',window.time_label.text())
+        self.assertEqual(window.steps.rows[3][2].text(),'En curso')
+        self.assertTrue(window.cancel_button.isEnabled())
+        self.assertFalse(window.source.isEnabled())
+        window.cancel_button.click()
+        self.wait(lambda:not self.controller.busy)
+        self.assertEqual(window.controller.session.status,'cancelled')
+        self.assertEqual(window.install_button.text(),'Reintentar')
+        self.assertEqual(window.steps.rows[3][2].text(),'Cancelado')
 
 
 if __name__=='__main__':unittest.main()

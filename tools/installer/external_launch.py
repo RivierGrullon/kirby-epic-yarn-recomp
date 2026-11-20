@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 from .installations import InstallationStore, read_json
-from .platforms import WINDOWS, is_link
+from .platforms import WINDOWS, host_environment, is_link
 from .setup_layout import _atomic, prepare_destination, update_settings_data
 from .setup_model import PHASES, Session, STAGES
 
@@ -58,17 +58,17 @@ def selection(destination):
     return root, store.executable(active['current']), manifest
 
 
-def play_command(destination, extra=()):
+def play_command(destination, extra=(), *, libraries=None):
     destination = Path(destination).resolve()
     root, executable, manifest = selection(destination)
-    environment = dict(os.environ)
+    directories = [root/'local/host-libs']
+    if libraries is not None and libraries != directories[0]:
+        directories.append(libraries)
+    environment = host_environment(*directories)
     for key in list(environment):
         if key.startswith(('QT_', 'QML', 'PYTHON')):
             environment.pop(key, None)
-    original = environment.pop('LD_LIBRARY_PATH_ORIG', '')
-    if not WINDOWS:
-        environment['LD_LIBRARY_PATH'] = str(root/'local/host-libs') + (os.pathsep+original if original else '')
-    else:
+    if WINDOWS:
         import ctypes
         ctypes.windll.kernel32.SetDllDirectoryW(None)
     command = [str(executable), '--video', '--config', str(destination/'local/user/settings.toml'),
@@ -116,7 +116,8 @@ def prepare(bundle, destination, source):
     if sys.platform == 'linux':
         command.append('--supervise')
     command += ['--workspace', str(root/'local/setup'), '--install', str(source)]
-    environment = dict(os.environ, KIRBY_PROJECT_ROOT=str(root))
+    environment = host_environment()
+    environment['KIRBY_PROJECT_ROOT'] = str(root)
     session = None
     shown = 0.0
     with subprocess.Popen(command, cwd=root, env=environment, stdin=subprocess.DEVNULL,
@@ -165,8 +166,8 @@ def keep_older_logs(logs):
             os.replace(newer, logs/f'game.{number}.log')
 
 
-def play(destination, extra=()):
-    command, environment, working = play_command(destination, extra)
+def play(destination, extra=(), *, libraries=None):
+    command, environment, working = play_command(destination, extra, libraries=libraries)
     logs = working/'logs'
     logs.mkdir(exist_ok=True)
     keep_older_logs(logs)
