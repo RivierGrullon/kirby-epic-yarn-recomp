@@ -22,6 +22,9 @@ void Validate(const Settings& settings) {
         throw std::runtime_error("paths.dvd_root must be a nonempty path");
     if (!std::isfinite(settings.masterVolume) || settings.masterVolume < 0 || settings.masterVolume > 100)
         throw std::runtime_error("audio.volume must be between 0 and 1");
+    if (settings.gameLanguage && settings.gameLanguage != Settings::English && settings.gameLanguage != Settings::French &&
+        settings.gameLanguage != Settings::Spanish)
+        throw std::runtime_error("kirby.game_language must be 1 (English), 3 (French) or 4 (Spanish)");
     ValidateControlBindings(settings.controls);
     ValidateMotionSettings(settings.motion);
     if (!ValidResolutionScale(settings.resolutionScale))
@@ -55,6 +58,12 @@ Settings Parse(const std::string& text, const fs::path& file, Settings defaults)
     // for the subset it implements, instead of silently changing their meaning.
     if (present("video", "vsync") && !FindConfigValue<bool>(document, "video", "vsync"))
         throw std::runtime_error("video.vsync must be a boolean");
+    if (present("kirby", "game_language")) {
+        const auto language = FindConfigValue<int64_t>(document, "kirby", "game_language");
+        if (!language || !std::in_range<int>(*language))
+            throw std::runtime_error("kirby.game_language must be a supported Wii language ID");
+        defaults.gameLanguage = static_cast<int>(*language);
+    }
     const auto gpuCopies = FindConfigValue<bool>(document, "kirby", "gpu_resident_copies");
     if (present("kirby", "gpu_resident_copies") && !gpuCopies)
         throw std::runtime_error("kirby.gpu_resident_copies must be a boolean");
@@ -154,6 +163,7 @@ std::string Update(std::string text, const Settings& settings) {
         text = std::move(*updated);
     };
     set("kirby", "schema_version", "1");
+    if (settings.gameLanguage) set("kirby", "game_language", std::to_string(*settings.gameLanguage));
     set("kirby", "gpu_resident_copies", settings.gpuResidentCopies ? "true" : "false");
     set("paths", "dvd_root", RuntimeConfigFile::FormatString(
         RuntimeConfigFile::PathToUtf8(fs::absolute(settings.gameData).lexically_normal())));

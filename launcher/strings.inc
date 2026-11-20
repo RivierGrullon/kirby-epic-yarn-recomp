@@ -35,6 +35,8 @@
 {"Controls", "控制器", "Controles"},
 {"Saves", "存档", "Partidas"},
 {"Diagnostics", "诊断", "Diagnóstico"},
+{"Game language", "游戏语言", "Idioma del juego"},
+{"Applies the next time you start the game.", "下次启动游戏时生效。", "Se aplica la próxima vez que inicies el juego."},
 {"Language", "语言", "Idioma"},
 {"Kirby's Epic Yarn", "毛线卡比", "Kirby's Epic Yarn"},
 {"Start game", "开始游戏", "Jugar"},

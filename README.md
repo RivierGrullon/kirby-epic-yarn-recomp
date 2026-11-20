@@ -14,7 +14,10 @@ for language, fullscreen and volume. Choose English, 简体中文 or Español
 from the language selector. Advanced settings contains graphics, custom input
 and diagnostics. Hover over a control or a question-mark button for help.
 The launcher saves your language choice in
-`local/user/launcher-language.txt`. The setting applies to the launcher.
+`local/user/launcher-language.txt`. To change Kirby’s language, choose
+**Game language** in Basic settings or in RecompLauncher’s game settings.
+The USA disc supports English, Français and Español. The choice takes effect
+on the next game launch.
 
 Kirby Setup starts in English. Its own language selector switches between
 English, 简体中文 and Español, including during installation, and remembers your

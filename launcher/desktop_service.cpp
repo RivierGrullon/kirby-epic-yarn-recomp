@@ -17,7 +17,7 @@ using Json = nlohmann::json;
 Json Config(const Kirby::Settings& c) {
     const auto& m = c.motion;
     return {{"volume",c.masterVolume},{"scale",c.resolutionScale},{"aa",(c.msaaSamples==4?2:0)+int(c.fxaa)},
-        {"fullscreen",c.fullscreen},{"vsync",c.vsync},{"performance",c.gpuResidentCopies},
+        {"gameLanguage",c.gameLanguage.value_or(Kirby::Settings::English)},{"fullscreen",c.fullscreen},{"vsync",c.vsync},{"performance",c.gpuResidentCopies},
         {"stick",c.controls.stickActivation},{"trigger",c.controls.triggerActivation},
         {"tilt",m.tilt},{"invertTilt",m.invertTilt},{"gain",m.tiltGain},{"pointer",int(m.pointer)},
         {"sensitivity",m.sensitivity},{"invertX",m.invertX},{"invertY",m.invertY},
@@ -27,6 +27,7 @@ Json Config(const Kirby::Settings& c) {
 void Change(Kirby::Settings& c, const std::string& key, const Json& value) {
     auto& m = c.motion;
     if (key=="volume") value.get_to(c.masterVolume);
+    else if (key=="gameLanguage") c.gameLanguage = value.get<int>();
     else if (key=="scale") value.get_to(c.resolutionScale);
     else if (key=="aa") {
         const int aa=value.get<int>();

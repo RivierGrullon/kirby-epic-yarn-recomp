@@ -287,6 +287,8 @@ void Window::buildHome() {
 }
 void Window::buildBasic() {
     auto* simple=card("Display and sound","Basic settings are saved automatically.");
+    select(simple,"gameLanguage","Game language",{"English","Français","Español"},{1,3,4},
+           "Applies the next time you start the game.");
     check(simple,"fullscreen","Start in fullscreen","Open the game in borderless fullscreen on the next launch. Press Alt+Enter while playing to switch between fullscreen and windowed mode for that session.");
     auto* audio=new QWidget;auto* mix=new QHBoxLayout(audio);mix->setContentsMargins(0,0,0,0);
     auto* slider=new QSlider(Qt::Horizontal);slider->setRange(0,100);slider->setMinimumWidth(narrow?95:175);
