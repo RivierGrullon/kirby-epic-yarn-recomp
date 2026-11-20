@@ -82,7 +82,7 @@ Managed data relative to the release folder:
 | Current verified build selection | `Game/kirby-managed.json` |
 | Settings | `Game/local/user/settings.toml` |
 | Wii save data | `Game/local/user/nand/title/00010000/524b3545/data/` |
-| Game log | `Game/logs/game.log` |
+| Game log | `Game/logs/game.log`; the four runs before it as `game.1.log` (newest) to `game.4.log` |
 | Authored source/build workspace per revision | `Game/.kirby/<source-revision-prefix>/` |
 
 The runtime starts with `Game` as its working directory, keeping saves and settings

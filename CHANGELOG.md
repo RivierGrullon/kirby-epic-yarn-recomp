@@ -12,6 +12,8 @@
   moves through the five setup phases instead of staying at zero.
 - Give the bridge's own errors exit codes 20 (not set up yet) and 21 (anything
   else), apart from the game's, so launchers can say what went wrong.
+- Keep the four previous game logs as `game.1.log` to `game.4.log` when playing
+  through the bridge.
 
 ## 0.1.0-alpha.1 - 2026-11-16
 

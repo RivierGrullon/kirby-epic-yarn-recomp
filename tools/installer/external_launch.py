@@ -14,6 +14,7 @@ from .setup_layout import _atomic, prepare_destination, update_settings_data
 from .setup_model import PHASES, Session, STAGES
 
 MARKER = 'kirby-managed.json'
+KEPT_LOGS = 5
 
 
 class NotSetUp(ValueError):
@@ -155,10 +156,20 @@ def prepare(bundle, destination, source):
     print('progress 1 Ready to play', flush=True)
 
 
+def keep_older_logs(logs):
+    # The run before a crash often explains it, so keep the last few logs: game.1.log is the
+    # previous run, up to game.4.log. The oldest is dropped.
+    for number in range(KEPT_LOGS-1, 0, -1):
+        newer = logs/('game.log' if number == 1 else f'game.{number-1}.log')
+        if newer.is_file():
+            os.replace(newer, logs/f'game.{number}.log')
+
+
 def play(destination, extra=()):
     command, environment, working = play_command(destination, extra)
     logs = working/'logs'
     logs.mkdir(exist_ok=True)
+    keep_older_logs(logs)
     with (logs/'game.log').open('w', encoding='utf-8') as log:
         with subprocess.Popen(command, cwd=working, env=environment, stdout=log, stderr=subprocess.STDOUT) as process:
             previous = wait_for(process)

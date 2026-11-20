@@ -91,6 +91,25 @@ class ExternalLaunchTests(unittest.TestCase):
         self.assertIn(str(self.destination),log)
         self.assertIn('--config',log)
 
+    @unittest.skipIf(os.name=='nt','POSIX synthetic executable')
+    def test_play_moves_the_previous_log_aside(self):
+        self.install()
+        logs=self.destination/'logs';logs.mkdir()
+        (logs/'game.log').write_text('previous run')
+        external.play(self.destination)
+        self.assertEqual((logs/'game.1.log').read_text(),'previous run')
+        self.assertIn('--config',(logs/'game.log').read_text())
+
+    def test_only_the_last_five_logs_are_kept(self):
+        logs=self.base/'logs';logs.mkdir()
+        names=['game.log',*(f'game.{number}.log' for number in range(1,5))]
+        for name in names:(logs/name).write_text(name)
+        external.keep_older_logs(logs)
+        self.assertEqual((logs/'game.4.log').read_text(),'game.3.log')
+        self.assertEqual((logs/'game.1.log').read_text(),'game.log')
+        self.assertFalse((logs/'game.log').exists())
+        self.assertFalse((logs/'game.5.log').exists())
+
     def test_bridge_exits_with_its_own_code_when_nothing_is_set_up(self):
         command=[sys.executable,str(REPO/'tools/launcher_bridge.py'),'--play','--destination',str(self.destination)]
         result=subprocess.run(command,capture_output=True,text=True)
