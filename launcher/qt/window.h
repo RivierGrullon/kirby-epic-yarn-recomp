@@ -19,7 +19,7 @@ private:
     QString root,host;
     bool test,ready=false,waitingPoll=false,closing=false,finishing=false;
     bool narrow=false,needsSave=false,discardOnClose=false;
-    int lang=0,controlTab=0;
+    int lang,controlTab=0;
     Page page=Home;
     QProcess service;
     QTranslator standardText;

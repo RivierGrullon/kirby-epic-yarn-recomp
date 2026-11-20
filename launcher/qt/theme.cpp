@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "theme.h"
+#include "../language_preference.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QDir>
@@ -14,7 +15,7 @@ struct Message { const char *en,*zh,*es; };
 constexpr Message messages[]{
 #include "../strings.inc"
 };
-int locale=0;
+int locale=static_cast<int>(Launcher::DefaultLanguage);
 void stitch(QPainter& p, QRectF r, QColor color, int radius) {
     QPen pen(color,1.25,Qt::DashLine,Qt::RoundCap); pen.setDashPattern({3,4});
     p.setPen(pen); p.setBrush(Qt::NoBrush); p.drawRoundedRect(r,radius,radius);

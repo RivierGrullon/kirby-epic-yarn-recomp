@@ -81,7 +81,12 @@ class LauncherTests(unittest.TestCase):
                                {"cmd":"bind","action":4,"keyboard":True},
                                {"cmd":"key","key":"F10","down":True},
                                {"cmd":"key","key":"F10","down":False}, {"cmd":"save"}])
-            self.assertEqual(replies[0]["state"]["lang"], 0)
+            self.assertEqual(replies[0]["state"]["lang"], 1)
             self.assertTrue(replies[3]["input"]["keyboardCapture"])
             state = session([{"cmd":"hello"}])[0]["state"]
             self.assertEqual((state["lang"],state["config"]["volume"],state["bindings"][4][2]), (2,37,"F10"))
+            preference = root/"local/user/launcher-language.txt"
+            for saved, expected in (("zh-CN", 0), ("en", 1), ("unknown", 1), ("", 1)):
+                with self.subTest(saved=saved):
+                    preference.write_text(saved, encoding="utf-8")
+                    self.assertEqual(session([{"cmd":"hello"}])[0]["state"]["lang"], expected)

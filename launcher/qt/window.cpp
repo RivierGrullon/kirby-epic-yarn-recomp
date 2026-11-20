@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "window.h"
+#include "../language_preference.h"
 #include <QJsonDocument>
 #include <QDesktopServices>
 #include <QDir>
@@ -26,10 +27,8 @@ QPushButton* helpButton(const char* key) {
 }
 
 Window::Window(QString rootPath,QString hostPath,bool selfTest):root(std::move(rootPath)),host(std::move(hostPath)),test(selfTest) {
-    QFile pref(QDir(root).filePath("local/user/launcher-language.txt"));
-    if(!test && pref.open(QIODevice::ReadOnly)) {
-        const auto code=pref.read(16).trimmed(); lang=code=="en"?1:code=="es"?2:0;
-    }
+    lang=static_cast<int>(test ? Launcher::DefaultLanguage :
+                          Launcher::ReadLanguage(QDir(root).filesystemPath() / "local/user"));
     language(lang);
     loadStandardText();
     setWindowTitle("Kirby's Epic Yarn");setMinimumSize(640,520);resize(1120,685);

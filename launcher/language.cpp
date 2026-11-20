@@ -2,16 +2,13 @@
 #include "language.h"
 #include "platform.h"
 #include <SDL3/SDL.h>
-#include <fstream>
 #include <random>
 #include <string_view>
 #include <unordered_map>
 
 namespace Launcher {
 namespace {
-Language current = Language::Chinese;
-constexpr std::array Codes{"zh-CN", "en", "es"};
-constexpr char Preference[] = "launcher-language.txt";
+Language current = DefaultLanguage;
 struct Message { const char *en, *zh, *es; };
 constexpr Message messages[]{
 #include "strings.inc"
@@ -21,24 +18,14 @@ constexpr Message messages[]{
 Language CurrentLanguage() { return current; }
 void SetLanguage(Language language) { current = language; }
 
-Language ReadLanguage(const std::filesystem::path& directory) {
-    std::ifstream file(directory / Preference);
-    char buffer[16]{};
-    if (file.getline(buffer, sizeof(buffer))) {
-        for (size_t i = 0; i < Codes.size(); ++i)
-            if (std::string_view(buffer) == Codes[i]) return static_cast<Language>(i);
-    }
-    return Language::Chinese;
-}
-
 bool WriteLanguage(const std::filesystem::path& directory, Language language) {
     std::error_code error;
     std::filesystem::create_directories(directory, error);
     if (error) return false;
-    const auto path = Utf8(directory / Preference);
+    const auto path = Utf8(directory / LanguageFile);
     const auto temporary = path + "." + std::to_string(SDL_GetPerformanceCounter()) +
         "." + std::to_string(std::random_device{}()) + ".tmp";
-    const auto content = std::string(Codes[static_cast<size_t>(language)]) + "\n";
+    const auto content = std::string(LanguageCodes[static_cast<size_t>(language)]) + "\n";
     if (SDL_SaveFile(temporary.c_str(), content.data(), content.size()) &&
         SDL_RenamePath(temporary.c_str(), path.c_str())) return true;
     SDL_RemovePath(temporary.c_str());
