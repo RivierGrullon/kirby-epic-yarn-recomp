@@ -16,6 +16,10 @@ from .setup_model import PHASES, Session, STAGES
 MARKER = 'kirby-managed.json'
 
 
+class NotSetUp(ValueError):
+    """There is no verified build to play: setup never finished, or its files are gone."""
+
+
 def publish(root, destination, data_root):
     root, destination = Path(root).resolve(), Path(destination).resolve()
     relative = root.relative_to(destination)
@@ -36,17 +40,19 @@ def publish(root, destination, data_root):
 
 def selection(destination):
     destination = Path(destination).resolve()
+    if not (destination/MARKER).is_file():
+        raise NotSetUp('Run Kirby Setup before playing')
     value = read_json(destination/MARKER)
     relative = value.get('project') if isinstance(value, dict) else None
     if not isinstance(value, dict) or value.get('version') != 1 or not isinstance(relative, str) or not re.fullmatch(r'\.kirby/[a-f0-9]{12}', relative):
-        raise ValueError('Invalid managed installation selection')
+        raise NotSetUp('Invalid managed installation selection')
     root = destination/relative
     if root.resolve() != root or is_link(root.parent) or is_link(root):
         raise ValueError('Managed build must not be a link')
     store = InstallationStore(root)
     active = store.read_active()
     if not active:
-        raise ValueError('Run Kirby Setup before playing')
+        raise NotSetUp('Run Kirby Setup before playing')
     manifest = store.manifest(active['current'])
     return root, store.executable(active['current']), manifest
 

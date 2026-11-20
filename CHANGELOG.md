@@ -10,6 +10,8 @@
   end-to-end compatibility still requires release/hardware verification.
 - Report real setup progress from the bridge's `--prepare`, so a launcher's bar
   moves through the five setup phases instead of staying at zero.
+- Give the bridge's own errors exit codes 20 (not set up yet) and 21 (anything
+  else), apart from the game's, so launchers can say what went wrong.
 
 ## 0.1.0-alpha.1 - 2026-11-16
 

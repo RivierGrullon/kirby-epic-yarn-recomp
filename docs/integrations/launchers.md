@@ -65,6 +65,10 @@ developers can use `python3 tools/launcher_bridge.py` with the same options.
 No host Python, Qt, compiler or container installation is needed by packaged users.
 The existing worker still rejects unsupported revisions before compiling them.
 
+The bridge's own errors have their own exit codes, apart from the game's (0 to 2):
+**20** when there is no verified build to play yet, and **21** for anything else,
+such as an incomplete release folder or a failed setup. The reason goes to stderr.
+
 Run `Kirby-Bridge.exe` or `Play-Kirby.sh` without options for first-use setup and
 subsequent play. Set the library's executable to that entry, not the setup GUI or
 worker. In Quiver, choose the **Linux tarball** for this flow: the AppImage's normal

@@ -91,6 +91,12 @@ class ExternalLaunchTests(unittest.TestCase):
         self.assertIn(str(self.destination),log)
         self.assertIn('--config',log)
 
+    def test_bridge_exits_with_its_own_code_when_nothing_is_set_up(self):
+        command=[sys.executable,str(REPO/'tools/launcher_bridge.py'),'--play','--destination',str(self.destination)]
+        result=subprocess.run(command,capture_output=True,text=True)
+        self.assertEqual(result.returncode,20,result.stderr)
+        self.assertIn('Run Kirby Setup before playing',result.stderr)
+
     def test_packaged_profile_uses_the_exact_source_revision(self):
         write_profile(REPO,self.base,'e'*40)
         profile=json.loads((self.base/'recomplauncher.json').read_text())

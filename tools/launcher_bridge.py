@@ -7,8 +7,13 @@ from pathlib import Path
 import subprocess
 import sys
 
-from installer.external_launch import MARKER, play, prepare, selection
+from installer.external_launch import MARKER, NotSetUp, play, prepare, selection
 from installer.setup_layout import Bundle
+
+# The bridge's own exit codes, apart from the game's (0 to 2) and signals (128 and up), so a
+# launcher can tell the player what to do instead of reporting a crash.
+NOT_SET_UP = 20
+BRIDGE_FAILED = 21
 
 
 def find_bundle(appdir=None):
@@ -62,9 +67,12 @@ def main(arguments=None):
             if root.name == bundle.revision[:12]:
                 return play(destination, extra)
         return subprocess.call([*bundle.command, '--destination', str(destination), '--managed'])
+    except NotSetUp as error:
+        print('Kirby Bridge: '+str(error), file=sys.stderr)
+        return NOT_SET_UP
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print('Kirby Bridge: '+str(error), file=sys.stderr)
-        return 1
+        return BRIDGE_FAILED
 
 
 if __name__ == '__main__':
