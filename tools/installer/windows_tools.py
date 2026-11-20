@@ -146,9 +146,13 @@ class WindowsTools:
         if not powershell:
             raise ValueError('Windows PowerShell 5.1 is required to prepare the build tools')
         job.emit(dict(stage='prepare', state='started', detail='Preparing private Windows build tools'))
+        # A launcher may have started under PowerShell 7. Let Windows PowerShell
+        # resolve its own modules, including Get-FileHash and Get-AuthenticodeSignature.
+        environment = {name: value for name, value in os.environ.items()
+                       if name.upper() != 'PSMODULEPATH'}
         run_process(job, [powershell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
                          root / 'tools/windows/build-windows.ps1', '-ToolsOnly', '-CacheRoot', cache],
-                    cwd=root)
+                    cwd=root, env=environment)
         job.check_cancel()
         tools = cls.find(root)
         if tools is None:
