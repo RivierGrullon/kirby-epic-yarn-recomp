@@ -16,6 +16,7 @@ from installer import installations
 from installer.installations import InstallationStore
 from installer.platforms import executable_name
 from installer.setup_layout import Bundle
+from launcher_bridge import main as bridge_main
 from launcher_profiles import write_profile
 
 REPO=Path(__file__).resolve().parents[2]
@@ -35,7 +36,7 @@ class ExternalLaunchTests(unittest.TestCase):
     def install(self, revision='a'):
         root=self.destination/'.kirby'/(revision*12)
         candidate=root/'candidate';candidate.mkdir(parents=True)
-        body=b'#!/bin/sh\nprintf "%s\\n" "$PWD" "$@"\nexit 7\n'
+        body=b'#!/bin/sh\nprintf "%s\\n" "$PWD" "$@" "$LD_LIBRARY_PATH"\nexit 7\n'
         (candidate/executable_name()).write_bytes(body)
         (candidate/'dsp_coef.bin').write_bytes(self.dsp)
         manifest=dict(version=1,game_id='RK5E01',revision=0,dol_sha1='f4280a2b0709bfde4132be22e9f7fa8ecfa2a130',
@@ -88,6 +89,19 @@ class ExternalLaunchTests(unittest.TestCase):
         log=(self.destination/'logs/game.log').read_text()
         self.assertIn(str(self.destination),log)
         self.assertIn('--config',log)
+
+    @unittest.skipIf(os.name=='nt','Linux shared-library search path')
+    def test_bridge_uses_package_libraries_for_an_existing_installation(self):
+        root,_,_=self.install()
+        libraries=self.base/'host-libs'
+        libraries.mkdir()
+        (self.base/'revision').write_text('b'*40)
+        with patch.dict(os.environ,{'LD_LIBRARY_PATH':'/frozen/python:/original',
+                                    'LD_LIBRARY_PATH_ORIG':'/original'}):
+            code=bridge_main(['--appdir',str(self.base),'--play','--destination',str(self.destination)])
+        self.assertEqual(code,7)
+        log=(self.destination/'logs/game.log').read_text().splitlines()
+        self.assertEqual(log[-1],os.pathsep.join((str(root/'local/host-libs'),str(libraries),'/original')))
 
     def test_packaged_profile_uses_the_exact_source_revision(self):
         write_profile(REPO,self.base,'e'*40)

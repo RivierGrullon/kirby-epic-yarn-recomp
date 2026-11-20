@@ -8,7 +8,7 @@ import uuid
 
 from .installations import file_digest
 from .jobs import run_process
-from .platforms import WINDOWS, is_link
+from .platforms import WINDOWS, host_environment, is_link
 
 
 def install_launcher(job, root, build, identity):
@@ -33,9 +33,7 @@ def install_launcher(job, root, build, identity):
             shutil.copyfile(library, staging/library.name, follow_symlinks=False)
             if file_digest(staging/library.name) != digest:
                 raise ValueError('Launcher library changed while copying')
-        environment = dict(os.environ)
-        if not WINDOWS and (root/'local/host-libs').is_dir():
-            environment['LD_LIBRARY_PATH'] = str(root/'local/host-libs')+os.pathsep+environment.get('LD_LIBRARY_PATH', '')
+        environment = host_environment(root/'local/host-libs')
         document = run_process(job, [candidate, '--build-info'], capture_limit=16384, timeout=10, env=environment)
         info = tomllib.loads(document.decode('utf-8'))
         if (info.get('schema_version') != 1 or info.get('program') != 'launcher'
