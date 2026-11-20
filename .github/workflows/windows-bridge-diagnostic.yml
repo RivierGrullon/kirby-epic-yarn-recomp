@@ -1,0 +1,52 @@
+name: Windows release bridge diagnostic
+
+on:
+  push:
+    branches: [codex/kirby-windows-bridge-diagnostic]
+
+permissions:
+  contents: read
+
+jobs:
+  released-bridge:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - name: Download and verify public v0.1.4 ZIP
+        shell: pwsh
+        run: |
+          $library = Join-Path $env:RUNNER_TEMP 'Recomp Library'
+          New-Item -ItemType Directory -Path $library -Force | Out-Null
+          $zip = Join-Path $library 'Kirby-Setup-windows-x86_64.zip'
+          Invoke-WebRequest 'https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/download/v0.1.4/Kirby-Setup-windows-x86_64.zip' -OutFile $zip
+          if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne 'ad5b22851fa79b9e68ffba95b04ddbd59cf551a16634b66bc89e5e2f35fad51d') { throw 'Published ZIP checksum changed' }
+          Expand-Archive -LiteralPath $zip -DestinationPath $library
+      - name: Run published prepare and inspect the worker log
+        shell: pwsh
+        run: |
+          @'
+          import os
+          from pathlib import Path
+          import subprocess
+
+          library = Path(os.environ["RUNNER_TEMP"]) / "Recomp Library"
+          package = library / "Kirby-Setup-windows-x86_64"
+          scratch = package / ".recomplauncher-tmp"
+          scratch.mkdir()
+          data = library / "Prueba USA" / "DATA"
+          data.mkdir(parents=True)
+          destination = package / "Game"
+          child_env = dict(os.environ, RECOMPLAUNCHER="1", RECOMPLAUNCHER_MODE="desktop",
+                           TEMP=str(scratch), TMP=str(scratch), TMPDIR=str(scratch))
+          command = [package / "Kirby-Bridge.exe", "--prepare", "--game", data, "--destination", destination]
+          try:
+              result = subprocess.run(command, cwd=package, env=child_env,
+                                      creationflags=subprocess.CREATE_NO_WINDOW, timeout=530)
+              print(f"Bridge exit code: {result.returncode}", flush=True)
+              if result.returncode != 1:
+                  raise SystemExit("Expected the empty DATA fixture to fail")
+          finally:
+              for log in destination.glob(".kirby/*/local/setup/logs/*.log"):
+                  print(log.read_text(encoding="utf-8", errors="replace")[-12000:], flush=True)
+          '@ | Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'kirby-release-bridge-probe.py')
+          python (Join-Path $env:RUNNER_TEMP 'kirby-release-bridge-probe.py')
