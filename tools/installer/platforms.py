@@ -3,8 +3,26 @@
 import os
 from pathlib import Path
 import stat
+import sys
 
 WINDOWS = os.name == 'nt'
+
+
+def host_environment(*library_directories):
+    """Launch outside PyInstaller's library search path."""
+    environment = dict(os.environ)
+    if not WINDOWS:
+        original = environment.pop('LD_LIBRARY_PATH_ORIG', None)
+        if original is None and not getattr(sys, 'frozen', False):
+            original = environment.get('LD_LIBRARY_PATH')
+        directories = [str(directory) for directory in library_directories]
+        if original:
+            directories.append(original)
+        if directories:
+            environment['LD_LIBRARY_PATH'] = os.pathsep.join(directories)
+        else:
+            environment.pop('LD_LIBRARY_PATH', None)
+    return environment
 
 
 def executable_name(target=None):

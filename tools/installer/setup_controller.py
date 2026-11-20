@@ -7,6 +7,7 @@ import signal
 import uuid
 
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, pyqtSignal
+from .platforms import host_environment
 from .setup_model import Session
 
 
@@ -41,6 +42,13 @@ class Controller(QObject):
         self.session = Session(uuid.uuid4().hex,self.root,source)
         self.busy = True;self.cancelling = False;self.protocol_error = '';self.stderr = '';self.owned = {}
         environment=QProcessEnvironment.systemEnvironment()
+        if os.name!='nt':
+            libraries=host_environment().get('LD_LIBRARY_PATH')
+            environment.remove('LD_LIBRARY_PATH_ORIG')
+            if libraries is None:
+                environment.remove('LD_LIBRARY_PATH')
+            else:
+                environment.insert('LD_LIBRARY_PATH',libraries)
         environment.insert('KIRBY_PROJECT_ROOT',str(self.root))
         self.process.setProcessEnvironment(environment)
         self.process.setWorkingDirectory(str(self.root))

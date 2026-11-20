@@ -152,10 +152,15 @@ def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, 
                   "[(shutil.copytree(p,out/p.name,dirs_exist_ok=True)) for n in ('PyQt6','PyQt6-Qt6','PyQt6-sip') "
                   "for p in [pathlib.Path(importlib.metadata.distribution(n)._path)] if p.is_dir()]"],root)
         shutil.copytree(freeze/'licenses',appdir/'licenses/qt')
-        if (root/'local/host-libs').is_dir():
-            shutil.copytree(root/'local/host-libs',appdir/'host-libs',symlinks=False)
-        else:
-            (appdir/'host-libs').mkdir()
+        # Use the runtime SONAME from the Ubuntu packaging image. Fedora provides
+        # libbz2.so.1 instead, and PyInstaller's copy is private to its executables.
+        for source, target in (
+                ('/usr/lib/x86_64-linux-gnu/libbz2.so.1.0', 'host-libs/libbz2.so.1.0'),
+                ('/usr/share/doc/libbz2-1.0/copyright', 'licenses/bzip2/copyright')):
+            container(engine,image,['install','-D','-m','0644',source,'local/portable-freeze/'+target],root)
+            destination=appdir/target
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(freeze/target,destination)
         artwork = root/'packaging/linux'
         for name in ('AppRun', 'Play-Kirby.sh', 'kirby-native.desktop'):
             shutil.copy2(artwork/name, appdir/name)
