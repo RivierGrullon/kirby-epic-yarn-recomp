@@ -42,10 +42,8 @@ def deploy(prefix, output, compiler=None):
         program = validate(stage)
         (stage/'README.txt').write_text(
             "Kirby's Epic Yarn - C++ Qt launcher frontend\n\n"
-            "First installation: use the Kirby-Setup package, which already includes this frontend.\n"
-            "Existing installation: place the qt-launcher folder beside kirby-launcher from the\n"
-            "same release, then open kirby-launcher. Keep the included Qt libraries and plugins.\n"
-            "The game and native host are built from the player's own supported copy by Setup.\n",
+            "Kirby Setup installs this frontend and its Qt libraries alongside the native host.\n"
+            "After installation, select Open launcher in Setup or use the installed shortcut.\n",
             encoding='utf-8')
         shutil.copy2(ROOT/'THIRD_PARTY.md', stage/'licenses'/'THIRD_PARTY.md')
         clean = {k:v for k,v in os.environ.items() if not k.startswith(('QT_', 'QML', 'LD_LIBRARY_PATH'))}

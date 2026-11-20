@@ -10,11 +10,9 @@ Publishing a GitHub Release or pre-release runs the **Release installers** workf
 for its tagged commit. Each successful platform job attaches its x86-64 installers
 to that release. Linux provides an AppImage and a `.tar.gz` folder with an
 `AppRun` entry point. Windows provides a `.zip` archive with `Kirby-Setup.exe`.
-Each installer has a companion `.sha256` file. The same prebuilt frontend is
-also available as `Kirby-Launcher-windows-x86_64.zip` or
-`Kirby-Launcher-linux-x86_64.tar.gz` with a checksum. For an existing
-installation, extract its `qt-launcher/` directory beside the native host
-from the same release. New players only need the Setup download.
+Each installer includes the prebuilt frontend in `tools/qt-launcher/` and
+has a companion `.sha256` file. Setup places the frontend beside the native
+host in the player's installation.
 
 ## Reusing published Linux tools
 
