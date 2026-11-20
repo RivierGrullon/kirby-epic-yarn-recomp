@@ -92,6 +92,11 @@ applications menu. Enable **Also create a desktop shortcut** during setup to
 create one on the desktop. `Play Kirby.sh` is also available in your
 installation folder.
 
+Both platform installers include the precompiled C++ launcher window and its
+Qt runtime. Setup builds the game and its native launcher host locally. The
+separate `Kirby-Launcher-*` release archives contain the same frontend for
+existing installations. New players can download just `Kirby-Setup-*`.
+
 If mounting AppImages is unavailable, run:
 
 ```bash

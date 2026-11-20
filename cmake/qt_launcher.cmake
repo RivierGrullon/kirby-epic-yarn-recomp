@@ -1,5 +1,9 @@
 # The frontend is its own CMake project so the Qt kit and the game's C++ ABI
 # never share a link step. A standalone build of launcher/qt works as well.
+if(EXISTS "${KIRBY_PROJECT_ROOT}/build/native/qt-launcher/.bundled-revision")
+    # Packaged Setup has already installed the release's relocatable frontend.
+    return()
+endif()
 set(KIRBY_QT_PREFIX "" CACHE PATH "Qt 6 desktop kit prefix for the launcher")
 set(KIRBY_QT_CXX "" CACHE FILEPATH "C++ compiler matching the Qt kit")
 if(CMAKE_HOST_WIN32 AND WIN32)

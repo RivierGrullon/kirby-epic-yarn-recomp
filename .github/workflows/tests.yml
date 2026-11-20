@@ -3,7 +3,7 @@ name: Tests
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: read
@@ -16,6 +16,23 @@ env:
   QT_QPA_PLATFORM: offscreen
 
 jobs:
+  qt-launcher:
+    name: C++ launcher (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: ./.github/actions/build-qt-launcher
+
   linux:
     name: Linux tests
     runs-on: ubuntu-24.04
@@ -57,6 +74,8 @@ jobs:
         run: python -m unittest discover -s tests -p "test_setup*.py" -v
       - name: Verify native Windows worker
         run: python -m unittest discover -s tests -p test_windows_worker.py -v
+      - name: Verify local game and launcher host installation
+        run: python -m unittest discover -s tests -p test_install_pipeline.py -v
       - name: Prepare pinned native LLVM-MinGW
         shell: pwsh
         run: |

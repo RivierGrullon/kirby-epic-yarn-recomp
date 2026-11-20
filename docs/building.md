@@ -81,4 +81,9 @@ Build the `kirby-launcher` target as usual. Its separate Qt project uses the
 kit compiler and writes `qt-launcher/` beside the original launcher entry.
 Keep this directory intact when copying a build. On Linux the Qt Widgets
 runtime and its desktop platform plugin must be available on the host.
-Source builds without a desktop kit retain the SDL launcher.
+Release builds bundle Qt and its XCB plugin; the Linux desktop still supplies
+its graphics and X11/XWayland libraries (including `libopengl0` and
+`libxcb-cursor0` on Ubuntu).
+Source builds without a desktop kit retain the SDL launcher. Release installers
+already carry the compiled Qt frontend and copy it beside the native host,
+so players do not need this SDK. Setup uses its existing PyQt environment.

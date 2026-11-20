@@ -46,3 +46,20 @@ class WindowsPackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Missing build output'):
                 package_windows.package(root, redist, output)
             self.assertEqual(output.read_bytes(), b'previous')
+
+    def test_qt_frontend_ships_with_its_platform_plugin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            redist = self.fixture(root)
+            qt = root/'build/native/qt-launcher'
+            for name in ('kirby-ui.exe', 'Qt6Widgets.dll', 'platforms/qwindows.dll',
+                         'translations/qt_es.qm', 'debug.log'):
+                path = qt/name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'fixture')
+            with patch.object(package_windows, 'check_pe'), patch.object(package_windows, 'verify_package'):
+                output = package_windows.package(root, redist)
+            with zipfile.ZipFile(output) as archive:
+                self.assertIn('qt-launcher/platforms/qwindows.dll', archive.namelist())
+                self.assertIn('qt-launcher/translations/qt_es.qm', archive.namelist())
+                self.assertNotIn('qt-launcher/debug.log', archive.namelist())

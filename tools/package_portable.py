@@ -14,6 +14,7 @@ import tempfile
 import uuid
 
 from installer.portable import PortableTools
+from installer.qt_frontend import copy_payload
 from package_toolchain import build as archive_toolchain
 from installer.toolchain_download import descriptor as read_descriptor
 
@@ -103,7 +104,7 @@ def export_tools(image, engine, runtime):
         image_id=image.removeprefix('sha256:'),files=files),indent=2)+'\n')
 
 
-def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, tools_descriptor=None):
+def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, tools_descriptor=None, qt_frontend=None):
     root, output = Path(root).resolve(), Path(output).absolute()
     if output.exists():
         raise ValueError('Package output already exists; choose a new path')
@@ -113,6 +114,7 @@ def make_appdir(root, output, image, engine, tools_output=None, tools_url=None, 
         appdir=Path(temporary)/'Kirby.AppDir';appdir.mkdir()
         revision=project_snapshot(root,appdir/'project')
         worker=appdir/'tools/runtime';worker.mkdir(parents=True)
+        copy_payload(qt_frontend or root/'build/native/qt-launcher', appdir/'tools/qt-launcher', windows=False)
         translator_revision=json.loads((root/'dependencies.json').read_text())['wiicompiled']['commit']
         if tools_descriptor is not None:
             shutil.copy2(tools_descriptor,worker/'toolchain-download.json')
@@ -182,6 +184,7 @@ def main():
     parser.add_argument('--image',default='localhost/kirby-setup-tools:pyqt')
     parser.add_argument('--engine',choices=('podman','docker'),default='podman')
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--qt-frontend',type=Path,help='Relocatable Linux Qt launcher deployment')
     tools=parser.add_mutually_exclusive_group(required=True)
     tools.add_argument('--tools-output',type=Path,help='Separate tools .tar.xz to publish once')
     tools.add_argument('--tools-descriptor',type=Path,help='Reuse a previously published tools archive descriptor')
@@ -189,7 +192,7 @@ def main():
     args=parser.parse_args()
     if args.tools_output and not args.tools_url:
         parser.error('--tools-output requires --tools-url')
-    make_appdir(ROOT,args.output,args.image,args.engine,args.tools_output,args.tools_url,args.tools_descriptor)
+    make_appdir(ROOT,args.output,args.image,args.engine,args.tools_output,args.tools_url,args.tools_descriptor,args.qt_frontend)
 
 
 if __name__ == '__main__':

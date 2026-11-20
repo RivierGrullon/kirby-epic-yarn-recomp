@@ -22,6 +22,7 @@ jobs:
           persist-credentials: false
       - name: Verify published tools descriptor and inputs
         run: python3 tools/release_toolchain.py resolve --output local/releases/tools.json
+      - uses: ./.github/actions/build-qt-launcher
       - name: Prepare packaging tools
         run: |
           sudo apt-get update
@@ -32,10 +33,13 @@ jobs:
           out=local/releases
           setup=Kirby-Setup-linux-x86_64
           mkdir -p "$out"
-          python3 tools/package_portable.py --engine docker --output "$out/$setup" --tools-descriptor "$out/tools.json"
+          python3 tools/package_portable.py --engine docker --output "$out/$setup" --tools-descriptor "$out/tools.json" --qt-frontend "$RUNNER_TEMP/qt-launcher"
           python3 tools/build_appimage.py "$out/$setup" --output "$out/$setup.AppImage"
           tar -czf "$out/$setup.tar.gz" -C "$out" "$setup"
           (cd "$out" && sha256sum "$setup.tar.gz" > "$setup.tar.gz.sha256")
+          launcher=Kirby-Launcher-linux-x86_64.tar.gz
+          tar -czf "$out/$launcher" -C "$RUNNER_TEMP" qt-launcher
+          (cd "$out" && sha256sum "$launcher" > "$launcher.sha256")
       - name: Test packaged installers
         env:
           QT_QPA_PLATFORM: offscreen
@@ -43,8 +47,11 @@ jobs:
           setup=Kirby-Setup-linux-x86_64
           local/releases/"$setup".AppImage --appimage-extract-and-run --self-test
           local/releases/"$setup".AppImage --appimage-extract-and-run --bridge-help
+          image=$(realpath local/releases/"$setup".AppImage)
+          (cd "$RUNNER_TEMP" && "$image" --appimage-extract >/dev/null && squashfs-root/tools/qt-launcher/kirby-ui --self-test)
           tar -xzf local/releases/"$setup".tar.gz -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/$setup/AppRun" --self-test
+          "$RUNNER_TEMP/$setup/tools/qt-launcher/kirby-ui" --self-test
           "$RUNNER_TEMP/$setup/Play-Kirby.sh" --bridge-help
       - name: Attach Linux installers to release
         env:
@@ -54,7 +61,9 @@ jobs:
             local/releases/Kirby-Setup-linux-x86_64.AppImage \
             local/releases/Kirby-Setup-linux-x86_64.AppImage.sha256 \
             local/releases/Kirby-Setup-linux-x86_64.tar.gz \
-            local/releases/Kirby-Setup-linux-x86_64.tar.gz.sha256
+            local/releases/Kirby-Setup-linux-x86_64.tar.gz.sha256 \
+            local/releases/Kirby-Launcher-linux-x86_64.tar.gz \
+            local/releases/Kirby-Launcher-linux-x86_64.tar.gz.sha256
 
   windows:
     name: Windows x86_64 setup
@@ -71,19 +80,35 @@ jobs:
           architecture: x64
       - name: Install setup dependencies
         run: python -m pip install -r tools/requirements-setup.txt
+      - uses: ./.github/actions/build-qt-launcher
       - name: Build and test Windows setup
-        run: python tools/windows/package_setup.py --output local/releases/Kirby-Setup-windows-x86_64
-      - name: Create Windows ZIP checksum
+        run: python tools/windows/package_setup.py --output local/releases/Kirby-Setup-windows-x86_64 --qt-frontend "$env:RUNNER_TEMP/qt-launcher"
+      - name: Archive the Windows launcher and checksum both ZIPs
         working-directory: local/releases
         shell: pwsh
         run: |
-          $archive = "Kirby-Setup-windows-x86_64.zip"
-          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
+          $launcher = "Kirby-Launcher-windows-x86_64.zip"
+          Compress-Archive -LiteralPath "$env:RUNNER_TEMP/qt-launcher" -DestinationPath $launcher
+          foreach ($archive in @("Kirby-Setup-windows-x86_64.zip", $launcher)) {
+            $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
+          }
+      - name: Smoke-test the frontend from the extracted ZIP
+        shell: pwsh
+        run: |
+          $folder = 'Kirby-Setup-windows-x86_64'
+          $unpack = Join-Path $env:RUNNER_TEMP 'setup-zip-test'
+          Expand-Archive "local/releases/$folder.zip" $unpack
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:PATH = "$env:SystemRoot\System32"
+          $exe = Join-Path $unpack "$folder/tools/qt-launcher/kirby-ui.exe"
+          exit (Start-Process $exe -ArgumentList '--self-test' -Wait -PassThru).ExitCode
       - name: Attach Windows setup to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$env:RELEASE_TAG" --clobber `
             local/releases/Kirby-Setup-windows-x86_64.zip `
-            local/releases/Kirby-Setup-windows-x86_64.zip.sha256
+            local/releases/Kirby-Setup-windows-x86_64.zip.sha256 `
+            local/releases/Kirby-Launcher-windows-x86_64.zip `
+            local/releases/Kirby-Launcher-windows-x86_64.zip.sha256

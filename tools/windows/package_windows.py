@@ -16,14 +16,15 @@ from installer.verification import check_pe
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = Path('local/releases/Kirby-Windows-x64.zip')
-REQUIRED = ('kirby-launcher.exe', 'WiiCompiled.exe', 'dsp_coef.bin',
+REQUIRED = ('kirby-launcher.exe', 'launcher-ui.ttf', 'WiiCompiled.exe', 'dsp_coef.bin',
             'SDL3.dll', 'webgpu_dawn.dll', 'dxcompiler.dll', 'dxil.dll', 'libc++.dll', 'libunwind.dll')
 README = """Kirby's Epic Yarn - Windows x64
 
 1. Extract the entire ZIP into a writable folder (do not run inside the ZIP).
 2. On a new PC, run vc_redist.x64.exe once to install Microsoft's runtime.
-3. Open kirby-launcher.exe. Under Install, choose your extracted DATA folder.
-4. Open Play and press Play.
+3. Open kirby-launcher.exe. Choose your extracted DATA folder when prompted.
+4. Return to the home page and press Play. Language, fullscreen and volume
+   are under Basic settings (基本设置).
 
 Only RK5E01 Rev 0 (USA) is supported. Game assets are not included.
 To extract a WBFS, run tools/windows/build-windows.ps1 with your WBFS in the source checkout;
@@ -69,6 +70,20 @@ def package(root, redist, output=None):
         check_pe(files[name])
     for path in build.glob('*.dll'):
         files[path.name] = path
+    qt = build / 'qt-launcher'
+    if qt.is_dir():
+        for required in ('kirby-ui.exe', 'Qt6Widgets.dll', 'platforms/qwindows.dll'):
+            if not (qt / required).is_file():
+                raise ValueError(f'Incomplete Qt launcher deployment: {required}')
+        for path in qt.rglob('*'):
+            relative = path.relative_to(qt)
+            if path.is_file() and not path.is_symlink() and (
+                relative.as_posix() in ('kirby-ui.exe', 'qt.conf') or
+                path.suffix.lower() == '.dll' or
+                (relative.parts[0] == 'translations' and path.suffix == '.qm') or
+                relative.parts[0] == 'licenses'
+            ):
+                files[path.relative_to(build).as_posix()] = path
     if (build / 'initial_pipeline_cache.db').is_file():
         files['initial_pipeline_cache.db'] = build / 'initial_pipeline_cache.db'
     files['vc_redist.x64.exe'] = redist

@@ -3,6 +3,7 @@ import hashlib
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -45,8 +46,9 @@ class Tools:
                 raise AssertionError('The install worker must also build the launcher')
             layout.build.mkdir(exist_ok=True)
             (layout.build/('kirby-launcher.exe' if pipeline.WINDOWS else 'kirby-launcher')).write_bytes(b'launcher')
-            (layout.build/'WiiCompiled').write_bytes(b'synthetic native output')
-            (layout.build/'WiiCompiled').chmod(0o700)
+            game=layout.build/pipeline.executable_name()
+            game.write_bytes(b'synthetic native output')
+            game.chmod(0o700)
             (layout.build/'dsp_coef.bin').write_bytes(bytes(4096))
     def verify(self,executable,data,identity):
         if self.fail=='verify':raise ValueError('Synthetic verification failed')
@@ -79,6 +81,7 @@ class InstallPipelineTests(unittest.TestCase):
         verify_launcher.start();self.addCleanup(verify_launcher.stop)
         self.tools=Tools(self.root)
         self.store=InstallationStore(self.root)
+        self.launcher_name='kirby-launcher.exe' if pipeline.WINDOWS else 'kirby-launcher'
         self.events=[]
         self.saved=self.root/'local/user/settings.toml';self.saved.parent.mkdir(parents=True);self.saved.write_bytes(b'keep settings')
     def job(self,identifier):return Job(self.root/'local/setup',identifier,self.events.append)
@@ -91,13 +94,13 @@ class InstallPipelineTests(unittest.TestCase):
         self.assertEqual(self.store.read_active()['current'],identifier)
         self.assertEqual(self.store.executable(identifier).read_bytes(),b'synthetic native output')
         self.assertEqual(self.saved.read_bytes(),b'keep settings')
-        (self.root/'build/native/kirby-launcher').unlink()
+        (self.root/'build/native'/self.launcher_name).unlink()
         self.tools.fail='compile'
         with self.job('second') as job:
             repeated=execute_install(job,self.root,self.source,services=self.tools)
         self.assertEqual(repeated['installation_id'],identifier)
         self.assertTrue(repeated['build_reused'])
-        self.assertEqual((self.root/'build/native/kirby-launcher').read_bytes(),b'launcher')
+        self.assertEqual((self.root/'build/native'/self.launcher_name).read_bytes(),b'launcher')
 
     def test_failed_rebuild_keeps_previous_selection_and_configuration(self):
         with self.job('first') as job:execute_install(job,self.root,self.source,services=self.tools)
@@ -111,12 +114,12 @@ class InstallPipelineTests(unittest.TestCase):
     def test_missing_cached_launcher_rebuilds_without_retranslation(self):
         with self.job('first') as job:
             execute_install(job,self.root,self.source,services=self.tools)
-        next((self.root/'local/setup/builds').glob('cache-*/build/kirby-launcher')).unlink()
+        next((self.root/'local/setup/builds').glob('cache-*/build/'+self.launcher_name)).unlink()
         with self.job('repair') as job:
             result=execute_install(job,self.root,self.source,services=self.tools)
         self.assertTrue(result['translation_reused'])
         self.assertFalse(result['build_reused'])
-        self.assertTrue((self.root/'build/native/kirby-launcher').is_file())
+        self.assertTrue((self.root/'build/native'/self.launcher_name).is_file())
 
     def test_native_verification_failure_never_selects_an_executable(self):
         self.tools.fail='verify'
@@ -130,7 +133,7 @@ class InstallPipelineTests(unittest.TestCase):
         previous=self.store.read_active()
         self.tools.record['source_sha256']='d'*64
         def fail_launcher(job,root,build,identity):
-            self.assertTrue((build/'WiiCompiled').is_file())
+            self.assertTrue((build/pipeline.executable_name()).is_file())
             self.assertEqual(identity['source_sha256'],'d'*64)
             raise ValueError('Launcher unavailable')
         with patch.object(pipeline,'install_launcher',side_effect=fail_launcher), self.job('launcher-failed') as job,self.assertRaisesRegex(ValueError,'Launcher unavailable'):
@@ -167,7 +170,7 @@ class InstallPipelineTests(unittest.TestCase):
 
     def test_corrupt_cached_output_is_rebuilt_instead_of_selected(self):
         with self.job('first') as job:execute_install(job,self.root,self.source,services=self.tools)
-        executable=next((self.root/'local/setup/builds').glob('cache-*/build/WiiCompiled'))
+        executable=next((self.root/'local/setup/builds').glob('cache-*/build/'+pipeline.executable_name()))
         executable.write_bytes(b'corrupted cache output')
         with self.job('repair') as job:
             result=execute_install(job,self.root,self.source,services=self.tools)
@@ -191,7 +194,6 @@ class InstallPipelineTests(unittest.TestCase):
                 self.assertEqual(arguments[arguments.index('--target')+1],'windows')
                 stage=self.root/arguments[arguments.index('--stage-root')+1]
                 output=stage/'build'
-                (output/'WiiCompiled').rename(output/'WiiCompiled.exe')
                 (output/'dependency.DLL').write_bytes(b'Windows runtime dependency')
             return result
         def verify(executable,data,identity):
@@ -221,16 +223,19 @@ class InstallPipelineTests(unittest.TestCase):
 
     def test_worker_routes_install_and_emits_selection_only_after_success(self):
         output=io.StringIO()
-        with tempfile.TemporaryFile(mode='w+') as request:
-            request.write(json.dumps(dict(version=1,id='worker-install',operation='install',source=str(self.data)))+'\n')
-            request.seek(0)
+        read_fd,write_fd=os.pipe()
+        with os.fdopen(read_fd,'r') as request:
+            with os.fdopen(write_fd,'w') as sender:
+                sender.write(json.dumps(dict(version=1,id='worker-install',operation='install',source=str(self.data)))+'\n')
             def execute(job,root,source):
                 return execute_install(job,root,source,services=self.tools)
             with (patch.object(sys,'argv',['install.py','--workspace',str(self.root/'local/setup')]),
                   patch.object(sys,'stdin',request),patch.object(worker,'ROOT',self.root),
+                  patch.object(worker.WindowsTools,'prepare') as prepare_tools,
                   patch.object(worker.signal,'signal'),patch.object(worker,'inspect_source',return_value=self.source),
                   patch.object(worker,'execute_install',side_effect=execute),contextlib.redirect_stdout(output)):
-                self.assertEqual(worker.main(),0)
+                prepare_tools.return_value.environment.return_value=dict(os.environ)
+                self.assertEqual(worker.main(),0,output.getvalue())
         events=[json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual([event['sequence'] for event in events],list(range(1,len(events)+1)))
         self.assertEqual((events[-1]['stage'],events[-1]['state']),('install','complete'))
