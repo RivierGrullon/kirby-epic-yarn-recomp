@@ -1,5 +1,7 @@
 # Kirby's Epic Yarn Recompiled
 
+<a href="https://recomplauncher.com/game/kirby-epic-yarn-recomp"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
+
 **A native recompilation of Kirby's Epic Yarn for Windows and Linux (x86-64), built with
 [WiiCompiled](https://github.com/patchzyy/Wiicompiled) and
 [Aurora](https://github.com/patchzyy/aurora-wiicompiled).**

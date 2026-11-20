@@ -145,6 +145,11 @@ class ReleaseToolchainTests(unittest.TestCase):
             with self.subTest(name=name):
                 release.validate_release(self.game_release(assets=[{'name': name}]), 'v0.2.0')
 
+    def test_target_release_accepts_versioned_game_installer(self):
+        for name in ('Kirby-Setup-0.2.0-linux-x86_64.AppImage', 'Kirby-Setup-0.2.0-windows-x86_64.zip'):
+            with self.subTest(name=name):
+                release.validate_release(self.game_release(assets=[{'name': name}]), 'v0.2.0')
+
     def test_target_release_rejects_wrong_tag_or_missing_installer(self):
         for record in (self.game_release(tag_name='v0.1.0'), self.game_release(assets=[]),
                        self.game_release(assets=[{'name': 'source.zip'}])):

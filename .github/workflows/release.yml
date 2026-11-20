@@ -54,11 +54,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "$RELEASE_TAG" --clobber \
-            local/releases/Kirby-Setup-linux-x86_64.AppImage \
-            local/releases/Kirby-Setup-linux-x86_64.AppImage.sha256 \
-            local/releases/Kirby-Setup-linux-x86_64.tar.gz \
-            local/releases/Kirby-Setup-linux-x86_64.tar.gz.sha256
+          # The version goes in the uploaded names, so a downloaded file says which release it is.
+          # Checksums are made again here because each one names its file.
+          version="${RELEASE_TAG#v}"
+          if [[ ! "$version" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Tag $RELEASE_TAG can't be used in a file name" >&2
+            exit 1
+          fi
+          cd local/releases
+          files=()
+          for kind in AppImage tar.gz; do
+            name="Kirby-Setup-$version-linux-x86_64.$kind"
+            mv "Kirby-Setup-linux-x86_64.$kind" "$name"
+            sha256sum "$name" > "$name.sha256"
+            files+=("$name" "$name.sha256")
+          done
+          gh release upload "$RELEASE_TAG" --clobber "${files[@]}"
 
   windows:
     name: Windows x86_64 setup
@@ -99,6 +110,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "$env:RELEASE_TAG" --clobber `
-            local/releases/Kirby-Setup-windows-x86_64.zip `
-            local/releases/Kirby-Setup-windows-x86_64.zip.sha256
+          # The version goes in the uploaded name, as on Linux; the checksum names its file.
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          if ($version -notmatch '^[A-Za-z0-9._-]+$') { throw "Tag $env:RELEASE_TAG can't be used in a file name" }
+          Set-Location local/releases
+          $archive = "Kirby-Setup-$version-windows-x86_64.zip"
+          Move-Item Kirby-Setup-windows-x86_64.zip $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
+          gh release upload "$env:RELEASE_TAG" --clobber $archive "$archive.sha256"

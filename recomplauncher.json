@@ -6,7 +6,8 @@
   "name": "Kirby's Epic Yarn Recompiled",
   "game": {
     "kind": "iso_or_folder",
-    "label": "Your own USA Wii copy, RK5E01 revision 0: .iso, .wbfs, .rvz, .7z, or a complete extracted DATA folder. Kirby Setup verifies sys/main.dol, not the whole-disc hash."
+    "label": "Your own USA Wii copy, RK5E01 revision 0: .iso, .wbfs, .rvz, .7z, or a complete extracted DATA folder. Kirby Setup verifies sys/main.dol, not the whole-disc hash.",
+    "check": {"ids": ["RK5E01"]}
   },
   "start": {
     "program": ["Kirby-Bridge.exe", "Kirby-Setup-linux-x86_64.AppImage", "AppRun"],
@@ -56,11 +57,35 @@
         {"label": "8x", "set": {"video/resolution_scale": "8"}}
       ],
       "defaults": {"video/resolution_scale": "1"}
+    },
+    {
+      "id": "antialiasing", "label": "Anti-aliasing",
+      "help": "Smooths jagged edges. MSAA keeps detail sharp; FXAA is cheaper but can soften fine detail.",
+      "choices": [
+        {"label": "Off", "set": {"video/msaa_samples": "1", "video/fxaa": "false"}},
+        {"label": "FXAA", "set": {"video/msaa_samples": "1", "video/fxaa": "true"}},
+        {"label": "4x MSAA", "set": {"video/msaa_samples": "4", "video/fxaa": "false"}},
+        {"label": "4x MSAA + FXAA", "set": {"video/msaa_samples": "4", "video/fxaa": "true"}}
+      ],
+      "defaults": {"video/msaa_samples": "1", "video/fxaa": "false"}
+    },
+    {
+      "id": "performance", "label": "Experimental performance mode",
+      "help": "Keeps more graphics work on the GPU for smoother play. Turn it off if something looks wrong.",
+      "choices": [
+        {"label": "On", "set": {"kirby/gpu_resident_copies": "true"}},
+        {"label": "Off", "set": {"kirby/gpu_resident_copies": "false"}}
+      ],
+      "defaults": {"kirby/gpu_resident_copies": "true"}
     }
   ],
   "folders": {
     "game": [{"path": "{install}/Game"}],
     "logs": [{"path": "{install}/Game/logs"}],
     "saves": [{"path": "{install}/Game/local/user/nand/title/00010000/524b3545/data"}]
+  },
+  "exit_codes": {
+    "20": "Kirby isn't set up yet, or its build is missing. Set it up again from the game's page.",
+    "21": "Kirby Bridge couldn't start the game. Its files may be incomplete: reinstall it from the game's page."
   }
 }

@@ -11,9 +11,14 @@ import sys
 from .installations import InstallationStore, read_json
 from .platforms import WINDOWS, host_environment, is_link
 from .setup_layout import _atomic, prepare_destination, update_settings_data
-from .setup_model import Session, STAGES
+from .setup_model import PHASES, Session, STAGES
 
 MARKER = 'kirby-managed.json'
+KEPT_LOGS = 5
+
+
+class NotSetUp(ValueError):
+    """There is no verified build to play: setup never finished, or its files are gone."""
 
 
 def publish(root, destination, data_root):
@@ -36,17 +41,19 @@ def publish(root, destination, data_root):
 
 def selection(destination):
     destination = Path(destination).resolve()
+    if not (destination/MARKER).is_file():
+        raise NotSetUp('Run Kirby Setup before playing')
     value = read_json(destination/MARKER)
     relative = value.get('project') if isinstance(value, dict) else None
     if not isinstance(value, dict) or value.get('version') != 1 or not isinstance(relative, str) or not re.fullmatch(r'\.kirby/[a-f0-9]{12}', relative):
-        raise ValueError('Invalid managed installation selection')
+        raise NotSetUp('Invalid managed installation selection')
     root = destination/relative
     if root.resolve() != root or is_link(root.parent) or is_link(root):
         raise ValueError('Managed build must not be a link')
     store = InstallationStore(root)
     active = store.read_active()
     if not active:
-        raise ValueError('Run Kirby Setup before playing')
+        raise NotSetUp('Run Kirby Setup before playing')
     manifest = store.manifest(active['current'])
     return root, store.executable(active['current']), manifest
 
@@ -88,6 +95,15 @@ def restore_signals(previous):
         signal.signal(number, handler)
 
 
+def setup_fraction(session):
+    # Each of the setup screen's five phases is an equal share, filled by the current stage's own
+    # progress. It stays below 1 until the build is published, so a bar never looks done early.
+    if session.phase is None:
+        return 0.0
+    within = (session.progress or 0)/100
+    return min(0.99, (session.phase+within)/len(PHASES))
+
+
 def prepare(bundle, destination, source):
     source = Path(source).expanduser().absolute()
     if not source.exists():
@@ -103,6 +119,7 @@ def prepare(bundle, destination, source):
     environment = host_environment()
     environment['KIRBY_PROJECT_ROOT'] = str(root)
     session = None
+    shown = 0.0
     with subprocess.Popen(command, cwd=root, env=environment, stdin=subprocess.DEVNULL,
                           stdout=subprocess.PIPE) as process:
         previous = wait_for(process)
@@ -117,7 +134,9 @@ def prepare(bundle, destination, source):
                 label = STAGES[event['stage']]
                 if session.progress is not None:
                     label += ' ('+session.progress_text+')'
-                print('progress 0 '+label, flush=True)
+                # A stage's own count restarts (download, then unpack): never move the bar back.
+                shown = max(shown, setup_fraction(session))
+                print(f'progress {shown:.2f} {label}', flush=True)
             code = process.wait()
         except BaseException:
             process.terminate()
@@ -138,10 +157,20 @@ def prepare(bundle, destination, source):
     print('progress 1 Ready to play', flush=True)
 
 
+def keep_older_logs(logs):
+    # The run before a crash often explains it, so keep the last few logs: game.1.log is the
+    # previous run, up to game.4.log. The oldest is dropped.
+    for number in range(KEPT_LOGS-1, 0, -1):
+        newer = logs/('game.log' if number == 1 else f'game.{number-1}.log')
+        if newer.is_file():
+            os.replace(newer, logs/f'game.{number}.log')
+
+
 def play(destination, extra=(), *, libraries=None):
     command, environment, working = play_command(destination, extra, libraries=libraries)
     logs = working/'logs'
     logs.mkdir(exist_ok=True)
+    keep_older_logs(logs)
     with (logs/'game.log').open('w', encoding='utf-8') as log:
         with subprocess.Popen(command, cwd=working, env=environment, stdout=log, stderr=subprocess.STDOUT) as process:
             previous = wait_for(process)

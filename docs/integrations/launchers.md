@@ -35,7 +35,8 @@ existing installation locally, but doing so does not submit it to the public cat
 RecompLauncher explicitly supports a console preparation program. The bridge reuses
 Kirby's existing verified worker instead of implementing another build pipeline.
 The initial profile targets RecompLauncher **0.90.0-beta.65 or newer**, the SDK inspected here.
-It prints setup stage/progress text and returns nonzero on failure. The release
+It prints `progress <fraction> <stage>` lines, where each of setup's five phases is an
+equal fifth that never moves back, and returns nonzero on failure. The release
 packagers stamp `prepare.version` with the exact source revision so updates rebuild
 from the player's copy. The source template alone does not enable released builds.
 
@@ -64,11 +65,17 @@ developers can use `python3 tools/launcher_bridge.py` with the same options.
 No host Python, Qt, compiler or container installation is needed by packaged users.
 The existing worker still rejects unsupported revisions before compiling them.
 
+The bridge's own errors have their own exit codes, apart from the game's (0 to 2):
+**20** when there is no verified build to play yet, and **21** for anything else,
+such as an incomplete release folder or a failed setup. The reason goes to stderr.
+
 Run `Kirby-Bridge.exe` or `Play-Kirby.sh` without options for first-use setup and
 subsequent play. Set the library's executable to that entry, not the setup GUI or
 worker. In Quiver, choose the **Linux tarball** for this flow: the AppImage's normal
 entry intentionally stays an installer. Do not filter Windows onto the Linux build.
 Catalog preferred programs are `Kirby-Bridge.exe` (Windows) and `Play-Kirby.sh` (Linux).
+Release files carry their version (`Kirby-Setup-0.1.5-windows-x86_64.zip`), so a
+catalog entry that names a release file should match it by pattern, not exact name.
 
 Managed data relative to the release folder:
 
@@ -77,7 +84,7 @@ Managed data relative to the release folder:
 | Current verified build selection | `Game/kirby-managed.json` |
 | Settings | `Game/local/user/settings.toml` |
 | Wii save data | `Game/local/user/nand/title/00010000/524b3545/data/` |
-| Game log | `Game/logs/game.log` |
+| Game log | `Game/logs/game.log`; the four runs before it as `game.1.log` (newest) to `game.4.log` |
 | Authored source/build workspace per revision | `Game/.kirby/<source-revision-prefix>/` |
 
 The runtime starts with `Game` as its working directory, keeping saves and settings

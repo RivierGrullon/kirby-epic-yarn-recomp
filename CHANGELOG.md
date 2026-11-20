@@ -11,6 +11,16 @@
   verified installation worker, keep managed saves/settings stable across builds,
   and document Quiver and Decomp Buddy catalog requirements. External launcher
   end-to-end compatibility still requires release/hardware verification.
+- Report real setup progress from the bridge's `--prepare`, so a launcher's bar
+  moves through the five setup phases instead of staying at zero.
+- Give the bridge's own errors exit codes 20 (not set up yet) and 21 (anything
+  else), apart from the game's, so launchers can say what went wrong.
+- Keep the four previous game logs as `game.1.log` to `game.4.log` when playing
+  through the bridge.
+- Put the version in release file names, like
+  `Kirby-Setup-0.1.5-linux-x86_64.AppImage`.
+- RecompLauncher profile: find the disc by its RK5E01 ID, add anti-aliasing and
+  experimental performance mode, and explain the bridge's exit codes.
 
 ## 0.1.0-alpha.1 - 2026-11-16
 

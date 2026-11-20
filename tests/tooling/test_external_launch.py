@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
+import contextlib
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -90,6 +92,35 @@ class ExternalLaunchTests(unittest.TestCase):
         self.assertIn(str(self.destination),log)
         self.assertIn('--config',log)
 
+    @unittest.skipIf(os.name=='nt','POSIX synthetic executable')
+    def test_play_moves_the_previous_log_aside(self):
+        self.install()
+        logs=self.destination/'logs';logs.mkdir()
+        (logs/'game.log').write_text('previous run')
+        external.play(self.destination)
+        self.assertEqual((logs/'game.1.log').read_text(),'previous run')
+        self.assertIn('--config',(logs/'game.log').read_text())
+
+    def test_only_the_last_five_logs_are_kept(self):
+        logs=self.base/'logs';logs.mkdir()
+        names=['game.log',*(f'game.{number}.log' for number in range(1,5))]
+        for name in names:(logs/name).write_text(name)
+        external.keep_older_logs(logs)
+        self.assertEqual((logs/'game.4.log').read_text(),'game.3.log')
+        self.assertEqual((logs/'game.1.log').read_text(),'game.log')
+        self.assertFalse((logs/'game.log').exists())
+        self.assertFalse((logs/'game.5.log').exists())
+
+    def test_bridge_exits_with_its_own_code_when_nothing_is_set_up(self):
+        command=[sys.executable,str(REPO/'tools/launcher_bridge.py'),'--play','--destination',str(self.destination)]
+        result=subprocess.run(command,capture_output=True,text=True)
+        self.assertEqual(result.returncode,20,result.stderr)
+        self.assertIn('Run Kirby Setup before playing',result.stderr)
+
+    def test_profile_explains_the_bridge_exit_codes(self):
+        profile=json.loads((REPO/'recomplauncher.json').read_text())
+        self.assertEqual(sorted(profile['exit_codes']),['20','21'])
+
     @unittest.skipIf(os.name=='nt','Linux shared-library search path')
     def test_bridge_uses_package_libraries_for_an_existing_installation(self):
         root,_,_=self.install()
@@ -137,6 +168,23 @@ class ExternalLaunchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'Synthetic build failure'):
                 external.prepare(bundle,self.destination,source)
             publish.assert_not_called()
+
+    def test_prepare_reports_setup_progress_that_never_moves_back(self):
+        root=self.base/'workspace';(root/'tools').mkdir(parents=True)
+        source=self.base/'own.iso';source.touch()
+        events=[dict(stage='prepare',state='progress',completed=50,total=100),
+                dict(stage='prepare',state='progress',completed=10,total=100),
+                dict(stage='compile',state='progress',completed=1,total=2,unit='tasks'),
+                dict(stage='install',state='failed',error='Synthetic build failure')]
+        lines=[json.dumps(dict(event,version=1,job_id='test',sequence=number)) for number,event in enumerate(events,1)]
+        (root/'tools/install.py').write_text('import sys\nprint('+repr('\n'.join(lines))+',flush=True)\nsys.exit(1)\n')
+        bundle=Bundle(root,self.base/'runtime',self.base/'libs','a'*40)
+        output=io.StringIO()
+        with patch.object(external,'prepare_destination',return_value=root),contextlib.redirect_stdout(output):
+            with self.assertRaisesRegex(ValueError,'Synthetic build failure'):
+                external.prepare(bundle,self.destination,source)
+        fractions=[line.split()[1] for line in output.getvalue().splitlines()]
+        self.assertEqual(fractions,['0.10','0.10','0.70','0.70'])
 
     @unittest.skipIf(os.name=='nt','POSIX AppRun dispatch')
     def test_apprun_keeps_normal_setup_and_dispatches_bridge_flags_literally(self):
