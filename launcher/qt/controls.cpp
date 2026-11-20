@@ -154,7 +154,8 @@ bool Window::preview(const QString& directory) {
     if(!directory.isEmpty() && !QDir().mkpath(directory))return false;
     ready=true;model={{"installed",true},{"verified",true},{"data","disc/DATA"},{"saves","local/user/nand/title/00010000/524b3545/data"},
         {"executable","WiiCompiled"},{"settings","local/user/settings.toml"},{"build",QJsonObject{{"revision","preview"},{"compiler","C++"}}}};
-    config={{"scale",1},{"aa",0},{"volume",80},{"pointer",1},{"tilt",true},{"gain",1},{"sensitivity",1.5}};
+    config={{"scale",1},{"aa",0},{"volume",80},{"pointer",1},{"tilt",true},{"gain",1},{"sensitivity",1.5},
+            {"stick",.5},{"trigger",.5}};
     QJsonArray rows;
     rows.append(QJsonArray{"Move up","D-pad Up","Up"});rows.append(QJsonArray{"Jump / Confirm","South (A / Cross)","Space"});
     model["bindings"]=rows;show();

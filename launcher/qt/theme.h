@@ -4,6 +4,7 @@
 #include <QFrame>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QPushButton>
 #include <QIcon>
 #include <QPixmap>
@@ -53,6 +54,12 @@ class FabricCombo : public QComboBox {
 public:
     FabricCombo();
     QSize sizeHint() const override;
+protected:
+    void paintEvent(QPaintEvent*) override;
+};
+class FabricSpinBox : public QDoubleSpinBox {
+public:
+    FabricSpinBox();
 protected:
     void paintEvent(QPaintEvent*) override;
 };

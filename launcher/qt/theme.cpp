@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QListView>
 #include <QStyledItemDelegate>
+#include <QStyleOptionSpinBox>
 #include <cmath>
 
 namespace Yarn {
@@ -141,6 +142,16 @@ QSlider::handle:horizontal {background:#c67691;border:2px solid #f8e0e5;width:15
 QToolTip {background:#fff9ea;color:#38463d;border:1px solid #c3baa2;padding:5px;}
 QComboBox QAbstractItemView {background:#fffaf0;selection-background-color:#efd1d9;selection-color:#423e39;}
 QComboBox::drop-down {border:0;width:24px;}
+QDoubleSpinBox#fabricNumber, QDoubleSpinBox#fabricNumber:focus {
+    background:transparent;border:0;padding:5px 34px;min-height:30px;
+}
+QDoubleSpinBox#fabricNumber::down-button {
+    subcontrol-origin:border;subcontrol-position:center left;left:5px;width:26px;height:28px;
+}
+QDoubleSpinBox#fabricNumber::up-button {
+    subcontrol-origin:border;subcontrol-position:center right;right:5px;width:26px;height:28px;
+}
+QDoubleSpinBox#fabricNumber QLineEdit {background:transparent;border:0;padding:0;}
 QPlainTextEdit {background:#f5f4e9;border:1px solid #d8d5c6;border-radius:9px;padding:8px;}
 QTabBar::tab {background:#edeedc;border-radius:8px;padding:7px 15px;margin-right:5px;}
 QTabBar::tab:selected {background:#f0d3de;color:#713e50;}
@@ -239,6 +250,47 @@ void FabricCombo::paintEvent(QPaintEvent*) {
     p.drawPolyline(QPolygonF{{c.x()-4,c.y()-1.5},{c.x(),c.y()+2.5},{c.x()+4,c.y()-1.5}});
     auto space=r.adjusted(13,0,-32,0);p.setPen(QColor("#405347"));
     p.drawText(space,Qt::AlignVCenter,p.fontMetrics().elidedText(currentText(),Qt::ElideRight,int(space.width())));
+}
+FabricSpinBox::FabricSpinBox() {
+    setObjectName("fabricNumber");
+    setAlignment(Qt::AlignCenter);
+    setButtonSymbols(QAbstractSpinBox::PlusMinus);
+    setMinimumWidth(136);
+    setAttribute(Qt::WA_Hover);
+}
+
+void FabricSpinBox::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    const QRectF cloth=QRectF(rect()).adjusted(1,1,-1,-2);
+    p.setBrush(isEnabled()?QColor("#fffcf1"):QColor("#eeeae0"));
+    p.setPen(QPen(hasFocus()?QColor("#b4778d"):QColor("#cbc2aa"),hasFocus()?2:1));
+    p.drawRoundedRect(cloth,10,10);
+    stitch(p,cloth.adjusted(4,4,-4,-4),QColor("#d9cfb8"),7);
+
+    // Draw over Qt's native step-button regions; Qt handles clicks, repeats and the editor.
+    QStyleOptionSpinBox opt;
+    initStyleOption(&opt);
+    for (auto side : {QStyle::SC_SpinBoxDown,QStyle::SC_SpinBoxUp}) {
+        const QRect hit=style()->subControlRect(QStyle::CC_SpinBox,&opt,side,this);
+        const bool plus=side==QStyle::SC_SpinBoxUp;
+        const bool enabled=isEnabled() && opt.stepEnabled.testFlag(plus?StepUpEnabled:StepDownEnabled);
+        QColor fill(plus?"#d4e7d7":"#f1d6de");
+        if (!enabled) fill=QColor("#e6e4d9");
+        else if (opt.activeSubControls.testFlag(side) && opt.state.testFlag(QStyle::State_Sunken))
+            fill=fill.darker(112);
+        else if (underMouse() && hit.contains(mapFromGlobal(QCursor::pos()))) fill=fill.darker(105);
+        const QPointF c=QRectF(hit).center();
+        p.setPen(QPen(fill.darker(120),1));
+        p.setBrush(fill);
+        p.drawEllipse(c,10.5,10.5);
+        p.setBrush(Qt::NoBrush);
+        p.drawEllipse(c,8,8);
+        const QColor ink=enabled?QColor(plus?"#41674c":"#81485d"):QColor("#a4a397");
+        p.setPen(QPen(ink,1.8,Qt::SolidLine,Qt::RoundCap));
+        p.drawLine(c+QPointF(-3.5,0),c+QPointF(3.5,0));
+        if (plus) p.drawLine(c+QPointF(0,-3.5),c+QPointF(0,3.5));
+    }
 }
 LibraryCard::LibraryCard(Page image,QString title,QString description)
     :QPushButton(title),illustration(image),caption(std::move(description)) {

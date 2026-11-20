@@ -248,7 +248,7 @@ QComboBox* Window::select(QVBoxLayout* owner,const char* key,const char* title,c
     connect(c,&QComboBox::activated,this,[this,key,values](int i){patch(key,values.at(i));});return c;
 }
 void Window::number(QVBoxLayout* owner,const char* key,const char* title,double low,double high,double step,const char* tip) {
-    auto* n=new QDoubleSpinBox;n->setDecimals(step<.01?3:2);n->setRange(low,high);n->setSingleStep(step);
+    auto* n=new FabricSpinBox;n->setDecimals(step<.01?3:2);n->setRange(low,high);n->setSingleStep(step);
     n->setValue(config[key].toDouble());n->setKeyboardTracking(false);
     row(owner,T(title),n,tip);tracked(n);
     connect(n,&QDoubleSpinBox::valueChanged,this,[this,key](double v){patch(key,v);});
