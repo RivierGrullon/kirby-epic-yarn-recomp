@@ -5,6 +5,7 @@
 #include "platform.h"
 #include "setup/installation.h"
 #include "setup/handoff.h"
+#include "save_manager.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <map>
@@ -179,6 +180,20 @@ int DesktopService(State& s,
                     s.config=std::move(next); s.settingsDirty=false;
                 }
                 s.dataVerified=verify(s.config.gameData,s.dataStatus);
+            } else if (command=="importSave") {
+                if (s.gameRunning) throw std::runtime_error("Game running");
+                s.saveImportStatus=ImportSave(s.root,FromUtf8(request.at("path").get<std::string>()));
+            } else if (command=="exportSave") {
+                if (s.gameRunning) throw std::runtime_error("Game running");
+                const auto path=FromUtf8(request.at("path").get<std::string>());
+                s.saveImportStatus = request.value("folder",false) ? ExportSaveFolder(s.root,path)
+                                                                   : ExportSaveBin(s.root,path);
+            } else if (command=="restoreBackup") {
+                if (s.gameRunning) throw std::runtime_error("Game running");
+                s.saveImportStatus=RestoreBackup(s.root,request.at("name").get<std::string>());
+            } else if (command=="deleteBackup") {
+                if (s.gameRunning) throw std::runtime_error("Game running");
+                s.saveImportStatus=DeleteBackup(s.root,request.at("name").get<std::string>());
             } else if (command=="setup") {
                 if (s.gameRunning) throw std::runtime_error("Game running");
                 const auto args=Setup::ReadSetupCommand(s.root);
@@ -220,12 +235,16 @@ int DesktopService(State& s,
                 bindings.push_back({Kirby::GameActions[i].label,Kirby::GamepadBindingLabel(s.config.controls.gamepad[i]),
                     s.config.controls.keyboard[i]=="disabled"?"Unmapped":s.config.controls.keyboard[i]});
             }
+            Json backups=Json::array();
+            for (const auto& backup : ListBackups(s.root))
+                backups.push_back({{"name",backup.name},{"timestamp",backup.timestamp}});
             Json state={{"config",Config(s.config)},{"bindings",bindings},{"lang",int(CurrentLanguage())},
                 {"dirty",s.settingsDirty},{"running",s.gameRunning},{"gameStatus",s.gameStatus},
                 {"verified",s.dataVerified},{"dataStatus",s.dataStatus},{"settingsError",s.settingsError},
                 {"installationError",s.installationError},{"installed",std::filesystem::is_regular_file(s.executable)},
                 {"data",Utf8(s.config.gameData)},{"settings",Utf8(s.settingsFile)},{"executable",Utf8(s.executable)},
                 {"saves",Utf8(saves)},{"saveFound",std::filesystem::is_regular_file(saves/"FLF.bin")},
+                {"saveImportStatus",s.saveImportStatus},{"backups",std::move(backups)},
                 {"setupAvailable",std::filesystem::is_regular_file(s.root/"local/setup-command.json")},
                 {"build",Build(s.launcherBuild)},{"runtime",s.runtimeBuild?Build(*s.runtimeBuild):Json(nullptr)},
                 {"match",s.runtimeBuild && Kirby::SameBuildInputs(s.launcherBuild,*s.runtimeBuild)},

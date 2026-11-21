@@ -28,7 +28,7 @@ private:
     QWidget *footer{},*sheet{};
     QVBoxLayout *pages{};
     QScrollArea* scroll{};
-    QLabel *brand{},*message{},*saved{},*gameState{},*dataState{};
+    QLabel *brand{},*message{},*saved{},*gameState{},*dataState{},*importSaveState{};
     QPointer<QComboBox> languages;
     QPushButton *save{},*play{};
     std::array<QPushButton*,3> nav{};
@@ -59,6 +59,7 @@ private:
     void bind(int action,bool keyboard);
     void patch(const char* key,QJsonValue value);
     void openFolder(const QString& path);
+    bool confirmReplace();
     QWidget* row(QVBoxLayout* parent,QString title,QWidget* control,const char* help=nullptr);
     QVBoxLayout* card(const char* title,const char* help=nullptr);
     QPushButton* action(QLayout* owner,const char* title,std::function<void()> fn,const char* hint=nullptr);

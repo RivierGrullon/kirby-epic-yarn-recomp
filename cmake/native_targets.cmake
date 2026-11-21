@@ -415,7 +415,8 @@ target_sources(kirby-launcher PRIVATE
     "${KIRBY_PROJECT_ROOT}/launcher/pages/audio.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/pages/controls.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/pages/saves.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/pages/diagnostics.cpp")
+    "${KIRBY_PROJECT_ROOT}/launcher/pages/diagnostics.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/save_manager.cpp")
 target_include_directories(kirby-launcher PRIVATE "${KIRBY_PROJECT_ROOT}/launcher" "${KIRBY_PROJECT_ROOT}/vendor/json/single_include")
 target_compile_features(kirby-launcher PRIVATE cxx_std_20)
 target_compile_definitions(kirby-launcher PRIVATE SDL_MAIN_HANDLED)
