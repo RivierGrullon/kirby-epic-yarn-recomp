@@ -168,7 +168,7 @@ class SetupGuiTests(unittest.TestCase):
                 button.click()
                 self.assertEqual(observed, [(mode, True)])
                 if accept:
-                    self.assertEqual(Path(field.text()), target)
+                    self.assertEqual(Path(field.text()).resolve(strict=True), target.resolve(strict=True))
                 else:
                     self.assertEqual(field.text(), original)
 
@@ -194,12 +194,13 @@ class SetupGuiTests(unittest.TestCase):
                 dialog = self.app.activeModalWidget()
                 self.assertEqual(dialog.objectName(), 'folderView')
                 tree = dialog.findChild(QTreeView)
-                self.assertEqual(Path(tree.model().filePath(tree.rootIndex())), folder)
+                expected = folder.resolve(strict=True)
+                self.assertEqual(Path(tree.model().filePath(tree.rootIndex())).resolve(strict=True), expected)
                 self.assertTrue(tree.model().isReadOnly())
                 external.assert_not_called()
                 manager = next(b for b in dialog.findChildren(QPushButton) if b.text() == 'Open in file manager')
                 manager.click()
-                self.assertEqual(Path(external.call_args.args[0].toLocalFile()), folder)
+                self.assertEqual(Path(external.call_args.args[0].toLocalFile()).resolve(strict=True), expected)
                 dialog.close()
                 self.app.processEvents()
 
