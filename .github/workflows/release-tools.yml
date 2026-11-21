@@ -110,3 +110,52 @@ jobs:
             tools-release/Kirby-tools-linux-x86_64-"$TOOLS_ASSET_ID".tar.xz.sha256 \
             tools-release/Kirby-tools-linux-x86_64-"$TOOLS_ASSET_ID".tar.xz.json \
             tools-release/Kirby-tools-linux-x86_64-"$TOOLS_ASSET_ID".tar.xz.json.sha256
+
+  update-pin:
+    name: Propose toolchain pin update
+    needs: publish
+    if: inputs.publish && needs.publish.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: linux-tools
+          path: tools-release
+      - name: Commit pin and open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp tools-release/toolchain-release.json packaging/linux/toolchain-release.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="chore/update-linux-tools-pin"
+          git checkout -b "$branch"
+          git add packaging/linux/toolchain-release.json
+          if git diff --cached --quiet; then
+            echo "No pin change to propose" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git commit -m "ci: update Linux tools pin"
+          git push --force origin "$branch"
+          body="$(printf '%s\n' \
+            'The reusable Linux tools were rebuilt and attached to the target release.' \
+            'This updates packaging/linux/toolchain-release.json to point at the new tools archive and its descriptor.' \
+            '' \
+            'A tracked tools input changed, so the previous pin no longer matches the build fingerprint and the Linux release installers fail at resolve.' \
+            '' \
+            'Built by the Update Linux tools workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
+            '' \
+            'Review the descriptor URL and SHA-256 before merging. Installer releases keep using the current pin until this is merged.')"
+          if gh pr view "$branch" >/dev/null 2>&1; then
+            echo "Force-pushed the updated pin to the existing pull request" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh pr create --base "${{ github.ref_name }}" --head "$branch" \
+              --title "ci: update Linux tools pin" \
+              --body "$body"
+          fi
