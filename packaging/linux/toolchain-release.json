@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "descriptor_url": "https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/download/v0.1.0-alpha.2/Kirby-tools-linux-x86_64.tar.xz.json",
-  "descriptor_sha256": "b9b15e057768e2510ce08c2198bd534aa40c9a9c17ef6ab7c42e7eeb0250e39a",
-  "inputs_sha256": "70f2b367ed3aad0fbfe5c071fb2b293677710ad8cbade61944fff66c26fe5e90"
+  "descriptor_url": "https://github.com/RivierGrullon/kirby-epic-yarn-recomp/releases/download/v0.2.0/Kirby-tools-linux-x86_64-44871018546.tar.xz.json",
+  "descriptor_sha256": "e653c33748b52cb68e0ef9bd93e7155a6206a94b4165814bde203f0f5dac2bb4",
+  "inputs_sha256": "28031cb7ac137a8e78036bcb8818afc8b60aeea02f54e67dc08e811d1128c2b7"
 }
