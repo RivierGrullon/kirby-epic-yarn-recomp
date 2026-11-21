@@ -143,7 +143,8 @@ QToolTip {background:#fff9ea;color:#38463d;border:1px solid #c3baa2;padding:5px;
 QComboBox QAbstractItemView {background:#fffaf0;selection-background-color:#efd1d9;selection-color:#423e39;}
 QComboBox::drop-down {border:0;width:24px;}
 QDoubleSpinBox#fabricNumber, QDoubleSpinBox#fabricNumber:focus {
-    background:transparent;border:0;padding:5px 34px;min-height:30px;
+    /* Qt already subtracts both step buttons from the editor's width. */
+    background:transparent;border:0;padding:5px;min-height:30px;
 }
 QDoubleSpinBox#fabricNumber::down-button {
     subcontrol-origin:border;subcontrol-position:center left;left:5px;width:26px;height:28px;
