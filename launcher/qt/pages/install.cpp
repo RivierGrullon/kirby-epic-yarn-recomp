@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "app/window.h"
 #include "app/translations.h"
+#include "theme/dialogs.h"
 #include <QBoxLayout>
 #include <QDir>
-#include <QFileDialog>
 #include <QLabel>
 #include <QPushButton>
 
@@ -14,7 +14,7 @@ void Window::buildInstall() {
     if(ready && !model["verified"].toBool())data->addWidget(label(status(model["dataStatus"].toString()),"notice"));
     auto* buttons=new QHBoxLayout;data->addLayout(buttons);
     action(buttons,"Choose DATA folder",[this]{
-        const auto folder=QFileDialog::getExistingDirectory(this,T("Choose DATA folder"),model["data"].toString());
+        const auto folder=choosePath(this,PathChoice::Directory,T("Choose DATA folder"),model["data"].toString());
         if(!folder.isEmpty())request("data",{{"path",folder}});
     })->setEnabled(!model["running"].toBool());
     action(buttons,"Verify selected folder",[this]{request("verify");});

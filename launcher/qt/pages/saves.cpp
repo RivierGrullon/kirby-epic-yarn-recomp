@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "app/window.h"
 #include "app/translations.h"
+#include "theme/dialogs.h"
 #include <QBoxLayout>
 #include <QDir>
-#include <QFileDialog>
 #include <QJsonArray>
 #include <QLabel>
-#include <QMessageBox>
 #include <QPushButton>
 
 namespace Yarn {
@@ -17,20 +16,20 @@ void Window::buildSaves() {
     auto* buttons=new QHBoxLayout;box->addLayout(buttons);
     action(buttons,"Open Saves",[this]{openFolder(model["saves"].toString());});
     action(buttons,"Import Dolphin save",[this]{
-        const auto folder=QFileDialog::getExistingDirectory(this,T("Choose Dolphin save folder"),QDir(root).filePath("local"));
+        const auto folder=choosePath(this,PathChoice::Directory,T("Choose Dolphin save folder"),QDir(root).filePath("local"));
         if(!folder.isEmpty() && confirmReplace())request("importSave",{{"path",folder}});
     })->setEnabled(!model["running"].toBool());
     action(buttons,"Import save (.bin)",[this]{
-        const auto file=QFileDialog::getOpenFileName(this,T("Choose Dolphin save (.bin)"),QDir(root).filePath("local"),"Dolphin Wii save (*.bin);;All files (*)");
+        const auto file=choosePath(this,PathChoice::OpenSave,T("Choose Dolphin save (.bin)"),QDir(root).filePath("local"));
         if(!file.isEmpty() && confirmReplace())request("importSave",{{"path",file}});
     })->setEnabled(!model["running"].toBool());
     auto* exportButtons=new QHBoxLayout;box->addLayout(exportButtons);
     action(exportButtons,"Export save (.bin)",[this]{
-        const auto file=QFileDialog::getSaveFileName(this,T("Choose export file"),QDir(root).filePath("RK5E01-save.bin"),"Dolphin Wii save (*.bin);;All files (*)");
+        const auto file=choosePath(this,PathChoice::ExportSave,T("Choose export file"),QDir(root).filePath("RK5E01-save.bin"));
         if(!file.isEmpty())request("exportSave",{{"path",file},{"folder",false}});
     })->setEnabled(!model["running"].toBool() && model["saveFound"].toBool());
     action(exportButtons,"Export save folder",[this]{
-        const auto folder=QFileDialog::getExistingDirectory(this,T("Choose export folder"),QDir(root).filePath("local"));
+        const auto folder=choosePath(this,PathChoice::Directory,T("Choose export folder"),QDir(root).filePath("local"));
         if(!folder.isEmpty())request("exportSave",{{"path",folder},{"folder",true}});
     })->setEnabled(!model["running"].toBool() && model["saveFound"].toBool());
     importSaveState=label({},"soft");importSaveState->hide();box->addWidget(importSaveState);
@@ -56,14 +55,8 @@ void Window::buildSaves() {
 }
 
 bool Window::confirmReplace() {
-    QMessageBox box(this);
-    box.setWindowTitle(T("Replace save"));
-    box.setIcon(QMessageBox::Warning);
-    box.setText(T("This will replace your current save. A backup of the current save will be made first."));
-    auto* replace=box.addButton(T("Replace"),QMessageBox::AcceptRole);
-    auto* cancel=box.addButton(T("Cancel"),QMessageBox::RejectRole);
-    box.setDefaultButton(cancel);
-    box.exec();
-    return box.clickedButton()==replace;
+    return confirmAction(this, T("Replace save"),
+        T("This will replace your current save. A backup of the current save will be made first."),
+        T("Replace"));
 }
 } // namespace Yarn

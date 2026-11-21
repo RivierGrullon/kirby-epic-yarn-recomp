@@ -89,10 +89,9 @@ void FabricCombo::paintEvent(QPaintEvent*) {
     p.setPen(QPen(hasFocus()?QColor("#b4778d"):QColor("#cbc2aa"),hasFocus()?2:1));
     p.drawRoundedRect(r,10,10);
     drawStitch(p,r.adjusted(4,4,-4,-4),QColor("#d9cfb8"),7);
-    const QPointF c(r.right()-17,r.center().y());
-    p.setBrush(QColor("#dcead9"));p.setPen(Qt::NoPen);p.drawEllipse(c,10,10);
-    p.setPen(QPen(QColor("#5b7160"),1.7,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
-    p.drawPolyline(QPolygonF{{c.x()-4,c.y()-1.5},{c.x(),c.y()+2.5},{c.x()+4,c.y()-1.5}});
+    static const QIcon arrow(":/yarn/dropdown-patch.png");
+    arrow.paint(&p,QRect(width()-28,(height()-20)/2,20,20),Qt::AlignCenter,
+                isEnabled()?QIcon::Normal:QIcon::Disabled);
     auto space=r.adjusted(13,0,-32,0);p.setPen(QColor("#405347"));
     p.drawText(space,Qt::AlignVCenter,p.fontMetrics().elidedText(currentText(),Qt::ElideRight,int(space.width())));
 }

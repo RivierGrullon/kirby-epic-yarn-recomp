@@ -22,6 +22,7 @@ qt_add_executable(kirby-ui WIN32
     pages/diagnostics.cpp
     theme/patchwork.cpp
     theme/form_controls.cpp
+    theme/dialogs.cpp
     selftest/preview.cpp
 )
 target_include_directories(kirby-ui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "app/window.h"
 #include "app/translations.h"
+#include "theme/dialogs.h"
 #include <QApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QKeyEvent>
-#include <QMessageBox>
 #include <QPushButton>
 
 namespace Yarn {
@@ -41,7 +41,7 @@ void Window::receive() {
             notice(status(reply["error"].toString()));
             if(cmd=="save" && closing) {
                 closing=false;
-                if(QMessageBox::question(this,T("Save settings"),T("Close without saving?"))==QMessageBox::Yes) {
+                if(confirmAction(this,T("Save settings"),T("Close without saving?"),T("Close without saving"))) {
                     discardOnClose=true;finishing=true;close();
                 }
             }

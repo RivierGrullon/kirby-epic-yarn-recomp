@@ -100,7 +100,7 @@ void Window::loadStandardText() {
     if(lang==1)return;
     const QString locale=lang==0?"zh_CN":"es";
     const auto bundle=QCoreApplication::applicationDirPath()+"/translations";
-    if(standardText.load("qt_"+locale,bundle) ||
+    if(standardText.load("qt_"+locale,bundle) || standardText.load("qtbase_"+locale,bundle) ||
        standardText.load("qtbase_"+locale,QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
         qApp->installTranslator(&standardText);
 }
