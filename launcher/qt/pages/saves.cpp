@@ -14,7 +14,7 @@ void Window::buildSaves() {
                    "The game manages its own saves. Choosing another DATA folder does not move them.");
     field(box,"Save files",model["saves"].toString());
     auto* buttons=new QHBoxLayout;box->addLayout(buttons);
-    action(buttons,"Open Saves",[this]{openFolder(model["saves"].toString());});
+    action(buttons,"Open Saves",[this]{openFolder("Save files",model["saves"].toString());});
     action(buttons,"Import Dolphin save",[this]{
         const auto folder=choosePath(this,PathChoice::Directory,T("Choose Dolphin save folder"),QDir(root).filePath("local"));
         if(!folder.isEmpty() && confirmReplace())request("importSave",{{"path",folder}});

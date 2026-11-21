@@ -30,8 +30,8 @@ void Window::buildDiagnostics() {
     if(!model["settingsError"].toString().isEmpty())files->addWidget(label(model["settingsError"].toString(),"notice"));
     action(files,model["dirty"].toBool()?"Discard changes and reload":"Reload settings",[this]{request("reload");});
     auto* shortcuts=new QVBoxLayout;files->addLayout(shortcuts);
-    action(shortcuts,"Open Settings Folder",[this]{openFolder(QFileInfo(model["settings"].toString()).absolutePath());});
-    action(shortcuts,"Open Logs",[this]{openFolder(QDir(root).filePath("build-logs"));});
+    action(shortcuts,"Open Settings Folder",[this]{openFolder("Shared settings",QFileInfo(model["settings"].toString()).absolutePath());});
+    action(shortcuts,"Open Logs",[this]{openFolder("Open Logs",QDir(root).filePath("build-logs"));});
     action(shortcuts,"Open Build Guide",[this]{
         const auto file=QDir(root).filePath("docs/building.md");
         const auto url=QFileInfo::exists(file)?QUrl::fromLocalFile(file):QUrl("https://github.com/RivierGrullon/kirby-epic-yarn-recomp/blob/dev/docs/building.md");

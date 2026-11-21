@@ -89,7 +89,7 @@ private:
     void updateControls();
     void bind(int action,bool keyboard);
     void patch(const char* key,QJsonValue value);
-    void openFolder(const QString& path);
+    void openFolder(const char* title, const QString& path);
     bool confirmReplace();
 
     static QLabel* label(const QString& value, const char* style=nullptr);

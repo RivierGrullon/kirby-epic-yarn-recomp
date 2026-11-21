@@ -10,6 +10,7 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets)
 qt_add_executable(kirby-ui WIN32
     main.cpp
     app/window.cpp
+    app/folder_view.cpp
     app/host_session.cpp
     app/translations.cpp
     pages/form.cpp

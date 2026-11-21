@@ -7,7 +7,6 @@
 #include <QBoxLayout>
 #include <QCloseEvent>
 #include <QComboBox>
-#include <QDesktopServices>
 #include <QDir>
 #include <QLabel>
 #include <QLibraryInfo>
@@ -15,7 +14,6 @@
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
-#include <QUrl>
 #include <utility>
 
 namespace Yarn {
@@ -164,7 +162,4 @@ void Window::refresh() {
     if(page==Controls)updateControls();
 }
 
-void Window::openFolder(const QString& path) {
-    if(path.isEmpty() || !QDir().mkpath(path) || !QDesktopServices::openUrl(QUrl::fromLocalFile(path)))notice(T("Could not open folder"));
-}
 } // namespace Yarn
