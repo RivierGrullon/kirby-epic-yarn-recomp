@@ -12,6 +12,8 @@ inline constexpr Language DefaultLanguage = Language::English;
 inline constexpr std::array LanguageCodes{"zh-CN", "en", "es"};
 inline constexpr char LanguageFile[] = "launcher-language.txt";
 
+bool WriteLanguage(const std::filesystem::path& directory, Language language);
+
 inline Language ReadLanguage(const std::filesystem::path& directory) {
     std::ifstream file(directory / LanguageFile);
     char buffer[16];

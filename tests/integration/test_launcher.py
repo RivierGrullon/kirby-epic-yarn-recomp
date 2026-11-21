@@ -50,7 +50,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_frontend_renders_and_exits_without_showing_a_window(self):
         env = os.environ.copy()
-        env.update(SDL_VIDEO_DRIVER="offscreen", SDL_RENDER_DRIVER="software")
+        env["QT_QPA_PLATFORM"] = "offscreen"
         result = self.invoke("--self-test", env=env)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -63,6 +63,14 @@ class LauncherTests(unittest.TestCase):
             env = os.environ.copy()
             env["PATH"] = str(binary.parent) + os.pathsep + env["PATH"]
             env["LD_LIBRARY_PATH"] = str(binary.parent.parent.parent/"local/host-libs") + os.pathsep + env.get("LD_LIBRARY_PATH", "")
+
+            # A missing frontend must fail promptly; the CLI host can still be used independently.
+            for arguments in ([], ["--self-test"]):
+                missing = subprocess.run([root/binary.name, *arguments], cwd=root, env=env,
+                                         capture_output=True, encoding="utf-8", timeout=5)
+                self.assertNotEqual(missing.returncode, 0)
+                self.assertIn("Qt launcher missing", missing.stderr)
+            self.assertFalse((root/"local/user").exists())
 
             def session(commands):
                 records = [dict(focused=True, controls=True, **command) for command in commands]

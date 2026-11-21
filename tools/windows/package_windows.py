@@ -12,11 +12,12 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from installer.qt_frontend import validate as validate_qt
 from installer.verification import check_pe
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = Path('local/releases/Kirby-Windows-x64.zip')
-REQUIRED = ('kirby-launcher.exe', 'launcher-ui.ttf', 'WiiCompiled.exe', 'dsp_coef.bin',
+REQUIRED = ('kirby-launcher.exe', 'WiiCompiled.exe', 'dsp_coef.bin',
             'SDL3.dll', 'webgpu_dawn.dll', 'dxcompiler.dll', 'dxil.dll', 'libc++.dll', 'libunwind.dll')
 README = """Kirby's Epic Yarn - Windows x64
 
@@ -71,19 +72,16 @@ def package(root, redist, output=None):
     for path in build.glob('*.dll'):
         files[path.name] = path
     qt = build / 'qt-launcher'
-    if qt.is_dir():
-        for required in ('kirby-ui.exe', 'Qt6Widgets.dll', 'platforms/qwindows.dll'):
-            if not (qt / required).is_file():
-                raise ValueError(f'Incomplete Qt launcher deployment: {required}')
-        for path in qt.rglob('*'):
-            relative = path.relative_to(qt)
-            if path.is_file() and not path.is_symlink() and (
-                relative.as_posix() in ('kirby-ui.exe', 'qt.conf') or
-                path.suffix.lower() == '.dll' or
-                (relative.parts[0] == 'translations' and path.suffix == '.qm') or
-                relative.parts[0] == 'licenses'
-            ):
-                files[path.relative_to(build).as_posix()] = path
+    validate_qt(qt, windows=True)
+    for path in qt.rglob('*'):
+        relative = path.relative_to(qt)
+        if path.is_file() and not path.is_symlink() and (
+            relative.as_posix() in ('kirby-ui.exe', 'qt.conf') or
+            path.suffix.lower() == '.dll' or
+            (relative.parts[0] == 'translations' and path.suffix == '.qm') or
+            relative.parts[0] == 'licenses'
+        ):
+            files[path.relative_to(build).as_posix()] = path
     if (build / 'initial_pipeline_cache.db').is_file():
         files['initial_pipeline_cache.db'] = build / 'initial_pipeline_cache.db'
     files['vc_redist.x64.exe'] = redist

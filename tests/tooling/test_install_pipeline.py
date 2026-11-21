@@ -46,6 +46,9 @@ class Tools:
                 raise AssertionError('The install worker must also build the launcher')
             layout.build.mkdir(exist_ok=True)
             (layout.build/('kirby-launcher.exe' if pipeline.WINDOWS else 'kirby-launcher')).write_bytes(b'launcher')
+            qt = layout.build/'qt-launcher'
+            qt.mkdir(exist_ok=True)
+            (qt/('kirby-ui.exe' if pipeline.WINDOWS else 'kirby-ui')).write_bytes(b'frontend')
             game=layout.build/pipeline.executable_name()
             game.write_bytes(b'synthetic native output')
             game.chmod(0o700)

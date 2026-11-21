@@ -167,7 +167,9 @@ def main():
             if args.target == 'windows':
                 # LLVM's C++ runtime and Dawn may be shared libraries. Keep DLLs
                 # next to the products so native Windows can resolve them.
-                libraries = list(build.rglob('*.dll'))
+                # The separately built Qt frontend must keep its own compiler and plugin DLLs.
+                libraries = [path for path in build.rglob('*.dll')
+                             if 'qt-launcher' not in path.relative_to(build).parts[:-1]]
                 toolchain = mingw_root/'x86_64-w64-mingw32/bin'
                 libraries += list(toolchain.glob('*.dll'))
                 for library in libraries:

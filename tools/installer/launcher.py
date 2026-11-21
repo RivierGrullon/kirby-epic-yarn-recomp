@@ -47,6 +47,10 @@ def install_launcher(job, root, build, identity):
                 and qt.resolve() != (destination/'qt-launcher').resolve()):
             _publish_with_qt(qt, staging, destination, names, job)
         else:
+            ui = destination/'qt-launcher'/('kirby-ui.exe' if WINDOWS else 'kirby-ui')
+            if not ui.is_file():
+                raise ValueError('Qt launcher missing. Build the Qt frontend or copy the complete '
+                                 'tools/qt-launcher folder from the matching Setup package to build/native/qt-launcher.')
             _publish_launcher(staging, destination, names, job)
     return destination/name
 

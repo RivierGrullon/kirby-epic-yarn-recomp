@@ -184,6 +184,8 @@ class LauncherPublicationTests(unittest.TestCase):
     def test_launcher_verifies_with_all_staged_dlls_before_replacing_old_copy(self):
         build=self.root/'local/setup/builds/job/build';build.mkdir(parents=True)
         (build/'kirby-launcher.exe').write_bytes(b'new launcher')
+        (build/'qt-launcher').mkdir()
+        (build/'qt-launcher/kirby-ui.exe').write_bytes(b'Qt frontend')
         (build/'runtime.dll').write_bytes(b'new library')
         destination=self.root/'build/native';destination.mkdir(parents=True)
         (destination/'kirby-launcher.exe').write_bytes(b'old launcher')

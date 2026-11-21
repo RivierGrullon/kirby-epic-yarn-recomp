@@ -202,8 +202,8 @@ implementation uses POSIX descriptor operations and persistent authored xattrs;
 it preserves IOS's file-basename and open-source-file rename rules. No additional
 upstream implementation was copied into the owned runtime.
 
-The native `launcher/main.cpp` links the existing SDL3 and Dear ImGui components
-already provided by Aurora, under their preserved zlib and MIT licenses. Its code
+The native `launcher/main.cpp` host uses Aurora's SDL3 dependency (zlib license).
+The launcher window is built with Qt Widgets in `launcher/qt/`. The host code
 is authored GPL-3.0-only. ZeldaWWHDRecomp's SDL3/ImGui frontend and documentation
 organization were reviewed as references; no MPL source, graphics or branding was
 copied. Pinned review links and reuse boundaries are in `docs/references.md`.

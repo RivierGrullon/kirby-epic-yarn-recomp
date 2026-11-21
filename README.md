@@ -63,6 +63,7 @@ instructions for your platform:
 - Linux AppImage: glibc 2.39 or newer, Vulkan graphics drivers, internet access
   for first-installation downloads, and space for extraction and compilation.
 - Linux source builds: Git, Python 3.11+ and **Docker or Podman** for the build environment.
+- Source builds with a launcher window need the matching Setup package's prebuilt Qt frontend or a [desktop Qt build](docs/building.md#building-the-qt-desktop-launcher).
 - Windows: [tools/windows/build-windows.ps1](docs/building.md#windows-x64) automatically downloads LLVM-MinGW, Python, .NET 8, CMake, Ninja and Windows SDK headers.
 - Source builds: Dolphin's `dolphin-tool` / `DolphinTool.exe` for image extraction; 7-Zip only for `.7z` inputs.
   Neither is required for an already extracted DATA folder.

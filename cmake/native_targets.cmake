@@ -374,13 +374,6 @@ target_include_directories(kirby_binding_capture_test PRIVATE "${KIRBY_PROJECT_R
 target_link_libraries(kirby_binding_capture_test PRIVATE kirby_settings ${AURORA_SDL3_TARGET})
 add_test(NAME kirby_binding_capture COMMAND kirby_binding_capture_test)
 
-add_executable(kirby_launcher_input_test "${KIRBY_PROJECT_ROOT}/tests/unit/launcher_input_test.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/input_focus.cpp")
-target_include_directories(kirby_launcher_input_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
-target_link_libraries(kirby_launcher_input_test PRIVATE imgui)
-target_compile_features(kirby_launcher_input_test PRIVATE cxx_std_20)
-add_test(NAME kirby_launcher_input COMMAND kirby_launcher_input_test)
-
 # Only owned targets and the patched upstream runtime need these headers.
 # Generated translation targets keep their existing include paths.
 get_property(kirby_build_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
@@ -399,28 +392,16 @@ endforeach()
 add_custom_target(kirby_tests DEPENDS ${kirby_test_targets})
 
 add_executable(kirby-launcher "${KIRBY_PROJECT_ROOT}/launcher/main.cpp")
-configure_file("${KIRBY_PROJECT_ROOT}/launcher/assets/launcher-ui.ttf"
-               "${CMAKE_CURRENT_BINARY_DIR}/launcher-ui.ttf" COPYONLY)
 target_sources(kirby-launcher PRIVATE
     "${KIRBY_PROJECT_ROOT}/launcher/desktop_service.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/language.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/fabric.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/build_probe.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/binding_capture.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/input_focus.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/pages/layout.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/pages/play.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/pages/install.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/pages/display.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/pages/audio.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/pages/controls.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/pages/saves.cpp"
-    "${KIRBY_PROJECT_ROOT}/launcher/pages/diagnostics.cpp"
     "${KIRBY_PROJECT_ROOT}/launcher/save_manager.cpp")
 target_include_directories(kirby-launcher PRIVATE "${KIRBY_PROJECT_ROOT}/launcher" "${KIRBY_PROJECT_ROOT}/vendor/json/single_include")
 target_compile_features(kirby-launcher PRIVATE cxx_std_20)
 target_compile_definitions(kirby-launcher PRIVATE SDL_MAIN_HANDLED)
-target_link_libraries(kirby-launcher PRIVATE imgui imgui_backends ${AURORA_SDL3_TARGET} kirby_settings kirby_build_info kirby_setup mkw::cryptopp)
+target_link_libraries(kirby-launcher PRIVATE ${AURORA_SDL3_TARGET} kirby_settings kirby_build_info kirby_setup mkw::cryptopp)
 set_target_properties(kirby-launcher PROPERTIES BUILD_RPATH "\$ORIGIN/../../local/host-libs")
 if(WIN32)
     target_sources(kirby-launcher PRIVATE "${KIRBY_PROJECT_ROOT}/launcher/launcher.rc")

@@ -15,6 +15,12 @@ class WindowsPackageTests(unittest.TestCase):
         build.mkdir(parents=True)
         for name in package_windows.REQUIRED:
             (build / name).write_bytes(b'fixture')
+        qt = build/'qt-launcher'
+        for name in ('kirby-ui.exe', 'Qt6Core.dll', 'Qt6Gui.dll', 'Qt6Widgets.dll',
+                     'platforms/qwindows.dll', 'platforms/qoffscreen.dll'):
+            path = qt/name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'fixture')
         for name in ('LICENSE', 'THIRD_PARTY.md', 'dependencies.json', 'redist.exe'):
             (root / name).write_text('fixture')
         return root / 'redist.exe'
@@ -52,8 +58,7 @@ class WindowsPackageTests(unittest.TestCase):
             root = Path(directory)
             redist = self.fixture(root)
             qt = root/'build/native/qt-launcher'
-            for name in ('kirby-ui.exe', 'Qt6Widgets.dll', 'platforms/qwindows.dll',
-                         'translations/qt_es.qm', 'debug.log'):
+            for name in ('translations/qt_es.qm', 'debug.log'):
                 path = qt/name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b'fixture')
@@ -63,3 +68,14 @@ class WindowsPackageTests(unittest.TestCase):
                 self.assertIn('qt-launcher/platforms/qwindows.dll', archive.namelist())
                 self.assertIn('qt-launcher/translations/qt_es.qm', archive.namelist())
                 self.assertNotIn('qt-launcher/debug.log', archive.namelist())
+
+    def test_missing_qt_frontend_keeps_previous_zip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            redist = self.fixture(root)
+            (root/'build/native/qt-launcher/kirby-ui.exe').unlink()
+            output = root/'previous.zip'
+            output.write_bytes(b'previous')
+            with patch.object(package_windows, 'check_pe'), self.assertRaisesRegex(ValueError, 'kirby-ui.exe'):
+                package_windows.package(root, redist, output)
+            self.assertEqual(output.read_bytes(), b'previous')

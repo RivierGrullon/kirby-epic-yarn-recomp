@@ -4,20 +4,14 @@ The launcher and native game share `local/user/settings.toml`. The launcher save
 changes when you select **Save settings**, select **Play**, or close its window.
 Changes apply on the next game launch and do not require recompilation.
 
-Find VSync and experimental performance mode under **Display**, master volume
-under **Audio**, and the extracted game-folder selection under **Install**.
-Install can import an image/archive or verify a DATA folder in the background.
-It changes the selected folder only after successful verification and worker exit;
-cancelling or failing an import keeps the previous selection.
-**Controls** lists connected gamepads and edits gamepad/keyboard bindings. **Saves** opens the
-existing save folder; **Diagnostics** provides logs, settings recovery and paths.
-The save action remains available on every page. Keyboard and SDL gamepad
-navigation use Dear ImGui's standard controls.
-The launcher accepts input only while its own window has focus. Gamepad polling
-in the background cannot change its settings or activate buttons while you play
-in another window. Losing focus also clears held input.
+Basic settings saves volume and fullscreen automatically. Advanced settings
+contains display quality, performance, input bindings and diagnostics.
+Install verifies an extracted DATA folder or opens Kirby Setup for disc
+installation. Saves provides save folder access, import, export and backups.
+The Qt window accepts keyboard navigation and forwards its focus state to the
+native host for SDL gamepad navigation and binding capture.
 
-**Display > Start in fullscreen** selects borderless fullscreen for the next
+**Basic settings > Start in fullscreen** selects borderless fullscreen for the next
 game launch. Press **Alt+Enter** while playing to toggle fullscreen for that
 session; this existing Aurora shortcut does not change the saved startup preference.
 The runtime accepts `--fullscreen` and `--windowed` overrides after `--video`.
