@@ -20,7 +20,7 @@ def main():
     parser.add_argument('--destination',type=Path,help='Reopen setup for an existing installation folder')
     parser.add_argument('--managed',action='store_true',help='Keep third-party launcher saves in the destination folder')
     args=parser.parse_args()
-    from PyQt6.QtCore import QTimer
+    from PyQt6.QtCore import Qt, QTimer
     from PyQt6.QtWidgets import QApplication
     from installer.setup_layout import Bundle
     from installer.setup_gui import SetupWindow
@@ -38,6 +38,7 @@ def main():
         project=Path(__file__).resolve().parents[1]
         revision=subprocess.check_output(['git','-C',str(project),'rev-parse','HEAD'],text=True).strip()
         bundle=Bundle(project,project/'tools/runtime',project/'local/host-libs',revision,(sys.executable,str(project/'tools/setup_gui.py')))
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeDialogs)
     app=QApplication([sys.argv[0]]);app.setApplicationName('Kirby Setup');app.setOrganizationName('KirbyNative')
     configure_application(app, project)
     window=SetupWindow(bundle)

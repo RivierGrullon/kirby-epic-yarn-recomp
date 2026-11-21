@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Qt Widgets used by Setup, in the native launcher's linen and stitched-patch style."""
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
+from PyQt6.QtCore import QDir, QPointF, QRectF, QSize, Qt
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PyQt6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
                              QSizePolicy, QVBoxLayout, QWidget)
@@ -30,6 +30,8 @@ def configure_application(app, project):
     }.items():
         colors.setColor(role, QColor(value))
     app.setPalette(colors)
+    theme = project/'launcher/qt/theme'
+    QDir.setSearchPaths('yarnTheme', [str(theme)])
     app.setStyleSheet("""
         QLabel { background: transparent; }
         QLabel#brand { font-family: Georgia, serif; font-size: 24px; font-weight: bold; color: #30483f; }
@@ -56,11 +58,11 @@ def configure_application(app, project):
         QComboBox { background: #fffcf1; color: #405347; border: 1px dashed #bdb59f;
             border-radius: 9px; padding: 5px 12px; min-height: 22px; }
         QComboBox:focus { border: 2px solid #ad6a82; padding: 4px 11px; }
-        QComboBox::drop-down { border: 0; width: 24px; }
-        QComboBox::down-arrow { width: 0; height: 0; }
+        LanguagePicker::drop-down { border: 0; width: 24px; }
+        LanguagePicker::down-arrow { width: 0; height: 0; }
         QComboBox QAbstractItemView { background: #fffaf0; selection-background-color: #efd1d9;
             selection-color: #423e39; padding: 3px; }
-    """)
+    """ + (theme/'dialogs.qss').read_text(encoding='utf-8'))
 
 
 def label(text, name=''):

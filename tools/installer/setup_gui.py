@@ -7,11 +7,12 @@ import sys
 
 from PyQt6.QtCore import Qt, QElapsedTimer, QLibraryInfo, QLocale, QSettings, QThread, QTimer, QTranslator, QUrl
 from PyQt6.QtGui import QDesktopServices, QIcon
-from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
+from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QFrame, QHBoxLayout, QLabel,
                              QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar, QScrollArea,
                              QVBoxLayout, QWidget)
 from .setup_theme import Banner, Card, FabricButton, LanguagePicker, Linen, PhaseList, button_patch, label
 from .setup_controller import Controller
+from .setup_dialogs import choose_path
 from .setup_i18n import LANGUAGES, translate
 from .setup_layout import prepare_destination,finish_destination
 from .setup_model import PHASES
@@ -248,14 +249,6 @@ class SetupWindow(QMainWindow):
         self.show_progress_text()
         self.show_elapsed_time()
 
-    def chooser_options(self):
-        # Native pickers follow the desktop language. Qt pickers can follow Setup's choice.
-        system = QLocale.system().uiLanguages()
-        if system and QLocale(system[0]).language() == self.locale().language() and (
-                self.language != 'zh-CN' or QLocale(system[0]).script() == self.locale().script()):
-            return QFileDialog.Option(0)
-        return QFileDialog.Option.DontUseNativeDialog
-
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, 'columns'):
@@ -283,19 +276,16 @@ class SetupWindow(QMainWindow):
                          'Choose your game copy and installation folder.')
 
     def choose_file(self):
-        filters = self.text('Wii disc images')+' (*.wbfs *.iso *.rvz *.7z);;'+self.text('All files')+' (*)'
-        value,_=QFileDialog.getOpenFileName(self,self.text('Choose your disc image'),'',filters,
-                                            options=self.chooser_options())
+        filters = [self.text('Wii disc images')+' (*.wbfs *.iso *.rvz *.7z)', self.text('All files')+' (*)']
+        value = choose_path(self, 'Choose your disc image', filters=filters)
         if value:self.source.setText(value)
 
     def choose_data(self):
-        value=QFileDialog.getExistingDirectory(self,self.text('Choose your extracted DATA folder'),
-            options=self.chooser_options() | QFileDialog.Option.ShowDirsOnly)
+        value = choose_path(self, 'Choose your extracted DATA folder')
         if value:self.source.setText(value)
 
     def choose_destination(self):
-        value=QFileDialog.getExistingDirectory(self,self.text('Choose installation folder'),self.destination.text(),
-            options=self.chooser_options() | QFileDialog.Option.ShowDirsOnly)
+        value = choose_path(self, 'Choose installation folder', self.destination.text())
         if value:self.destination.setText(value)
 
     def toggle_details(self,checked):

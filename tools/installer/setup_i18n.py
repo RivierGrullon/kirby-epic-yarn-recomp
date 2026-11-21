@@ -32,6 +32,8 @@ MESSAGES = {
     "Install": ("安装", "Instalar"),
     "Cancel": ("取消", "Cancelar"),
     "Open folder": ("打开文件夹", "Abrir carpeta"),
+    "&Look in:": ("查找范围(&L)：", "&Buscar en:"),
+    "Files of &type:": ("文件类型(&T)：", "&Tipo de archivo:"),
     "Open launcher": ("打开启动器", "Abrir lanzador"),
     "Play game": ("开始游戏", "Jugar"),
     "Choose your game copy and installation folder.": ("请选择游戏来源和安装位置。", "Elige tu copia del juego y la carpeta de instalación."),
