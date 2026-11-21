@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -104,6 +105,18 @@ def setup_fraction(session):
     return min(0.99, (session.phase+within)/len(PHASES))
 
 
+def keep_setup_log(session, destination):
+    """Copy the worker's detailed log into the game's logs so a launcher report can attach it."""
+    if session is None or session.log_path is None:
+        return
+    source = Path(session.log_path)
+    if not source.is_file():
+        return
+    logs = Path(destination).resolve() / 'logs'
+    logs.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, logs / 'setup.log')
+
+
 def prepare(bundle, destination, source):
     source = Path(source).expanduser().absolute()
     if not source.exists():
@@ -148,9 +161,11 @@ def prepare(bundle, destination, source):
         raise ValueError('Setup worker returned no result')
     session.finish(code)
     if session.status != 'ready':
+        keep_setup_log(session, destination)
         raise ValueError(session.error or session.label)
     active = InstallationStore(root).read_active()
     if not active or active['current'] != session.result['installation_id']:
+        keep_setup_log(session, destination)
         raise ValueError('The selected installation changed during setup')
     InstallationStore(root).manifest(active['current'])
     publish(root, destination, session.result['data_root'])

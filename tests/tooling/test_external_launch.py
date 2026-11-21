@@ -168,6 +168,25 @@ class ExternalLaunchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'Synthetic build failure'):
                 external.prepare(bundle,self.destination,source)
             publish.assert_not_called()
+    def test_failed_prepare_copies_the_worker_log_into_the_game_logs(self):
+        root=self.base/'workspace';(root/'tools').mkdir(parents=True)
+        logs=root/'local/setup/logs';logs.mkdir(parents=True)
+        worker_log=logs/'job.log';worker_log.write_text('tool output: the real reason it failed\n')
+        source=self.base/'own.iso';source.touch()
+        script=root/'tools/install.py'
+        script.write_text(
+            'import json,sys\n'
+            + 'print(json.dumps(dict(version=1,job_id="test",sequence=1,stage="inspect",state="started",'
+            + 'log_path=' + json.dumps(str(worker_log)) + ')),flush=True)\n'
+            + 'print(json.dumps(dict(version=1,job_id="test",sequence=2,stage="install",state="failed",'
+            + 'error="Synthetic build failure")),flush=True)\nsys.exit(1)\n')
+        bundle=Bundle(root,self.base/'runtime',self.base/'libs','a'*40)
+        with patch.object(external,'prepare_destination',return_value=root),patch.object(external,'publish') as publish:
+            with self.assertRaisesRegex(ValueError,'Synthetic build failure'):
+                external.prepare(bundle,self.destination,source)
+            publish.assert_not_called()
+        self.assertEqual((self.destination/'logs/setup.log').read_text(),
+                         'tool output: the real reason it failed\n')
 
     def test_prepare_reports_setup_progress_that_never_moves_back(self):
         root=self.base/'workspace';(root/'tools').mkdir(parents=True)
