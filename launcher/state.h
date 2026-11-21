@@ -11,6 +11,14 @@
 #include <string>
 
 namespace Launcher {
+enum class Action {
+    None, Play, ChooseData, VerifyData, SaveSettings, ReloadSettings,
+    OpenLogs, OpenSaves, OpenSettings, BuildGuide, ShowInstall, RefreshBuildInfo,
+    ChooseImage, CancelSetup, OpenSetupLogs, OpenSetup, BuildGame,
+    ImportDolphinSave, ImportSaveBin, ExportSaveFolder, ExportSaveBin,
+    RestoreBackup, DeleteBackup,
+};
+
 // UI state only. The application owns the game process and folder dialog.
 struct State {
     std::filesystem::path root, executable, settingsFile;
@@ -32,14 +40,12 @@ struct State {
     bool choosingSource=false;
     bool closing=false;
     std::string installationId,installationError;
+    std::string saveImportStatus;
+    std::string pendingBackup;         // Backup directory name for restore/delete.
+    bool confirmReplace = false;       // Show the "replace current save?" confirmation.
+    Action confirmAction = Action::None;
     MotionPreview motionPreview;
     Fabric fabric;
     bool languageSaveError = false;
-};
-
-enum class Action {
-    None, Play, ChooseData, VerifyData, SaveSettings, ReloadSettings,
-    OpenLogs, OpenSaves, OpenSettings, BuildGuide, ShowInstall, RefreshBuildInfo,
-    ChooseImage, CancelSetup, OpenSetupLogs, BuildGame, OpenSetup,
 };
 } // namespace Launcher

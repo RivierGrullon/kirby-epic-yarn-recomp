@@ -239,6 +239,34 @@ std::pair<int32_t, std::shared_ptr<NandFile>> NandStore::Open(const std::string&
     opened_.emplace_back(path,result);
     return {0, std::move(result)};
 }
+// Update the one-byte SC item in place so existing saves, other settings and
+// Windows permission streams survive language changes on an installed game.
+void NandStore::SetLanguage(uint8_t language) {
+    auto [error, file] = Open("/shared2/sys/SYSCONF", 3);
+    std::array<uint8_t, 0x4000> data;
+    if (error || file->Read(data) != data.size() || std::memcmp(data.data(), "SCv0", 4) ||
+        std::memcmp(data.data()+data.size()-4, "SCed", 4))
+        throw std::runtime_error("Cannot read Wii system configuration for game language");
+    const auto be16 = [&](size_t offset) -> size_t { return data[offset] * 256u + data[offset+1]; };
+    const auto count = be16(4);
+    const size_t tableEnd = 6 + 2*(count+1);
+    constexpr size_t payloadEnd = 0x4000 - 4;
+    constexpr std::string_view name = "IPL.LNG";
+    if (tableEnd <= payloadEnd) {
+        for (size_t i = 0; i < count; ++i) {
+            const auto start = be16(6+2*i), end = be16(8+2*i);
+            if (start < tableEnd || end <= start || end > payloadEnd) break;
+            if (end-start != 2+name.size() || data[start] != ((3u << 5) | (name.size()-1)) ||
+                std::memcmp(data.data()+start+1, name.data(), name.size())) continue;
+            const auto offset = static_cast<int32_t>(end-1);
+            if (data[offset] != language &&
+                (file->Seek(offset, 0) != offset || file->Write({&language, 1}) != 1))
+                throw std::runtime_error("Cannot update Wii system language");
+            return;
+        }
+    }
+    throw std::runtime_error("Wii system configuration has no valid IPL.LNG item");
+}
 int32_t NandStore::Usage(const std::string& path, uint32_t& clusters, uint32_t& inodes) const {
     if (path != "/" && !ValidPath(path)) return -101;
     std::string leaf;

@@ -28,6 +28,16 @@
   }],
   "settings": [
     {
+      "id": "game_language", "label": "Game language",
+      "help": "Applies the next time you start the game.",
+      "choices": [
+        {"label": "English", "set": {"kirby/game_language": "1"}},
+        {"label": "Français", "set": {"kirby/game_language": "3"}},
+        {"label": "Español", "set": {"kirby/game_language": "4"}}
+      ],
+      "defaults": {"kirby/game_language": "1"}
+    },
+    {
       "id": "window", "label": "Window mode",
       "help": "Alt+Enter switches modes during play. Big Picture starts fullscreen.",
       "choices": [

@@ -6,6 +6,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx11-dev libxcursor-dev libxi-dev libxrandr-dev libxss-dev libxkbcommon-dev \
     libwayland-dev wayland-protocols libegl-dev libdrm-dev libgbm-dev \
     libasound2-dev libpulse-dev libudev-dev libdbus-1-dev libxtst-dev libxfixes-dev \
-    libpipewire-0.3-dev libvulkan-dev libsqlite3-dev libpng-dev libfreetype-dev zlib1g-dev \
+    libpipewire-0.3-dev libvulkan-dev libsqlite3-dev libpng-dev libfreetype-dev libfontconfig-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace

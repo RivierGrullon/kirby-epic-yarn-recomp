@@ -18,11 +18,13 @@ void Write(uint8_t* p, uint32_t value) {
 }
 }
 
-void IosServices::ConfigureNand(const std::filesystem::path& root, uint64_t titleId) {
+void IosServices::ConfigureNand(const std::filesystem::path& root, uint64_t titleId, std::optional<uint8_t> language) {
     if (nand_) throw std::runtime_error("IOS NAND is already configured");
     if (discTitle_ && discTitle_->TitleId() != titleId)
         throw std::runtime_error("NAND and disc title identities disagree");
-    nand_ = std::make_unique<NandStore>(root, titleId);
+    auto store = std::make_unique<NandStore>(root, titleId);
+    if (language) store->SetLanguage(*language);
+    nand_ = std::move(store);
 }
 
 void IosServices::ConfigureDisc(const std::filesystem::path& root, uint64_t capacity) {

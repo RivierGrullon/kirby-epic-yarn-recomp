@@ -1,4 +1,5 @@
 """Read-only settings diagnostics shared by the launcher and native executable."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -14,6 +15,39 @@ class SharedSettingsTests(unittest.TestCase):
         return [subprocess.run([os.environ[key], "--print-settings", str(path)],
                                capture_output=True, text=True, encoding="utf-8", timeout=15)
                 for key in ("KIRBY_NATIVE_TEST", "KIRBY_LAUNCHER_TEST")]
+
+    def test_game_language_choices_reach_the_guest_on_an_existing_nand(self):
+        profile = json.loads(Path("recomplauncher.json").read_text())
+        choices = next((s["choices"] for s in profile["settings"] if s["id"] == "game_language"), [])
+        self.assertEqual({c["label"] for c in choices}, {"English", "Français", "Español"})
+        data = Path("disc/DATA").resolve()
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory)/"settings.toml"
+
+            def boot(value, expected):
+                config.write_text("[kirby]\nschema_version = 1\n" + value)
+                result = subprocess.run([os.environ["KIRBY_NATIVE_TEST"], "--probe-system-config",
+                                         "--config", config, "--game-data", data], cwd=directory,
+                                        capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f" language={expected};", result.stdout)
+            boot("", 1)
+            nand = Path(directory)/"local/user/nand"
+            sysconf = nand/"shared2/sys/SYSCONF"
+            original = sysconf.read_bytes()
+            save = nand/"title/00010000/524b3545/data"/"save.bin"
+            save.write_bytes(b"existing game data")
+            codes = {"English": 1, "Français": 3, "Español": 4}
+            for choice in sorted(choices, key=lambda c: c["label"] == "English"):
+                value = choice["set"]["kirby/game_language"]
+                boot(f"game_language = {value}\n", codes[choice["label"]])
+                # An old config with no language preference respects the existing NAND.
+                boot("", codes[choice["label"]])
+                current = sysconf.read_bytes()
+                self.assertEqual(len(current), len(original))
+                differences = sum(a != b for a, b in zip(current, original))
+                self.assertEqual(differences, int(choice["label"] != "English"))
+                self.assertEqual(save.read_bytes(), b"existing game data")
 
     def test_axis_activation_settings_are_shared_and_invalid_values_are_preserved(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -108,7 +142,9 @@ fxaa = true
             self.assertEqual(Path(tomllib.loads(result.stdout)["paths"]["dvd_root"]), data)
 
     def test_invalid_or_future_documents_are_reported_and_preserved(self):
-        cases = ('[broken', '[kirby]\nschema_version = 2\n',
+        cases = ('[kirby]\nschema_version = 1\ngame_language = 2\n',
+                 '[kirby]\nschema_version = 1\ngame_language = "4"\n',
+                 '[broken', '[kirby]\nschema_version = 2\n',
                  '[kirby]\nschema_version = 1\n[audio]\nvolume = 3\n',
                  '[kirby]\nschema_version = 1\n[video]\nvsync = "false"\n')
         with tempfile.TemporaryDirectory() as directory:

@@ -144,6 +144,8 @@ void Window::receive() {
         if(reply.contains("state")) {model=reply["state"].toObject();config=model["config"].toObject();ready=true;}
         if(first || cmd=="reload" || cmd=="resetControls" || cmd=="resetMotion" || cmd=="data" ||
            (page==Diagnostics && reply.contains("state") && cmd!="change")) navigate(page,true);
+        if(page==Saves && (cmd=="importSave" || cmd=="exportSave" || cmd=="restoreBackup" || cmd=="deleteBackup"))
+            navigate(page,true);
         if(cmd=="save") {needsSave=false;if(closing){finishing=true;close();}}
         if(cmd!="poll" && cmd!="hello")notice({});
         refresh();
@@ -165,7 +167,7 @@ void Window::notice(const QString& error) {message->setText(error);message->setV
 void Window::navigate(Page dest,bool keepScroll) {
     const int position=keepScroll?scroll->verticalScrollBar()->value():0;
     if(page==Controls && dest!=Controls && capturing)request("cancel");
-    page=dest; bindings.clear();edits.clear(); play=nullptr;gameState=nullptr;dataState=nullptr;
+    page=dest; bindings.clear();edits.clear(); play=nullptr;gameState=nullptr;dataState=nullptr;importSaveState=nullptr;
     // Disconnect the old page before queued callbacks can target its controls.
     if(auto* old=scroll->takeWidget()){old->hide();old->deleteLater();}
     captureText=nullptr;motionText=nullptr;devices=nullptr;swap=nullptr;escape=nullptr;cancel=nullptr;
@@ -213,6 +215,7 @@ void Window::refresh() {
         dataState->setToolTip(status(model["dataStatus"].toString()));
     }
     if(gameState){gameState->setText(status(model["gameStatus"].toString()));gameState->setVisible(!gameState->text().isEmpty());}
+    if(importSaveState){importSaveState->setText(status(model["saveImportStatus"].toString()));importSaveState->setVisible(!importSaveState->text().isEmpty());}
     if(page==Controls)updateControls();
 }
 void Window::tracked(QWidget* w) {edits.append(w);}
@@ -287,6 +290,8 @@ void Window::buildHome() {
 }
 void Window::buildBasic() {
     auto* simple=card("Display and sound","Basic settings are saved automatically.");
+    select(simple,"gameLanguage","Game language",{"English","Français","Español"},{1,3,4},
+           "Applies the next time you start the game.");
     check(simple,"fullscreen","Start in fullscreen","Open the game in borderless fullscreen on the next launch. Press Alt+Enter while playing to switch between fullscreen and windowed mode for that session.");
     auto* audio=new QWidget;auto* mix=new QHBoxLayout(audio);mix->setContentsMargins(0,0,0,0);
     auto* slider=new QSlider(Qt::Horizontal);slider->setRange(0,100);slider->setMinimumWidth(narrow?95:175);
@@ -341,7 +346,56 @@ void Window::buildSaves() {
     auto* box=card(model["saveFound"].toBool()?"Game save found":"No game save yet",
                    "The game manages its own saves. Choosing another DATA folder does not move them.");
     field(box,"Save files",model["saves"].toString());
-    action(box,"Open Saves",[this]{openFolder(model["saves"].toString());});
+    auto* buttons=new QHBoxLayout;box->addLayout(buttons);
+    action(buttons,"Open Saves",[this]{openFolder(model["saves"].toString());});
+    action(buttons,"Import Dolphin save",[this]{
+        const auto folder=QFileDialog::getExistingDirectory(this,T("Choose Dolphin save folder"),QDir(root).filePath("local"));
+        if(!folder.isEmpty() && confirmReplace())request("importSave",{{"path",folder}});
+    })->setEnabled(!model["running"].toBool());
+    action(buttons,"Import save (.bin)",[this]{
+        const auto file=QFileDialog::getOpenFileName(this,T("Choose Dolphin save (.bin)"),QDir(root).filePath("local"),"Dolphin Wii save (*.bin);;All files (*)");
+        if(!file.isEmpty() && confirmReplace())request("importSave",{{"path",file}});
+    })->setEnabled(!model["running"].toBool());
+    auto* exportButtons=new QHBoxLayout;box->addLayout(exportButtons);
+    action(exportButtons,"Export save (.bin)",[this]{
+        const auto file=QFileDialog::getSaveFileName(this,T("Choose export file"),QDir(root).filePath("RK5E01-save.bin"),"Dolphin Wii save (*.bin);;All files (*)");
+        if(!file.isEmpty())request("exportSave",{{"path",file},{"folder",false}});
+    })->setEnabled(!model["running"].toBool() && model["saveFound"].toBool());
+    action(exportButtons,"Export save folder",[this]{
+        const auto folder=QFileDialog::getExistingDirectory(this,T("Choose export folder"),QDir(root).filePath("local"));
+        if(!folder.isEmpty())request("exportSave",{{"path",folder},{"folder",true}});
+    })->setEnabled(!model["running"].toBool() && model["saveFound"].toBool());
+    importSaveState=label({},"soft");importSaveState->hide();box->addWidget(importSaveState);
+
+    auto* backups=card("Backups","Imports and restores keep a copy of the previous save here.");
+    const auto backupList=model["backups"].toArray();
+    if(backupList.isEmpty()) {
+        backups->addWidget(label(T("No backups yet."),"soft"));
+    } else {
+        for(const auto& item:backupList) {
+            const auto b=item.toObject();
+            auto* row=new QWidget;auto* lay=new QHBoxLayout(row);lay->setContentsMargins(0,2,0,2);
+            lay->addWidget(label(b["timestamp"].toString()),1);
+            action(lay,"Restore",[this,b]{
+                if(confirmReplace())request("restoreBackup",{{"name",b["name"].toString()}});
+            })->setEnabled(!model["running"].toBool());
+            action(lay,"Delete",[this,b]{
+                request("deleteBackup",{{"name",b["name"].toString()}});
+            })->setEnabled(!model["running"].toBool());
+            backups->addWidget(row);
+        }
+    }
+}
+bool Window::confirmReplace() {
+    QMessageBox box(this);
+    box.setWindowTitle(T("Replace save"));
+    box.setIcon(QMessageBox::Warning);
+    box.setText(T("This will replace your current save. A backup of the current save will be made first."));
+    auto* replace=box.addButton(T("Replace"),QMessageBox::AcceptRole);
+    auto* cancel=box.addButton(T("Cancel"),QMessageBox::RejectRole);
+    box.setDefaultButton(cancel);
+    box.exec();
+    return box.clickedButton()==replace;
 }
 void Window::buildDiagnostics() {
     auto* d=card("Build information");QJsonObject runtime=model["runtime"].toObject();

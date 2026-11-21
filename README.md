@@ -14,7 +14,10 @@ for language, fullscreen and volume. Choose English, 简体中文 or Español
 from the language selector. Advanced settings contains graphics, custom input
 and diagnostics. Hover over a control or a question-mark button for help.
 The launcher saves your language choice in
-`local/user/launcher-language.txt`. The setting applies to the launcher.
+`local/user/launcher-language.txt`. To change Kirby’s language, choose
+**Game language** in Basic settings or in RecompLauncher’s game settings.
+The USA disc supports English, Français and Español. The choice takes effect
+on the next game launch.
 
 Kirby Setup starts in English. Its own language selector switches between
 English, 简体中文 and Español, including during installation, and remembers your
@@ -238,9 +241,19 @@ When launched from the repository root:
 
 Back up saves before testing development changes. Launching the executable from a
 different working directory uses a different local user directory.
-Windows NAND attributes use NTFS named streams. Save backups must preserve those
-streams; ordinary file contents alone do not retain Wii permission metadata.
-Filesystems without named-stream support have not been validated.
+
+**Managing saves:** open **Saves** in the launcher.
+
+- **Import** replaces the current save (after a confirmation) from a Dolphin `Wii` folder,
+  an RK5E01 title-data folder, or a Dolphin `data.bin` save export. It requires `FLF.bin`,
+  replaces only the RK5E01 save directory, and rejects another game's save and Dolphin
+  memory-card (`.gci`/`.raw`) data.
+- **Export** writes the current save either as a folder of raw files or as a Dolphin
+  `data.bin` (AES-encrypted with the Wii SD key). The `.bin` round-trips with this launcher
+  and imports into Dolphin; its save banner is blank because the recomp stores no banner.
+- **Backups** lists every previous save by the date it was replaced. Restore swaps the
+  current save for one of them (backing up the current save first) and Delete removes it.
+  Only the 10 most recent backups are kept.
 
 ## Documentation
 

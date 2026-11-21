@@ -10,6 +10,7 @@
 #include "desktop_service.h"
 #include "build_probe.h"
 #include "platform.h"
+#include "save_manager.h"
 #include <cryptopp/sha.h>
 #include "setup/job.h"
 #include "setup/installation.h"
@@ -35,7 +36,8 @@
 namespace fs = std::filesystem;
 namespace {
 constexpr char ExpectedSha1[] = "f4280a2b0709bfde4132be22e9f7fa8ecfa2a130";
-struct Selection { std::mutex mutex; std::string path,error; bool ready=false,pending=false; };
+enum class SourceUse { None, Install, Import, ExportFolder, ExportBin };
+struct Selection { std::mutex mutex; std::string path,error; bool ready=false,pending=false; SourceUse use=SourceUse::None; };
 void SourceChosen(void* userdata, const char* const* files, int) {
     std::unique_ptr<std::shared_ptr<Selection>> owner(static_cast<std::shared_ptr<Selection>*>(userdata));
     std::lock_guard lock((*owner)->mutex);
@@ -314,13 +316,22 @@ int main(int argc, char** argv) {
             }
         }
         std::string selectedSource,selectionError;
+        SourceUse use=SourceUse::None;
         { std::lock_guard lock(selection->mutex);
           state.choosingSource=selection->pending;
-          if (selection->ready) { selectedSource=selection->path;selectionError=selection->error;selection->ready=false; } }
+          if (selection->ready) { selectedSource=selection->path;selectionError=selection->error;
+              use=selection->use;selection->ready=false;selection->use=SourceUse::None; } }
         if (!selectionError.empty()) setupSelectionError="Could not open source chooser: "+selectionError;
         if (!selectedSource.empty() && !selfTest) {
-            try { startSetup(Launcher::FromUtf8(selectedSource),Launcher::Setup::Operation::Install); }
-            catch (const std::exception& error) { setupSelectionError=error.what(); }
+            const auto path=Launcher::FromUtf8(selectedSource);
+            try {
+                switch (use) {
+                case SourceUse::Import: state.saveImportStatus=Launcher::ImportSave(root,path); break;
+                case SourceUse::ExportFolder: state.saveImportStatus=Launcher::ExportSaveFolder(root,path); break;
+                case SourceUse::ExportBin: state.saveImportStatus=Launcher::ExportSaveBin(root,path); break;
+                default: startSetup(path,Launcher::Setup::Operation::Install); break;
+                }
+            } catch (const std::exception& error) { state.saveImportStatus=std::string("Save operation failed: ")+error.what(); }
         }
         if (!selfTest && !setupSelectionError.empty()) {
             state.setup.status=Launcher::Setup::Status::Failed;
@@ -392,7 +403,7 @@ int main(int argc, char** argv) {
             case Launcher::Action::ChooseData:
             case Launcher::Action::ChooseImage:
                 if (state.setup.Busy() || state.choosingSource || game!=nullptr) break;
-                { std::lock_guard lock(selection->mutex);selection->pending=true;state.choosingSource=true; }
+                { std::lock_guard lock(selection->mutex);selection->pending=true;selection->use=SourceUse::Install;state.choosingSource=true; }
                 if (action==Launcher::Action::ChooseData)
                     SDL_ShowOpenFolderDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,Launcher::Utf8(data).c_str(),false);
                 else {
@@ -425,6 +436,41 @@ int main(int argc, char** argv) {
                 break;
             case Launcher::Action::OpenLogs: OpenFolder(root / "build-logs"); break;
             case Launcher::Action::OpenSaves: OpenFolder(root / "local/user/nand/title/00010000/524b3545/data"); break;
+            case Launcher::Action::ImportDolphinSave:
+                if (game!=nullptr || state.choosingSource) break;
+                { std::lock_guard lock(selection->mutex);selection->pending=true;selection->use=SourceUse::Import;state.choosingSource=true; }
+                SDL_ShowOpenFolderDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,
+                    Launcher::Utf8(root).c_str(),false);
+                break;
+            case Launcher::Action::ImportSaveBin:
+                if (game!=nullptr || state.choosingSource) break;
+                { std::lock_guard lock(selection->mutex);selection->pending=true;selection->use=SourceUse::Import;state.choosingSource=true; }
+                { static constexpr SDL_DialogFileFilter filters[]{{"Dolphin Wii save","bin"},{"All files","*"}};
+                  SDL_ShowOpenFileDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,filters,2,nullptr,false); }
+                break;
+            case Launcher::Action::ExportSaveFolder:
+                if (game!=nullptr || state.choosingSource) break;
+                { std::lock_guard lock(selection->mutex);selection->pending=true;selection->use=SourceUse::ExportFolder;state.choosingSource=true; }
+                SDL_ShowOpenFolderDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,
+                    Launcher::Utf8(root).c_str(),false);
+                break;
+            case Launcher::Action::ExportSaveBin:
+                if (game!=nullptr || state.choosingSource) break;
+                { std::lock_guard lock(selection->mutex);selection->pending=true;selection->use=SourceUse::ExportBin;state.choosingSource=true; }
+                { static constexpr SDL_DialogFileFilter filters[]{{"Dolphin Wii save","bin"},{"All files","*"}};
+                  SDL_ShowSaveFileDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,filters,2,
+                      Launcher::Utf8(root/"RK5E01-save.bin").c_str()); }
+                break;
+            case Launcher::Action::RestoreBackup:
+                if (game!=nullptr || state.choosingSource) break;
+                try { state.saveImportStatus=Launcher::RestoreBackup(root,state.pendingBackup); }
+                catch (const std::exception& error) { state.saveImportStatus=std::string("Save operation failed: ")+error.what(); }
+                break;
+            case Launcher::Action::DeleteBackup:
+                if (game!=nullptr || state.choosingSource) break;
+                try { state.saveImportStatus=Launcher::DeleteBackup(root,state.pendingBackup); }
+                catch (const std::exception& error) { state.saveImportStatus=std::string("Save operation failed: ")+error.what(); }
+                break;
             case Launcher::Action::OpenSettings: OpenFolder(settings.parent_path()); break;
             case Launcher::Action::BuildGuide: SDL_OpenURL(LocalUrl(root/"docs/building.md").c_str()); break;
             case Launcher::Action::ShowInstall: page = Launcher::Page::Install; break;

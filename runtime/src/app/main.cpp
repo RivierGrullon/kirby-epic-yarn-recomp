@@ -158,6 +158,7 @@ int main(int argc, char** argv) {
     float masterVolume = 100;
     bool vsync = Kirby::Settings::DefaultVsync;
     bool gpuResidentCopies = Kirby::Settings::DefaultGpuResidentCopies;
+    std::optional<int> gameLanguage;
     int resolutionScale = 1, msaaSamples = 1;
     bool fxaa = false;
     bool fullscreen = false, fullscreenOverride = false;
@@ -213,6 +214,7 @@ int main(int argc, char** argv) {
             const auto settings = Kirby::LoadSettings(configPath);
             controlBindings = settings.controls;
             motionSettings = settings.motion;
+            gameLanguage = settings.gameLanguage;
             resolutionScale = settings.resolutionScale;
             msaaSamples = settings.msaaSamples;
             fxaa = settings.fxaa;
@@ -227,7 +229,7 @@ int main(int argc, char** argv) {
     }
     if (mode == "--print-settings") {
         std::cout << Kirby::FormatSettings({dataRoot, masterVolume, vsync, gpuResidentCopies, controlBindings, motionSettings,
-                                           resolutionScale, msaaSamples, fxaa, fullscreen});
+                                           resolutionScale, msaaSamples, fxaa, fullscreen, gameLanguage});
         return 0;
     }
 #ifdef _WIN32
@@ -441,7 +443,7 @@ int main(int argc, char** argv) {
             if (mode == "--benchmark-pos-matrix") Kirby::BenchmarkPositionMatrix(cpu);
             return 0;
         }
-        Kirby::Ios().ConfigureNand("local/user/nand", bootLayout.titleId);
+        Kirby::Ios().ConfigureNand("local/user/nand", bootLayout.titleId, gameLanguage);
         Kirby::Ios().ConfigureDisc(dataRoot, KirbyBootConfig::DiscCapacity);
         Kirby::Ios().ConfigureDiscTitle(dataRoot, bootLayout.titleId);
         std::memcpy(expectedDspInitCode.data(), Memory::GetPointer(KirbyBootConfig::DspInitCode, 128), 128);

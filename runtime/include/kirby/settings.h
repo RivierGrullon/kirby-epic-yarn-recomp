@@ -5,6 +5,7 @@
 #include "kirby/graphics/quality.h"
 #include <filesystem>
 #include <iosfwd>
+#include <optional>
 #include <string>
 
 namespace Kirby {
@@ -21,6 +22,9 @@ struct Settings {
     int msaaSamples = 1;
     bool fxaa = false;
     bool fullscreen = false;
+    // Wii SYSCONF language IDs supported by the USA disc.
+    static constexpr int English = 1, French = 3, Spanish = 4;
+    std::optional<int> gameLanguage; // An unset preference keeps the existing Wii language.
 };
 
 // Errors throw without modifying the source file. Relative DATA paths are

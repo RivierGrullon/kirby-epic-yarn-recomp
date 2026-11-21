@@ -16,7 +16,7 @@ public:
     using Resolve = uint8_t* (*)(uint32_t, uint32_t);
     struct Completion { uint32_t request; int32_t result; };
     explicit IosServices(Resolve resolve) : resolve_(resolve) {}
-    void ConfigureNand(const std::filesystem::path& root, uint64_t titleId);
+    void ConfigureNand(const std::filesystem::path& root, uint64_t titleId, std::optional<uint8_t> language = std::nullopt);
     void ConfigureDisc(const std::filesystem::path& root, uint64_t capacity);
     void ConfigureDiscTitle(const std::filesystem::path& root, uint64_t titleId);
     const DiscTitleMetadata* DiscTitle() const { return discTitle_.get(); }

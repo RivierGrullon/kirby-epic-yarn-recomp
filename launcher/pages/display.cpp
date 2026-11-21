@@ -5,6 +5,13 @@
 namespace Launcher {
 Action DrawDisplay(State& state) {
     ImGui::BeginDisabled(state.selfTest || !state.settingsError.empty());
+    constexpr std::array ids{Kirby::Settings::English, Kirby::Settings::French, Kirby::Settings::Spanish};
+    const char* languages[]{"English", "Français", "Español"};
+    int language = static_cast<int>(std::ranges::find(ids, state.config.gameLanguage.value_or(Kirby::Settings::English)) - ids.begin());
+    if (ImGui::Combo(Tr("Game language"), &language, languages, IM_ARRAYSIZE(languages))) {
+        state.config.gameLanguage = ids[language];
+        state.settingsDirty = true;
+    }
     state.settingsDirty |= ImGui::Checkbox(Tr("Start in fullscreen"), &state.config.fullscreen);
     ImGui::TextWrapped("%s", Tr("Open the game in borderless fullscreen on the next launch. Press Alt+Enter while playing to switch between fullscreen and windowed mode for that session."));
     ImGui::Spacing();
