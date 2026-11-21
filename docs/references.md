@@ -49,8 +49,8 @@ bounded comparison of relevant public projects, not an exhaustive popularity ran
 
 The Zelda frontend's [installer documentation](https://github.com/ZeldaWWHDRecomp/ZeldaWWHDRecomp/blob/19e1fcc92e5a9a3e2c96f74eb325d8334c42236d/tools/installer/README.md)
 separates a native SDL3/ImGui interface from local extraction/build tools. Kirby's
-first frontend reuses its already-built SDL3/ImGui libraries and invokes the local
-native game; full first-run installation is not implemented. The Zelda source is
+original frontend used this approach. The current launcher uses Qt Widgets and
+the separate Setup application handles first installation. The Zelda source is
 MPL-2.0; it was reviewed without importing code into the GPL runtime.
 
 The [performance notes](https://github.com/ZeldaWWHDRecomp/ZeldaWWHDRecomp/blob/19e1fcc92e5a9a3e2c96f74eb325d8334c42236d/docs/performance.md)

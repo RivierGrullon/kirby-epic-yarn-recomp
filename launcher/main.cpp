@@ -1,50 +1,29 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Native desktop frontend using the project's existing SDL3 and Dear ImGui libraries.
+// Native host for the Qt launcher and its command-line tools.
 #include <SDL3/SDL.h>
 #include "kirby/settings.h"
 #include "kirby/boot/validate_input.h"
 #include "kirby/platform/command_line.h"
 #include "kirby/app/build_info.h"
-#include "pages/pages.h"
-#include "input_focus.h"
 #include "desktop_service.h"
 #include "build_probe.h"
 #include "platform.h"
-#include "save_manager.h"
 #include <cryptopp/sha.h>
 #include "setup/job.h"
 #include "setup/installation.h"
-#include "setup/handoff.h"
-#include <imgui.h>
-#include <backends/imgui_impl_sdl3.h>
-#include <backends/imgui_impl_sdlrenderer3.h>
 #include <array>
-#include <cerrno>
 #include <csignal>
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace fs = std::filesystem;
 namespace {
 constexpr char ExpectedSha1[] = "f4280a2b0709bfde4132be22e9f7fa8ecfa2a130";
-enum class SourceUse { None, Install, Import, ExportFolder, ExportBin };
-struct Selection { std::mutex mutex; std::string path,error; bool ready=false,pending=false; SourceUse use=SourceUse::None; };
-void SourceChosen(void* userdata, const char* const* files, int) {
-    std::unique_ptr<std::shared_ptr<Selection>> owner(static_cast<std::shared_ptr<Selection>*>(userdata));
-    std::lock_guard lock((*owner)->mutex);
-    (*owner)->path=files && files[0] ? files[0] : "";
-    (*owner)->error=files ? "" : SDL_GetError();
-    (*owner)->ready=true;(*owner)->pending=false;
-}
 volatile sig_atomic_t sourceCancelled=0;
 bool Verify(const fs::path& data, std::string& status) {
     for (const char* entry : {"sys/main.dol", "sys/boot.bin", "sys/fst.bin", "ticket.bin", "tmd.bin", "files"}) {
@@ -71,24 +50,6 @@ bool Verify(const fs::path& data, std::string& status) {
     status = valid ? "RK5E01 Rev 0 (USA) verified" : "Wrong revision or SHA-1 verification failed";
     return valid;
 #endif
-}
-std::string LocalUrl(const fs::path& path) {
-    const auto generic=fs::absolute(path).generic_u8string();
-    std::string url="file://";
-#ifdef _WIN32
-    if (!generic.starts_with(u8"/")) url+='/' ;
-#endif
-    constexpr char hex[]="0123456789ABCDEF";
-    for (const unsigned char character : generic) {
-        if ((character>='a' && character<='z') || (character>='A' && character<='Z') ||
-            (character>='0' && character<='9') || std::string_view("/-._~:").find(character)!=std::string_view::npos)
-            url+=character;
-        else { url+='%';url+=hex[character>>4];url+=hex[character&15]; }
-    }
-    return url;
-}
-void OpenFolder(const fs::path& path) {
-    fs::create_directories(path);SDL_OpenURL(LocalUrl(path).c_str());
 }
 #ifdef _WIN32
 using GameProcess = void;
@@ -208,289 +169,46 @@ int main(int argc, char** argv) {
 #else
         const auto frontend = developerExecutable.parent_path()/"qt-launcher/kirby-ui";
 #endif
-        if (fs::is_regular_file(frontend)) {
-            const auto program=Launcher::Utf8(frontend);
-            const char* args[]{program.c_str(),selfTest?"--self-test":nullptr,nullptr};
-            auto* ui=SDL_CreateProcess(args,false);
-            if (!ui) { std::cerr<<SDL_GetError()<<'\n'; return 1; }
-            int result=0;
-            if (selfTest && !SDL_WaitProcess(ui,true,&result)) result=1;
-            SDL_DestroyProcess(ui); return result;
+        if (!fs::is_regular_file(frontend)) {
+            std::cerr << "Qt launcher missing: " << Launcher::Utf8(frontend)
+                      << ". Restore the qt-launcher folder from Kirby Setup or build the Qt frontend.\n";
+            return 1;
         }
+        const auto program=Launcher::Utf8(frontend);
+        const char* args[]{program.c_str(),selfTest?"--self-test":nullptr,nullptr};
+        auto* ui=SDL_CreateProcess(args,false);
+        if (!ui) { std::cerr<<SDL_GetError()<<'\n'; return 1; }
+        int result=0;
+        if (selfTest && !SDL_WaitProcess(ui,true,&result)) result=1;
+        SDL_DestroyProcess(ui);
+        return result;
     }
     Launcher::State state{root, developerExecutable, root / "local/user/settings.toml", Kirby::Settings{root / "disc/DATA"}};
-    auto& executable=state.executable;
-    state.selfTest = selfTest;
-    state.portable = portable;
-    if (!selfTest) Launcher::SetLanguage(Launcher::ReadLanguage(state.settingsFile.parent_path()));
     state.launcherBuild=Kirby::ParseBuildInformation(Kirby::BuildInformation(Kirby::BuildProgram::Launcher));
-    if (selfTest) {
-        // Render a fixture record without launching a query or touching user data.
-        state.runtimeBuild=state.launcherBuild;state.runtimeBuild->program="runtime";
-        state.buildStatus.clear();
+    try {
+        state.config=Kirby::LoadOrMigrateSettings(state.settingsFile,root/"local/user/launcher.cfg",root,state.config);
+    } catch (const std::exception& error) {
+        state.settingsError=error.what();
     }
-    const auto& settings = state.settingsFile;
-    auto& config = state.config;
-    auto& settingsError = state.settingsError;
-    auto& settingsDirty = state.settingsDirty;
-    if (!selfTest) {
-        try { config = Kirby::LoadOrMigrateSettings(settings, root / "local/user/launcher.cfg", root, config); }
-        catch (const std::exception& error) { settingsError = error.what(); }
-        try {
-            if (const auto installed=Launcher::Setup::ReadInstallation(root)) {
-                executable=installed->executable;state.installationId=installed->identifier;
-                if (!fs::exists(settings)) config.gameData=installed->dataRoot;
-            }
-        } catch (const std::exception& error) {
-            state.installationError=error.what();
+    try {
+        if (const auto installed=Launcher::Setup::ReadInstallation(root)) {
+            state.executable=installed->executable;
+            state.installationId=installed->identifier;
+            if (!fs::exists(state.settingsFile)) state.config.gameData=installed->dataRoot;
         }
+    } catch (const std::exception& error) {
+        state.installationError=error.what();
     }
-    auto& data = config.gameData;
-    const auto saveSettings = [&] {
-        if (selfTest || !settingsError.empty()) return false;
-        try { Kirby::SaveSettings(settings, config); settingsDirty = false; return true; }
-        catch (const std::exception& error) { settingsError = error.what(); return false; }
-    };
-    if (service) {
-        GameProcess* child=nullptr;
-        const int result=Launcher::DesktopService(state,Verify,
-            [&] { child=StartGame(executable,settings,root); return child!=nullptr; },
-            [&]() -> std::optional<int> {
-                int code=0;
-                if (!child || !PollGame(child,&code)) return {};
-                CloseGame(child); child=nullptr; return code;
-            });
-        if (child) CloseGame(child);
-        SDL_Quit(); return result;
-    }
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) { std::fprintf(stderr,"%s\n",SDL_GetError()); return 1; }
-    SDL_Window* window = SDL_CreateWindow("Kirby's Epic Yarn", 1080, 720,
-        SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | (selfTest ? SDL_WINDOW_HIDDEN : 0));
-    SDL_Renderer* renderer = window ? SDL_CreateRenderer(window, nullptr) : nullptr;
-    if (!renderer) { std::fprintf(stderr,"%s\n",SDL_GetError()); SDL_Quit(); return 1; }
-    SDL_SetWindowMinimumSize(window, 640, 520);
-    SDL_SetRenderVSync(renderer, 1);
-    IMGUI_CHECKVERSION(); ImGui::CreateContext();
-    auto& io = ImGui::GetIO(); io.IniFilename = nullptr;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
-    state.fabric.Load(renderer, root);
-    ImGui_ImplSDL3_InitForSDLRenderer(window, renderer); ImGui_ImplSDLRenderer3_Init(renderer);
-    auto selection = std::make_shared<Selection>();
-    bool running = true; unsigned frames = 0;
-    auto& valid = state.dataVerified;
-    auto& status = state.dataStatus;
-    if (!selfTest) valid = Verify(data, status);
-    GameProcess* game=nullptr;
-    std::string setupSelectionError;
-    const auto startSetup=[&](const fs::path& source,Launcher::Setup::Operation operation=Launcher::Setup::Operation::Inspect) {
-        if (game!=nullptr || state.setup.Busy() || state.closing) return;
-        setupSelectionError.clear();
-        if (portable) {
-            std::string selectedStatus;
-            if (!Verify(source, selectedStatus)) { setupSelectionError=selectedStatus;return; }
-            data=source;valid=true;status=std::move(selectedStatus);settingsDirty=true;
-            saveSettings();
-            return;
-        }
-        (void)operation;
-        setupSelectionError="Open Kirby Setup to install or update the game.";
-    };
-    Launcher::BuildProbe buildProbe;
-    const auto refreshBuild=[&] {
-        state.runtimeBuild.reset();
-        state.checkingBuild=buildProbe.Start(executable,root/"local/host-libs");
-        state.buildStatus=state.checkingBuild ? "Checking native executable..." : buildProbe.Error();
-    };
-    if (!selfTest) refreshBuild();
-    auto page = valid && fs::is_regular_file(executable) ? Launcher::Page::Play : Launcher::Page::Install;
-    while (running) {
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            const bool ownsInput = SDL_GetKeyboardFocus() == window && !(SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED);
-            const bool consumed = !selfTest && ownsInput && state.bindingCapture.Handle(event, config.controls, settingsDirty);
-            if (!consumed) ImGui_ImplSDL3_ProcessEvent(&event);
-            if (event.type == SDL_EVENT_QUIT ||
-                (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window))) {
-                state.closing=true;
-                running=false;
-            }
-        }
-        std::string selectedSource,selectionError;
-        SourceUse use=SourceUse::None;
-        { std::lock_guard lock(selection->mutex);
-          state.choosingSource=selection->pending;
-          if (selection->ready) { selectedSource=selection->path;selectionError=selection->error;
-              use=selection->use;selection->ready=false;selection->use=SourceUse::None; } }
-        if (!selectionError.empty()) setupSelectionError="Could not open source chooser: "+selectionError;
-        if (!selectedSource.empty() && !selfTest) {
-            const auto path=Launcher::FromUtf8(selectedSource);
-            try {
-                switch (use) {
-                case SourceUse::Import: state.saveImportStatus=Launcher::ImportSave(root,path); break;
-                case SourceUse::ExportFolder: state.saveImportStatus=Launcher::ExportSaveFolder(root,path); break;
-                case SourceUse::ExportBin: state.saveImportStatus=Launcher::ExportSaveBin(root,path); break;
-                default: startSetup(path,Launcher::Setup::Operation::Install); break;
-                }
-            } catch (const std::exception& error) { state.saveImportStatus=std::string("Save operation failed: ")+error.what(); }
-        }
-        if (!selfTest && !setupSelectionError.empty()) {
-            state.setup.status=Launcher::Setup::Status::Failed;
-            state.setup.message=setupSelectionError;state.setup.result.reset();
-        }
-        if (game!=nullptr) {
-            int result = 0;
-            if (PollGame(game,&result)) {
-                CloseGame(game);game=nullptr; SDL_ShowWindow(window); SDL_RaiseWindow(window);
-                state.gameStatus = result == 0 ? "Game closed" : "Game stopped with an error. Open Logs for details.";
-                refreshBuild();
-            }
-        }
-        if (!selfTest) {
-            buildProbe.Poll();
-            state.checkingBuild=buildProbe.Status()==Launcher::BuildProbeStatus::Checking;
-            if (buildProbe.Status()==Launcher::BuildProbeStatus::Ready && !state.runtimeBuild) {
-                state.runtimeBuild=buildProbe.Information();state.buildStatus.clear();
-            } else if (buildProbe.Status()==Launcher::BuildProbeStatus::Failed) {
-                state.runtimeBuild.reset();state.buildStatus=buildProbe.Error();
-            }
-        }
-        const bool focused = SDL_GetKeyboardFocus() == window &&
-            !(SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED);
-        if (!focused || page != Launcher::Page::Controls || state.bindingCapture.Busy())
-            state.motionPreview.Close();
-        state.bindingCapture.Tick(SDL_GetTicks(), focused);
-        io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard);
-        if (!state.bindingCapture.Blocks(Kirby::BindingDevice::Gamepad)) io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-        if (!state.bindingCapture.Blocks(Kirby::BindingDevice::Keyboard)) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        ImGui_ImplSDLRenderer3_NewFrame(); ImGui_ImplSDL3_NewFrame();
-        Launcher::SynchronizeInputFocus(focused);
-        ImGui::NewFrame();
-        state.gameRunning = game!=nullptr;
-        if (selfTest) {
-            // Exercise every page at both layout sizes without file/process actions.
-            page = static_cast<Launcher::Page>((frames / 3) % Launcher::PageNames.size());
-            const auto pass = frames / (Launcher::PageNames.size() * 3);
-            Launcher::SetLanguage(static_cast<Launcher::Language>(pass / 2));
-            if (frames % (Launcher::PageNames.size() * 3) == 0)
-                SDL_SetWindowSize(window, pass % 2 ? 640 : 1080, pass % 2 ? 520 : 720);
-        }
-        ImGui::BeginDisabled(state.closing);
-        const auto action = Launcher::DrawLauncher(state, page);
-        ImGui::EndDisabled();
-        if (!selfTest && focused && !state.closing) try {
-            switch (action) {
-            case Launcher::Action::Play:
-                if (state.setup.Busy() || state.choosingSource || game!=nullptr) break;
-                if (!state.installationError.empty()) { state.gameStatus="Repair the installed build before playing. "+state.installationError;break; }
-                if (!state.installationId.empty()) {
-                    const auto installed=Launcher::Setup::ReadInstallation(root);
-                    if (!installed || installed->identifier!=state.installationId) {
-                        state.gameStatus="Installation selection changed. Restart the launcher before playing.";break;
-                    }
-                }
-                valid = Verify(data, status);
-                if (valid && fs::is_regular_file(executable) && saveSettings()) {
-                    if (state.checkingBuild) {
-                        buildProbe.Cancel();state.checkingBuild=false;
-                        state.buildStatus="Refresh build information after the game closes";
-                    }
-                    game=StartGame(executable,settings,root);
-                    if (!game) state.gameStatus="Could not start the native executable: "+std::string(SDL_GetError());
-                    else { state.gameStatus = "Game running"; SDL_MinimizeWindow(window); }
-                } else if (valid) state.gameStatus = fs::exists(executable)
-                    ? "Could not save settings" : "Choose your game in Install to prepare it.";
-                break;
-            case Launcher::Action::ChooseData:
-            case Launcher::Action::ChooseImage:
-                if (state.setup.Busy() || state.choosingSource || game!=nullptr) break;
-                { std::lock_guard lock(selection->mutex);selection->pending=true;selection->use=SourceUse::Install;state.choosingSource=true; }
-                if (action==Launcher::Action::ChooseData)
-                    SDL_ShowOpenFolderDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,Launcher::Utf8(data).c_str(),false);
-                else {
-                    static constexpr SDL_DialogFileFilter filters[]{{"Wii disc images and archives","wbfs;iso;rvz;7z"},{"All files","*"}};
-                    SDL_ShowOpenFileDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,filters,2,nullptr,false);
-                }
-                break;
-            case Launcher::Action::VerifyData: if (!state.choosingSource) startSetup(data);break;
-            case Launcher::Action::CancelSetup: break;
-            case Launcher::Action::BuildGame:
-            case Launcher::Action::OpenSetup: {
-                if (game!=nullptr) break;
-                auto command=Launcher::Setup::ReadSetupCommand(root);
-                std::vector<const char*> arguments;
-                for (const auto& item:command) arguments.push_back(item.c_str());
-                arguments.push_back(nullptr);
-                auto* process=SDL_CreateProcess(arguments.data(),false);
-                if (!process) throw std::runtime_error("Could not open Kirby Setup: "+std::string(SDL_GetError()));
-                SDL_DestroyProcess(process);break;
-            }
-            case Launcher::Action::OpenSetupLogs:
-                OpenFolder(state.setup.logPath.empty() ? root/"local/setup/logs" : state.setup.logPath.parent_path());break;
-            case Launcher::Action::SaveSettings: saveSettings(); break;
-            case Launcher::Action::ReloadSettings:
-                try {
-                    config = Kirby::LoadOrMigrateSettings(settings, root / "local/user/launcher.cfg", root,
-                                                        Kirby::Settings{root / "disc/DATA"});
-                    settingsError.clear(); settingsDirty = false; valid = Verify(data, status);
-                } catch (const std::exception& error) { settingsError = error.what(); }
-                break;
-            case Launcher::Action::OpenLogs: OpenFolder(root / "build-logs"); break;
-            case Launcher::Action::OpenSaves: OpenFolder(root / "local/user/nand/title/00010000/524b3545/data"); break;
-            case Launcher::Action::ImportDolphinSave:
-                if (game!=nullptr || state.choosingSource) break;
-                { std::lock_guard lock(selection->mutex);selection->pending=true;selection->use=SourceUse::Import;state.choosingSource=true; }
-                SDL_ShowOpenFolderDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,
-                    Launcher::Utf8(root).c_str(),false);
-                break;
-            case Launcher::Action::ImportSaveBin:
-                if (game!=nullptr || state.choosingSource) break;
-                { std::lock_guard lock(selection->mutex);selection->pending=true;selection->use=SourceUse::Import;state.choosingSource=true; }
-                { static constexpr SDL_DialogFileFilter filters[]{{"Dolphin Wii save","bin"},{"All files","*"}};
-                  SDL_ShowOpenFileDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,filters,2,nullptr,false); }
-                break;
-            case Launcher::Action::ExportSaveFolder:
-                if (game!=nullptr || state.choosingSource) break;
-                { std::lock_guard lock(selection->mutex);selection->pending=true;selection->use=SourceUse::ExportFolder;state.choosingSource=true; }
-                SDL_ShowOpenFolderDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,
-                    Launcher::Utf8(root).c_str(),false);
-                break;
-            case Launcher::Action::ExportSaveBin:
-                if (game!=nullptr || state.choosingSource) break;
-                { std::lock_guard lock(selection->mutex);selection->pending=true;selection->use=SourceUse::ExportBin;state.choosingSource=true; }
-                { static constexpr SDL_DialogFileFilter filters[]{{"Dolphin Wii save","bin"},{"All files","*"}};
-                  SDL_ShowSaveFileDialog(SourceChosen,new std::shared_ptr<Selection>(selection),window,filters,2,
-                      Launcher::Utf8(root/"RK5E01-save.bin").c_str()); }
-                break;
-            case Launcher::Action::RestoreBackup:
-                if (game!=nullptr || state.choosingSource) break;
-                try { state.saveImportStatus=Launcher::RestoreBackup(root,state.pendingBackup); }
-                catch (const std::exception& error) { state.saveImportStatus=std::string("Save operation failed: ")+error.what(); }
-                break;
-            case Launcher::Action::DeleteBackup:
-                if (game!=nullptr || state.choosingSource) break;
-                try { state.saveImportStatus=Launcher::DeleteBackup(root,state.pendingBackup); }
-                catch (const std::exception& error) { state.saveImportStatus=std::string("Save operation failed: ")+error.what(); }
-                break;
-            case Launcher::Action::OpenSettings: OpenFolder(settings.parent_path()); break;
-            case Launcher::Action::BuildGuide: SDL_OpenURL(LocalUrl(root/"docs/building.md").c_str()); break;
-            case Launcher::Action::ShowInstall: page = Launcher::Page::Install; break;
-            case Launcher::Action::RefreshBuildInfo: refreshBuild(); break;
-            case Launcher::Action::None: break;
-            }
-        } catch (const std::exception& error) { state.gameStatus = error.what(); }
-        ImGui::Render();
-        SDL_SetRenderScale(renderer,io.DisplayFramebufferScale.x,io.DisplayFramebufferScale.y);
-        SDL_SetRenderDrawColor(renderer,247,244,231,255); SDL_RenderClear(renderer);
-        ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(),renderer); SDL_RenderPresent(renderer);
-        if (selfTest && ++frames == Launcher::PageNames.size() * 18) running = false;
-        SDL_Delay(5);
-    }
-    if (settingsDirty && !saveSettings()) std::fprintf(stderr,"Settings: %s\n",settingsError.c_str());
-    buildProbe.Cancel();
-    if (game) CloseGame(game);
-    state.motionPreview.Close();
-    state.fabric.Close();
-    ImGui_ImplSDLRenderer3_Shutdown(); ImGui_ImplSDL3_Shutdown(); ImGui::DestroyContext();
-    SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
-    return 0;
+
+    GameProcess* child=nullptr;
+    const int result=Launcher::DesktopService(state,Verify,
+        [&] { child=StartGame(state.executable,state.settingsFile,root); return child!=nullptr; },
+        [&]() -> std::optional<int> {
+            int code=0;
+            if (!child || !PollGame(child,&code)) return {};
+            CloseGame(child); child=nullptr; return code;
+        });
+    if (child) CloseGame(child);
+    SDL_Quit();
+    return result;
 }

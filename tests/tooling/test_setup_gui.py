@@ -120,7 +120,7 @@ class SetupGuiTests(unittest.TestCase):
         self.assertEqual(self.controller.session.status,'failed')
         self.assertTrue(self.controller.session.error)
 
-    def test_window_form_has_native_choosers_and_no_install_without_a_source(self):
+    def test_window_form_does_not_install_without_a_source(self):
         from installer.setup_gui import SetupWindow
         from installer.setup_layout import Bundle
         bundle=Bundle(self.root,self.root/'runtime',self.root/'libs','a'*40)
@@ -131,6 +131,78 @@ class SetupGuiTests(unittest.TestCase):
         window.source.setText(str(self.root/'own.wbfs'));self.app.processEvents()
         self.assertTrue(window.install_button.isEnabled())
         window.close();window.deleteLater();self.app.processEvents()
+
+    def test_setup_buttons_open_widget_pickers_and_preserve_selection_on_cancel(self):
+        from PyQt6.QtCore import QTimer
+        from PyQt6.QtWidgets import QFileDialog
+        from installer.setup_gui import SetupWindow
+        from installer.setup_layout import Bundle
+        window = SetupWindow(Bundle(self.root, self.root/'runtime', self.root/'libs', 'a'*40),
+                             preferences=self.preferences)
+        self.addCleanup(window.close)
+        window.show()
+        image = self.root/'own copy.wbfs'
+        image.touch()
+        for button, field, mode, target in (
+                (window.file_button, window.source, QFileDialog.FileMode.ExistingFile, image),
+                (window.folder_button, window.source, QFileDialog.FileMode.Directory, self.root),
+                (window.destination_button, window.destination, QFileDialog.FileMode.Directory, self.root)):
+            for accept in (False, True):
+                original = field.text()
+                observed = []
+
+                def inspect():
+                    dialog = self.app.activeModalWidget()
+                    observed.append((dialog.fileMode(), dialog.testOption(QFileDialog.Option.DontUseNativeDialog)))
+                    if not accept:
+                        dialog.reject()
+                    elif mode == QFileDialog.FileMode.Directory:
+                        dialog.setDirectory(str(target))
+                        dialog.accept()
+                    else:
+                        dialog.setDirectory(str(target.parent))
+                        dialog.selectFile(str(target))
+                        dialog.accept()
+
+                QTimer.singleShot(0, inspect)
+                button.click()
+                self.assertEqual(observed, [(mode, True)])
+                if accept:
+                    self.assertEqual(Path(field.text()).resolve(strict=True), target.resolve(strict=True))
+                else:
+                    self.assertEqual(field.text(), original)
+
+    def test_setup_folder_shortcuts_browse_first_and_delegate_on_request(self):
+        from PyQt6.QtWidgets import QPushButton, QTreeView
+        from installer.setup_gui import SetupWindow
+        from installer.setup_layout import Bundle
+        from installer.setup_model import Session
+        window = SetupWindow(Bundle(self.root, self.root/'runtime', self.root/'libs', 'a'*40),
+                             preferences=self.preferences)
+        self.addCleanup(window.close)
+        window.controller = self.controller
+        window.destination_path = self.root/'installed'
+        window.destination_path.mkdir()
+        window.controller.session = Session('test', self.root, self.root/'disc.iso')
+        window.controller.session.log_path = self.root/'worker.log'
+        window.show()
+        for button, folder in ((window.open_folder_button, window.destination_path),
+                               (window.logs_button, self.root)):
+            with patch('installer.setup_dialogs.QDesktopServices.openUrl', return_value=True) as external:
+                button.setEnabled(True)
+                button.click()
+                dialog = self.app.activeModalWidget()
+                self.assertEqual(dialog.objectName(), 'folderView')
+                tree = dialog.findChild(QTreeView)
+                expected = folder.resolve(strict=True)
+                self.assertEqual(Path(tree.model().filePath(tree.rootIndex())).resolve(strict=True), expected)
+                self.assertTrue(tree.model().isReadOnly())
+                external.assert_not_called()
+                manager = next(b for b in dialog.findChildren(QPushButton) if b.text() == 'Open in file manager')
+                manager.click()
+                self.assertEqual(Path(external.call_args.args[0].toLocalFile()).resolve(strict=True), expected)
+                dialog.close()
+                self.app.processEvents()
 
     def test_folder_preparation_runs_outside_the_qt_event_loop(self):
         from installer.setup_gui import SetupWindow

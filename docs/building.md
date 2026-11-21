@@ -10,8 +10,8 @@ You need your own **Kirby’s Epic Yarn, USA (RK5E01 Rev 0)** copy.
 ### 1. Open PowerShell in the project folder
 
 Use a Git checkout on Windows 10/11 (64-bit). Right-click the project folder
-and choose **Open in Terminal**. You do not need to install Python, a compiler,
-Visual Studio or Docker.
+and choose **Open in Terminal**. Provide the [Qt frontend](#building-the-qt-desktop-launcher)
+for the playable ZIP. The script provisions the native game build tools.
 
 ### 2. Run one command
 
@@ -54,7 +54,17 @@ keep this folder when updating.
 
 For the easiest setup, use the [AppImage](../README.md#linux-appimage).
 To build from a Git checkout, install Git, Python 3.11+, Docker or Podman,
-and Dolphin’s `dolphin-tool`, then run:
+and Dolphin’s `dolphin-tool`. For the container-based source build, either
+copy the matching Setup package's `tools/qt-launcher/` to
+`build/native/qt-launcher/` or build the Qt frontend on the desktop host:
+
+```bash
+cmake -S launcher/qt -B build/desktop-ui -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$PWD/build/native/qt-launcher"
+cmake --build build/desktop-ui
+```
+
+Then run:
 
 ```bash
 python3 tools/setup.py "/path/to/Kirby.wbfs"
@@ -84,6 +94,8 @@ runtime and its desktop platform plugin must be available on the host.
 Release builds bundle Qt and its XCB plugin; the Linux desktop still supplies
 its graphics and X11/XWayland libraries (including `libopengl0` and
 `libxcb-cursor0` on Ubuntu).
-Source builds without a desktop kit retain the SDL launcher. Release installers
-already carry the compiled Qt frontend and copy it beside the native host,
-so players do not need this SDK. Setup uses its existing PyQt environment.
+Qt Widgets provides the launcher window. Without a Qt SDK you can use the
+prebuilt `tools/qt-launcher/` directory from the matching Setup package:
+copy the whole directory to `build/native/qt-launcher/` before running the
+source setup or packaging a playable ZIP. Release installers deploy it
+automatically. The native host's CLI and `--ui-service` work independently.

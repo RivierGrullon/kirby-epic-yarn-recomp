@@ -7,7 +7,26 @@ if(KIRBY_DEPLOY_QT AND UNIX)
     set(CMAKE_INSTALL_LIBDIR "lib" CACHE STRING "Private launcher libraries")
 endif()
 find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets)
-qt_add_executable(kirby-ui WIN32 main.cpp window.cpp controls.cpp theme.cpp)
+qt_add_executable(kirby-ui WIN32
+    main.cpp
+    app/window.cpp
+    app/folder_view.cpp
+    app/host_session.cpp
+    app/translations.cpp
+    pages/form.cpp
+    pages/home.cpp
+    pages/settings.cpp
+    pages/install.cpp
+    pages/controls.cpp
+    pages/motion.cpp
+    pages/saves.cpp
+    pages/diagnostics.cpp
+    theme/patchwork.cpp
+    theme/form_controls.cpp
+    theme/dialogs.cpp
+    selftest/preview.cpp
+)
+target_include_directories(kirby-ui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(kirby-ui PRIVATE Qt6::Widgets)
 target_compile_features(kirby-ui PRIVATE cxx_std_20)
 set_target_properties(kirby-ui PROPERTIES AUTORCC ON)

@@ -2,4 +2,9 @@
   <file alias="mascot.png">../../packaging/linux/yarn-mascot-icon.png</file>
   <file alias="launcher.ico">../assets/launcher.ico</file>
   <file alias="font.ttf">../assets/launcher-ui.ttf</file>
+  <file alias="fabric.qss">theme/fabric.qss</file>
+  <file alias="dialogs.qss">theme/dialogs.qss</file>
+  <file alias="dropdown-patch.png">theme/dropdown-patch.png</file>
+  <file alias="linen.xpm">theme/linen.xpm</file>
+  <file alias="warning-patch.png">theme/warning-patch.png</file>
 </qresource></RCC>

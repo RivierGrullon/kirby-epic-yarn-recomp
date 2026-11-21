@@ -161,12 +161,10 @@ The AX memory adaptation reads actual configured MEM2 bounds, avoiding a null
 sample window when the retail 64 MiB map is smaller than the upstream NDEV limit.
 Its integration probe includes a synthetic MEM2 PCM16 voice, not only bus constants.
 
-The native desktop frontend is built as `kirby-launcher`. Its process and folder
-dialog ownership remain in `../launcher/main.cpp`; `../launcher/state.h` contains
-the view state and actions. `../launcher/pages/` holds the layout and separate
-Play, Install, Display, Audio, Controls, Saves and Diagnostics views. Pages edit
-shared settings or return actions; they do not own subprocesses or file writes.
-It shares existing SDL3/ImGui libraries but runs the game as a separate process.
+The desktop entry point is `kirby-launcher`. It starts the Qt Widgets frontend
+in `qt-launcher/`. The Qt window and file dialogs live in `../launcher/qt/`.
+The frontend starts `kirby-launcher --ui-service` to handle settings, input
+devices, installation data, saves and the native game process.
 Folder/revision checks precede launch, which passes the shared TOML path using
 `--config`. `src/app/settings.cpp` and `include/kirby/settings.h` form the common
 configuration adapter; see `../docs/settings.md` for its schema and migration.
@@ -200,12 +198,9 @@ after output resampling and before ImGui overlays. It preserves brightness and
 does not change guest-visible copy bytes. `--gpu-fxaa` checks the actual shader
 against diagonal and uniform images, including disable and dimming behavior.
 
-`../launcher/input_focus.cpp` clears queued and held ImGui input when the launcher
-does not have keyboard focus or is minimized. This is required because the SDL
-backend polls global controller state. Actions are also checked against current
-window focus before dispatch. The ImGui input regression covers initial absence
-of focus, repeated background polling, focus loss/regain, interrupted clicks and
-fresh foreground input; it does not certify physical controller mappings.
+The Qt frontend reports window focus to the host. The host polls SDL gamepads
+and dispatches navigation and binding events only for a focused frontend.
+Binding capture also cancels on focus loss.
 
 ## Windows host adaptation
 

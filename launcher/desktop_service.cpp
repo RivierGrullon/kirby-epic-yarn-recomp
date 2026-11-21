@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "desktop_service.h"
 #include "build_probe.h"
-#include "language.h"
+#include "language_preference.h"
 #include "platform.h"
 #include "setup/installation.h"
 #include "setup/handoff.h"
@@ -98,18 +98,18 @@ struct Input {
             const float dt=p.lastTick?float(now-p.lastTick)/1.e9f:0;
             p.lastTick=now;
             const bool before=p.device.state.calibrating;
-            p.device.Update(p.pad,s.config.motion,dt,true);
+            p.Update(s.config.motion,dt);
             if (before && !p.device.state.calibrating && p.device.state.calibrated) {
                 s.config.motion.calibrationDevice=p.device.identity; s.config.motion.bias=p.device.state.bias;
                 s.settingsDirty=true; p.message="Calibration complete. Save settings to use it in game.";
             }
         }
-        const auto tilt=p.device.Tilt(s.config.motion);
         return {{"devices",devices},{"selected",selected},{"nav",navigation},{"phase",int(capture.phase)},
             {"release",capture.WaitingForRelease()},{"keyboardCapture",capture.device==Kirby::BindingDevice::Keyboard},
             {"message",capture.message},{"gyro",p.device.gyroRead},
             {"accel",p.device.accelRead},{"x",p.device.state.x},{"y",p.device.state.y},
-            {"tiltAngle",std::atan2(-tilt[2],-tilt[1])*57.29578},{"calibrating",p.device.state.calibrating},
+            {"previewPaused",!focused || !controls || capture.Busy()},
+            {"tiltAngle",p.TiltDegrees(s.config.motion)},{"calibrating",p.device.state.calibrating},
             {"motionMessage",p.message}};
     }
 };
@@ -120,6 +120,7 @@ int DesktopService(State& s,
     const std::function<bool()>& startGame,const std::function<std::optional<int>()>& pollGame) {
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"1");
     SDL_Init(SDL_INIT_GAMEPAD);
+    auto language=ReadLanguage(s.settingsFile.parent_path());
     Input input;
     BuildProbe probe;
     const auto refresh=[&] { s.runtimeBuild.reset(); probe.Cancel(); probe.Start(s.executable,s.root/"local/host-libs"); };
@@ -207,8 +208,8 @@ int DesktopService(State& s,
             else if (command=="lang") {
                 const int value=request.at("value");
                 if (value<0 || value>2) throw std::runtime_error("Invalid language");
-                SetLanguage(static_cast<Language>(value));
-                if (!WriteLanguage(s.settingsFile.parent_path(),CurrentLanguage()))
+                language=static_cast<Language>(value);
+                if (!WriteLanguage(s.settingsFile.parent_path(),language))
                     throw std::runtime_error("Could not save the language preference.");
             } else if (command=="bind" || command=="clear") {
                 const auto action=request.at("action").get<size_t>();
@@ -238,7 +239,7 @@ int DesktopService(State& s,
             Json backups=Json::array();
             for (const auto& backup : ListBackups(s.root))
                 backups.push_back({{"name",backup.name},{"timestamp",backup.timestamp}});
-            Json state={{"config",Config(s.config)},{"bindings",bindings},{"lang",int(CurrentLanguage())},
+            Json state={{"config",Config(s.config)},{"bindings",bindings},{"lang",int(language)},
                 {"dirty",s.settingsDirty},{"running",s.gameRunning},{"gameStatus",s.gameStatus},
                 {"verified",s.dataVerified},{"dataStatus",s.dataStatus},{"settingsError",s.settingsError},
                 {"installationError",s.installationError},{"installed",std::filesystem::is_regular_file(s.executable)},

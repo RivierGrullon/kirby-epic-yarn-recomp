@@ -51,4 +51,6 @@ if(KIRBY_QT_PREFIX)
         COMMAND "${CMAKE_COMMAND}" -E env "PATH=${qt_path}" "${CMAKE_COMMAND}" --build "${qt_build}"
         VERBATIM)
     add_dependencies(kirby-launcher kirby_qt_frontend)
+elseif(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/qt-launcher/kirby-ui${CMAKE_EXECUTABLE_SUFFIX}")
+    message(STATUS "No desktop Qt kit detected: building the launcher host only. See docs/building.md for frontend deployment.")
 endif()

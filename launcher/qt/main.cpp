@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "window.h"
+#include "app/window.h"
+#include <QApplication>
+#include <QDir>
+#include <QFile>
+#include <QFontDatabase>
+#include <QIcon>
 
 int main(int argc,char** argv) {
     bool test=false;
     for(int i=1;i<argc;++i) if(QByteArray(argv[i])=="--self-test") test=true;
     if(test && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM","offscreen");
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication app(argc,argv);
     app.setApplicationName("Kirby's Epic Yarn");
     app.setStyle("Fusion");
@@ -23,7 +29,17 @@ int main(int argc,char** argv) {
     QStringList families{"Microsoft YaHei UI","Noto Sans CJK SC"};
     if(fontId>=0) families.append(QFontDatabase::applicationFontFamilies(fontId));
     font.setFamilies(families); app.setFont(font);
-    app.setStyleSheet(Yarn::styleSheet());
+    QDir::addSearchPath("yarnTheme", ":/yarn");
+    QString style;
+    for (const char* path : {":/yarn/fabric.qss", ":/yarn/dialogs.qss"}) {
+        QFile stylesheet(path);
+        if (!stylesheet.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            qCritical("Could not open the bundled stylesheet %s", path);
+            return 1;
+        }
+        style += QString::fromUtf8(stylesheet.readAll());
+    }
+    app.setStyleSheet(style);
     QDir bin(QCoreApplication::applicationDirPath());bin.cdUp();
     QDir root=bin;
     if(!bin.exists("kirby-portable.txt")) {root.cdUp();root.cdUp();}

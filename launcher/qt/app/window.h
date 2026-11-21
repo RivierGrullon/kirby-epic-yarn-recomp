@@ -1,9 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
-#include "theme.h"
-#include <QtWidgets>
+#include "pages/page.h"
+#include <QJsonObject>
+#include <QList>
+#include <QPointer>
+#include <QStringList>
+#include <QTimer>
+#include <QTranslator>
+#include <QWidget>
 #include <QProcess>
 #include <functional>
+
+QT_BEGIN_NAMESPACE
+class QCheckBox;
+class QComboBox;
+class QLabel;
+class QLayout;
+class QPushButton;
+class QScrollArea;
+class QVBoxLayout;
+QT_END_NAMESPACE
 
 namespace Yarn {
 class Window : public QWidget {
@@ -16,7 +32,7 @@ protected:
     void closeEvent(QCloseEvent*) override;
     bool eventFilter(QObject*, QEvent*) override;
 private:
-    QString root,host;
+    QString root;
     bool test,ready=false,waitingPoll=false,closing=false,finishing=false;
     bool narrow=false,needsSave=false,discardOnClose=false;
     int lang,controlTab=0;
@@ -32,21 +48,33 @@ private:
     QPointer<QComboBox> languages;
     QPushButton *save{},*play{};
     std::array<QPushButton*,3> nav{};
-    QList<QPair<QPushButton*,QPushButton*>> bindings;
-    QPointer<QLabel> captureText,motionText;
-    QPointer<QComboBox> devices;
-    QPointer<QPushButton> swap,escape,cancel,calibrate;
-    QPointer<QWidget> motionMap,pointerOptions,bindingRows;
+    // These handles belong to the current page and are reset together on navigation.
+    struct {
+        QList<QPair<QPushButton*,QPushButton*>> buttons;
+        QPointer<QLabel> message;
+        QPointer<QPushButton> swap,escape,cancel;
+        QPointer<QWidget> table;
+    } bindingUi;
+    struct {
+        QPointer<QLabel> message;
+        QPointer<QComboBox> devices;
+        QPointer<QPushButton> calibrate;
+        QPointer<QWidget> map;
+    } motionUi;
     bool capturing=false;
+
+    void startService(const QString& host);
     void request(QString cmd,QJsonObject args={});
     void receive();
     void poll();
+
     void navigate(Page dest,bool keepScroll=false);
     void refresh();
     void headerText();
     void setLanguage(int idx);
     void loadStandardText();
     void notice(const QString& error);
+
     void buildHome();
     void buildBasic();
     void buildControllerGuide();
@@ -55,11 +83,16 @@ private:
     void buildControls();
     void buildSaves();
     void buildDiagnostics();
+    void buildBindings();
+    void buildMotion();
+    void updateMotion(bool editable);
     void updateControls();
     void bind(int action,bool keyboard);
     void patch(const char* key,QJsonValue value);
-    void openFolder(const QString& path);
+    void openFolder(const char* title, const QString& path);
     bool confirmReplace();
+
+    static QLabel* label(const QString& value, const char* style=nullptr);
     QWidget* row(QVBoxLayout* parent,QString title,QWidget* control,const char* help=nullptr);
     QVBoxLayout* card(const char* title,const char* help=nullptr);
     QPushButton* action(QLayout* owner,const char* title,std::function<void()> fn,const char* hint=nullptr);
