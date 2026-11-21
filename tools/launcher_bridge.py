@@ -78,4 +78,8 @@ def main(arguments=None):
 
 
 if __name__ == '__main__':
+    # RecompLauncher reads both pipes as UTF-8, regardless of the Windows code page.
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and not stream.isatty():
+            stream.reconfigure(encoding='utf-8', errors='backslashreplace')
     sys.exit(main())
