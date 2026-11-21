@@ -366,6 +366,7 @@ add_executable(kirby_bindings_test "${KIRBY_PROJECT_ROOT}/tests/unit/bindings_te
 target_link_libraries(kirby_bindings_test PRIVATE kirby_settings)
 add_test(NAME kirby_bindings COMMAND kirby_bindings_test)
 add_executable(kirby_motion_test "${KIRBY_PROJECT_ROOT}/tests/unit/motion_test.cpp")
+target_include_directories(kirby_motion_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
 target_link_libraries(kirby_motion_test PRIVATE kirby_settings ${AURORA_SDL3_TARGET})
 add_test(NAME kirby_motion COMMAND kirby_motion_test)
 add_executable(kirby_binding_capture_test "${KIRBY_PROJECT_ROOT}/tests/unit/binding_capture_test.cpp"

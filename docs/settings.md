@@ -183,8 +183,11 @@ to a sideways Wii Remote with the D-pad at the left.
   Q/E tilt and R recenter for player 1. These fixed helper keys can be disabled if
   they overlap custom button bindings. The right-stick click may also activate a
   button action if explicitly assigned in the binding table.
-- Select a **Preview controller** to inspect live sensor availability, tilt and
-  pointer position. This selection does not reassign game players.
+- Select a **Preview controller** to inspect live input. The green line rotates
+  with accelerometer tilt. The pink dot tracks gyro aiming, including when the
+  in-game pointer is set to mouse or disabled. With the right-stick pointer
+  selected, the dot follows the stick. These previews do not reassign players or
+  change the game's pointer mode.
 - Select **Calibrate gyro**, then hold still for two seconds. Movement restarts
   the measurement. Save settings after completion. One controller model's SDL
   GUID and bias are saved; calibration is applied only to matching GUIDs. A new

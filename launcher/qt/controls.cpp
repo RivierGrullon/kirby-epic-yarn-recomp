@@ -7,15 +7,36 @@ namespace {
 class PointerView final : public QWidget {
 public:
     QPointF point;
+    bool showPoint=false,showTilt=false;
+    double tiltDegrees=0;
+    QString placeholder;
     void paintEvent(QPaintEvent*) override {
         QPainter p(this);p.setRenderHint(QPainter::Antialiasing);
         QRectF bounds=QRectF(rect()).adjusted(4,4,-4,-4);
         p.setBrush(QColor("#edf2e8"));p.setPen(QPen(QColor("#b6c6b1"),1,Qt::DashLine));p.drawRoundedRect(bounds,11,11);
+        if (!placeholder.isEmpty()) {
+            p.setPen(QColor("#59695e"));
+            p.drawText(bounds,Qt::AlignCenter,placeholder);
+            return;
+        }
         p.drawLine(QPointF(bounds.center().x(),bounds.top()),QPointF(bounds.center().x(),bounds.bottom()));
         p.drawLine(QPointF(bounds.left(),bounds.center().y()),QPointF(bounds.right(),bounds.center().y()));
-        p.setBrush(QColor("#c77994"));p.setPen(QPen(QColor("#985775"),1));
-        p.drawEllipse(QPointF(bounds.center().x()+point.x()*(bounds.width()/2-7),
-                              bounds.center().y()+point.y()*(bounds.height()/2-7)),6,6);
+        if (showTilt) {
+            p.save();
+            p.translate(bounds.center());
+            p.rotate(tiltDegrees);
+            const qreal radius=std::min(bounds.width(),bounds.height())*.40;
+            p.setPen(QPen(QColor("#62896e"),3,Qt::SolidLine,Qt::RoundCap));
+            p.drawLine(QPointF(-radius,0),QPointF(radius,0));
+            p.setBrush(QColor("#aac7a9"));
+            p.drawEllipse(QPointF(radius,0),3,3);
+            p.restore();
+        }
+        if (showPoint) {
+            p.setBrush(QColor("#c77994"));p.setPen(QPen(QColor("#985775"),1));
+            p.drawEllipse(QPointF(bounds.center().x()+point.x()*(bounds.width()/2-7),
+                                  bounds.center().y()+point.y()*(bounds.height()/2-7)),6,6);
+        }
     }
 };
 QString scanName(QKeyEvent* e) {
@@ -89,6 +110,8 @@ void Window::buildControls() {
         devices=new FabricCombo;row(panel,T("Preview controller"),devices);
         connect(devices,&QComboBox::activated,this,[this](int i){request("pad",{{"id",devices->itemData(i).toInt()}});});
         auto* preview=new PointerView;preview->setMinimumHeight(82);panel->addWidget(preview);motionMap=preview;
+        preview->setToolTip(T("The line shows tilt. The dot follows gyro motion, or the right stick when selected."));
+        preview->setAccessibleDescription(preview->toolTip());
         motionText=new QLabel;motionText->setWordWrap(true);panel->addWidget(motionText);
         auto* buttons=new QHBoxLayout;panel->addLayout(buttons);
         action(buttons,"Recenter preview",[this]{request("recenter");});
@@ -143,11 +166,26 @@ void Window::updateControls() {
         }
         devices->setEnabled(!pads.isEmpty());devices->setCurrentIndex(std::max(0,devices->findData(input["selected"].toInt())));
         calibrate->setEnabled(editable && input["gyro"].toBool() && input["accel"].toBool() && !input["calibrating"].toBool());
-        motionText->setText(input["calibrating"].toBool()?T("Hold the controller still for 2 seconds."):
-            (input["motionMessage"].toString().isEmpty()?QString::asprintf(T("Gyroscope: %s    Accelerometer: %s").toUtf8().constData(),
-                qUtf8Printable(T(input["gyro"].toBool()?"available":"unavailable")),qUtf8Printable(T(input["accel"].toBool()?"available":"unavailable"))) +
-                QString("   ·   %1°").arg(input["tiltAngle"].toDouble(),0,'f',1):status(input["motionMessage"].toString())));
-        auto* view=static_cast<PointerView*>(motionMap.data());view->point={input["x"].toDouble(),input["y"].toDouble()};view->update();
+        auto* view=static_cast<PointerView*>(motionMap.data());
+        const bool gyro=input["gyro"].toBool(), accel=input["accel"].toBool();
+        const bool paused=input["previewPaused"].toBool();
+        view->point={input["x"].toDouble(),input["y"].toDouble()};
+        view->tiltDegrees=input["tiltAngle"].toDouble();
+        view->showPoint=gyro || (!pads.isEmpty() && config["pointer"].toInt()==2);
+        view->showTilt=accel;
+        view->placeholder.clear();
+        if (pads.isEmpty()) view->placeholder=T("No controller connected");
+        else if (paused) view->placeholder=T("Motion preview paused");
+        else if (!view->showPoint && !accel) view->placeholder=T("No motion sensor data");
+        view->update();
+
+        QString live=QString::asprintf(T("Gyroscope: %s    Accelerometer: %s").toUtf8().constData(),
+            qUtf8Printable(T(gyro?"available":"unavailable")),qUtf8Printable(T(accel?"available":"unavailable")));
+        if (accel) live+=QString("   ·   %1°").arg(view->tiltDegrees,0,'f',1);
+        if (input["calibrating"].toBool()) live+="\n"+T("Hold the controller still for 2 seconds.");
+        else if (!input["motionMessage"].toString().isEmpty()) live+="\n"+status(input["motionMessage"].toString());
+        motionText->setText(live);
+        motionText->setVisible(!paused && !pads.isEmpty());
     }
 }
 bool Window::preview(const QString& directory) {
@@ -181,6 +219,20 @@ bool Window::preview(const QString& directory) {
                 if (!edit || edit->contentsRect().marginsRemoved(edit->textMargins()).width()
                         < edit->fontMetrics().horizontalAdvance(edit->text())+4) return false;
             }
+            input={{"devices",QJsonArray{QJsonObject{{"id",1},{"name","Preview controller"}}}},
+                   {"selected",1},{"gyro",true},{"accel",true}};
+            updateControls();
+            const auto neutral=motionMap->grab().toImage();
+            input["tiltAngle"]=35.;updateControls();
+            const auto tilted=motionMap->grab().toImage();
+            if (tilted==neutral) return false;
+            input["x"]=.5;input["y"]=-.4;updateControls();
+            if (motionMap->grab().toImage()==tilted) return false;
+            if(!directory.isEmpty()) {
+                const auto name=QString("%1-motion%2.png").arg(QStringList{"zh","en","es"}[i],compact?"-compact":"");
+                if(!grab().save(QDir(directory).filePath(name)))return false;
+            }
+            input={};
             controlTab=0;
         }
     }

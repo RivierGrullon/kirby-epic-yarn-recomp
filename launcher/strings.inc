@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // English message, Simplified Chinese, Spanish. Format arguments stay in the same order.
+{"Motion preview paused", "体感预览已暂停", "Vista previa en pausa"},
+{"No motion sensor data", "暂无体感传感器数据", "Sin datos de los sensores de movimiento"},
+{"The line shows tilt. The dot follows gyro motion, or the right stick when selected.", "线表示倾角，指针随陀螺仪或所选的右摇杆移动。", "La línea muestra la inclinación. El punto sigue al giroscopio o a la palanca derecha si está seleccionada."},
 {"Help", "帮助", "Ayuda"},
 {"Install the game to play", "安装游戏后即可开始", "Instala el juego para jugar"},
 {"cannot replace settings", "设置文件正在使用或无法写入，请关闭占用它的程序后重试。", "No se pudo guardar el archivo. Comprueba que se puede escribir y que ningún programa lo tenga abierto."},

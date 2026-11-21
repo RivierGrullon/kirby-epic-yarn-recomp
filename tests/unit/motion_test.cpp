@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "kirby/input/motion_device.h"
+#include "motion_preview.h"
 #include <SDL3/SDL.h>
 #include <iostream>
 #include <limits>
@@ -60,6 +61,22 @@ int main() {
     const float x = device.state.x;
     device.Update(pad, settings, .05f, false);
     Check(device.state.x == x, "Inactive device integrated gyro");
+    Launcher::MotionPreview preview;
+    preview.Select(id);
+    for (auto pointer : {PointerSource::Mouse, PointerSource::Disabled, PointerSource::Gyro}) {
+        settings.pointer = pointer;
+        device.state.Recenter();
+        preview.device.state.Recenter();
+        for (int i = 0; i < 50; ++i) {
+            sample();
+            preview.Update(settings, .01f);
+        }
+        Check(preview.device.state.x < -.3f && preview.TiltDegrees(settings) > 89.f,
+              "Live gyro or tilt preview stopped in the selected pointer mode");
+        Check(settings.pointer == pointer && (pointer == PointerSource::Gyro || device.state.x == 0),
+              "Preview changed the in-game pointer mode or motion");
+    }
+    preview.Close();
     settings.tilt = false;
     Check(device.Tilt(settings) == MotionVector{0, -1, 0}, "Disabled tilt leaked sensor input");
     settings.calibrationDevice = device.identity; settings.bias = {.01f, -.02f, 0};
