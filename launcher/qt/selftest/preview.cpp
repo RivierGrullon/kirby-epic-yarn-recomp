@@ -48,8 +48,20 @@ bool Window::preview(const QString& directory) {
             input["tiltAngle"]=35.;updateControls();
             const auto tilted=motionUi.map->grab().toImage();
             if (tilted==neutral) return false;
-            input["x"]=.5;input["y"]=-.4;updateControls();
-            if (motionUi.map->grab().toImage()==tilted) return false;
+            // Positive yaw and pitch should move the dot into the upper-left quadrant.
+            // The right stick reports the opposite convention for the same raw values.
+            const QRect upperLeft(0,0,tilted.width()*3/8,tilted.height()/2);
+            const QRect lowerRight=upperLeft.translated(tilted.width()-upperLeft.width(),
+                                                        tilted.height()-upperLeft.height());
+            input["x"]=.5;input["y"]=.5;updateControls();
+            const auto gyro=motionUi.map->grab().toImage();
+            if (gyro.copy(upperLeft)==tilted.copy(upperLeft) || gyro.copy(lowerRight)!=tilted.copy(lowerRight))
+                return false;
+            config["pointer"]=2;updateControls();
+            const auto stick=motionUi.map->grab().toImage();
+            if (stick.copy(lowerRight)==tilted.copy(lowerRight) || stick.copy(upperLeft)!=tilted.copy(upperLeft))
+                return false;
+            config["pointer"]=1;updateControls();
             if(!directory.isEmpty()) {
                 const auto name=QString("%1-motion%2.png").arg(QStringList{"zh","en","es"}[i],compact?"-compact":"");
                 if(!grab().save(QDir(directory).filePath(name)))return false;

@@ -88,9 +88,13 @@ void Window::updateMotion(bool editable) {
     auto* view=static_cast<PointerView*>(motionUi.map.data());
     const bool gyro=input["gyro"].toBool(), accel=input["accel"].toBool();
     const bool paused=input["previewPaused"].toBool();
-    view->point={input["x"].toDouble(),input["y"].toDouble()};
+    const bool rightStick=config["pointer"].toInt()==2;
+    const QPointF axes(input["x"].toDouble(),input["y"].toDouble());
+    // Positive gyro yaw/pitch aims left/up. Qt screen and SDL stick axes grow right/down.
+    // The host has already applied the user's per-axis inversion.
+    view->point=rightStick ? axes : -axes;
     view->tiltDegrees=input["tiltAngle"].toDouble();
-    view->showPoint=gyro || (!pads.isEmpty() && config["pointer"].toInt()==2);
+    view->showPoint=gyro || (!pads.isEmpty() && rightStick);
     view->showTilt=accel;
     view->placeholder.clear();
     if (pads.isEmpty()) view->placeholder=T("No controller connected");
