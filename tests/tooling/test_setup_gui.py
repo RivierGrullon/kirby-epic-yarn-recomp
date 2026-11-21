@@ -172,6 +172,37 @@ class SetupGuiTests(unittest.TestCase):
                 else:
                     self.assertEqual(field.text(), original)
 
+    def test_setup_folder_shortcuts_browse_first_and_delegate_on_request(self):
+        from PyQt6.QtWidgets import QPushButton, QTreeView
+        from installer.setup_gui import SetupWindow
+        from installer.setup_layout import Bundle
+        from installer.setup_model import Session
+        window = SetupWindow(Bundle(self.root, self.root/'runtime', self.root/'libs', 'a'*40),
+                             preferences=self.preferences)
+        self.addCleanup(window.close)
+        window.controller = self.controller
+        window.destination_path = self.root/'installed'
+        window.destination_path.mkdir()
+        window.controller.session = Session('test', self.root, self.root/'disc.iso')
+        window.controller.session.log_path = self.root/'worker.log'
+        window.show()
+        for button, folder in ((window.open_folder_button, window.destination_path),
+                               (window.logs_button, self.root)):
+            with patch('installer.setup_dialogs.QDesktopServices.openUrl', return_value=True) as external:
+                button.setEnabled(True)
+                button.click()
+                dialog = self.app.activeModalWidget()
+                self.assertEqual(dialog.objectName(), 'folderView')
+                tree = dialog.findChild(QTreeView)
+                self.assertEqual(Path(tree.model().filePath(tree.rootIndex())), folder)
+                self.assertTrue(tree.model().isReadOnly())
+                external.assert_not_called()
+                manager = next(b for b in dialog.findChildren(QPushButton) if b.text() == 'Open in file manager')
+                manager.click()
+                self.assertEqual(Path(external.call_args.args[0].toLocalFile()), folder)
+                dialog.close()
+                self.app.processEvents()
+
     def test_folder_preparation_runs_outside_the_qt_event_loop(self):
         from installer.setup_gui import SetupWindow
         from installer.setup_layout import Bundle

@@ -5,14 +5,14 @@ from pathlib import Path
 import subprocess
 import sys
 
-from PyQt6.QtCore import Qt, QElapsedTimer, QLibraryInfo, QLocale, QSettings, QThread, QTimer, QTranslator, QUrl
-from PyQt6.QtGui import QDesktopServices, QIcon
+from PyQt6.QtCore import Qt, QElapsedTimer, QLibraryInfo, QLocale, QSettings, QThread, QTimer, QTranslator
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QFrame, QHBoxLayout, QLabel,
                              QLineEdit, QMainWindow, QPlainTextEdit, QProgressBar, QScrollArea,
                              QVBoxLayout, QWidget)
 from .setup_theme import Banner, Card, FabricButton, LanguagePicker, Linen, PhaseList, button_patch, label
 from .setup_controller import Controller
-from .setup_dialogs import choose_path
+from .setup_dialogs import choose_path, show_folder
 from .setup_i18n import LANGUAGES, translate
 from .setup_layout import prepare_destination,finish_destination
 from .setup_model import PHASES
@@ -182,7 +182,7 @@ class SetupWindow(QMainWindow):
         self.cancel_button = FabricButton('Cancel')
         self.cancel_button.clicked.connect(self.cancel)
         self.open_folder_button = FabricButton('Open folder')
-        self.open_folder_button.clicked.connect(lambda:QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.destination_path))))
+        self.open_folder_button.clicked.connect(lambda: show_folder(self, 'Installation folder', self.destination_path))
         self.open_button = FabricButton('Open launcher', primary=True)
         self.open_button.clicked.connect(self.open_launcher)
         for button in (self.install_button, self.cancel_button, self.open_folder_button, self.open_button):
@@ -443,7 +443,7 @@ class SetupWindow(QMainWindow):
 
     def open_logs(self):
         if self.controller and self.controller.session.log_path:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.controller.session.log_path.parent)))
+            show_folder(self, 'Open logs', self.controller.session.log_path.parent)
 
     def open_launcher(self):
         if self.launcher is None:return
