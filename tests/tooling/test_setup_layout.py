@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import shutil
+import subprocess
 import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
@@ -34,6 +35,30 @@ class SetupLayoutTests(unittest.TestCase):
         self.libs=self.base/'bundle/host-libs';self.libs.mkdir();(self.libs/'libfixture.so').write_bytes(b'library')
         self.bundle=Bundle(self.project,self.runtime,self.libs,'a'*40,packaged=True)
         self.destination=self.base/"My Games ' literal"
+
+    def test_bridge_prepare_writes_utf8_to_launcher_pipes(self):
+        source = self.base/'disc.iso'
+        source.touch()
+        events = [
+            dict(stage='hash', state='progress', completed=1, total=2),
+            dict(stage='install', state='failed', error='Disc error · test'),
+        ]
+        lines = [json.dumps(dict(event, version=1, job_id='test', sequence=i))
+                 for i, event in enumerate(events, 1)]
+        worker = self.project/'tools/install.py'
+        worker.write_text('import sys\nprint(' + repr('\n'.join(lines)) + ')\nsys.exit(1)\n',
+                          encoding='ascii')
+        appdir = self.project.parent
+        (appdir/'revision').write_text(self.bundle.revision)
+        bridge = Path(__file__).resolve().parents[2]/'tools/launcher_bridge.py'
+        result = subprocess.run(
+            [sys.executable, bridge, '--appdir', appdir, '--prepare',
+             '--game', source, '--destination', self.destination],
+            env=dict(os.environ, PYTHONIOENCODING='gbk'), capture_output=True,
+        )
+        self.assertEqual(result.returncode, 21, result.stderr)
+        self.assertIn('Reading your disc image (50% ·', result.stdout.decode('utf-8'))
+        self.assertIn('Disc error · test', result.stderr.decode('utf-8'))
 
     def test_preparation_copies_authored_sources_and_host_libraries_but_never_developer_data(self):
         for name in ('disc/game.wbfs','generated/game.cpp','local/user/save','vendor/game-source'):
