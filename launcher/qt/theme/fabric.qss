@@ -1,0 +1,45 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+QWidget {color:#39483e; font-size:15px;}
+QLabel {background:transparent;}
+QLabel#brand {font-family:Georgia,serif;font-weight:bold;font-size:24px;color:#30483f;}
+QLabel#kicker {font:italic 28px Georgia,serif;color:#546e5c;}
+QLabel#title {font-size:35px;font-weight:bold;color:#344e3f;}
+QLabel#homeTitle {font-size:68px;font-weight:bold;color:#314c40;}
+QLabel#edition {font:14px Consolas,monospace;color:#597060;}
+QLabel#libraryTitle {font-size:23px;font-weight:bold;color:#36463e;}
+QLabel#section {font-weight:600;font-size:18px;}
+QLabel#soft {color:#657469;font-size:13px;}
+QLabel#notice {background:#fbe3d7;color:#70432f;padding:7px;border-radius:8px;}
+QFrame#card {background:#fffdf6;border:1px solid #dbd6c5;border-radius:16px;}
+QPushButton,QComboBox,QDoubleSpinBox {background:#fffdf7;border:1px solid #cfcbb9;border-radius:9px;padding:6px 12px;min-height:22px;}
+QPushButton:hover,QComboBox:hover {background:#f7e8e9;border-color:#c88fa2;}
+QPushButton:focus,QComboBox:focus,QSlider:focus,QDoubleSpinBox:focus,QCheckBox:focus {border:2px solid #aa6680;}
+QPushButton:disabled,QComboBox:disabled {color:#92958a;background:#eeede4;}
+QPushButton#nav {background:transparent;border:0;border-bottom:3px solid transparent;border-radius:0;padding:5px 8px;color:#59665d;}
+QPushButton#nav:focus {background:#f2eade;}
+QPushButton#nav:checked {border-bottom:3px solid #b76781;color:#493f43;}
+QPushButton#nav:hover {color:#964d65;}
+QPushButton#help {color:#65766b;background:#f1f1e6;border:1px dashed #aab6a4;border-radius:11px;padding:0;min-height:0;}
+QScrollArea,QWidget#paper,QWidget#viewport {background:transparent;border:0;}
+QScrollBar:vertical {background:transparent;width:9px;} QScrollBar::handle:vertical {background:#c7ccba;min-height:28px;border-radius:4px;}
+QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical {height:0;}
+QSlider::groove:horizontal {background:#dde2cf;border-radius:3px;height:6px;}
+QSlider::sub-page:horizontal {background:#ce889f;border-radius:3px;}
+QSlider::handle:horizontal {background:#c67691;border:2px solid #f8e0e5;width:15px;margin:-6px 0;border-radius:8px;}
+QToolTip {background:#fff9ea;color:#38463d;border:1px solid #c3baa2;padding:5px;}
+QComboBox QAbstractItemView {background:#fffaf0;selection-background-color:#efd1d9;selection-color:#423e39;}
+QComboBox::drop-down {border:0;width:24px;}
+QDoubleSpinBox#fabricNumber, QDoubleSpinBox#fabricNumber:focus {
+    /* Qt already subtracts both step buttons from the editor's width. */
+    background:transparent;border:0;padding:5px;min-height:30px;
+}
+QDoubleSpinBox#fabricNumber::down-button {
+    subcontrol-origin:border;subcontrol-position:center left;left:5px;width:26px;height:28px;
+}
+QDoubleSpinBox#fabricNumber::up-button {
+    subcontrol-origin:border;subcontrol-position:center right;right:5px;width:26px;height:28px;
+}
+QDoubleSpinBox#fabricNumber QLineEdit {background:transparent;border:0;padding:0;}
+QPlainTextEdit {background:#f5f4e9;border:1px solid #d8d5c6;border-radius:9px;padding:8px;}
+QTabBar::tab {background:#edeedc;border-radius:8px;padding:7px 15px;margin-right:5px;}
+QTabBar::tab:selected {background:#f0d3de;color:#713e50;}

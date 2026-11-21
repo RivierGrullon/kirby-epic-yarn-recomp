@@ -2,4 +2,5 @@
   <file alias="mascot.png">../../packaging/linux/yarn-mascot-icon.png</file>
   <file alias="launcher.ico">../assets/launcher.ico</file>
   <file alias="font.ttf">../assets/launcher-ui.ttf</file>
+  <file alias="fabric.qss">theme/fabric.qss</file>
 </qresource></RCC>

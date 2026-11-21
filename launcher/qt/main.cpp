@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "window.h"
+#include "app/window.h"
+#include <QApplication>
+#include <QDir>
+#include <QFile>
+#include <QFontDatabase>
+#include <QIcon>
 
 int main(int argc,char** argv) {
     bool test=false;
@@ -23,7 +28,12 @@ int main(int argc,char** argv) {
     QStringList families{"Microsoft YaHei UI","Noto Sans CJK SC"};
     if(fontId>=0) families.append(QFontDatabase::applicationFontFamilies(fontId));
     font.setFamilies(families); app.setFont(font);
-    app.setStyleSheet(Yarn::styleSheet());
+    QFile stylesheet(":/yarn/fabric.qss");
+    if (!stylesheet.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qCritical("Could not open the bundled launcher stylesheet");
+        return 1;
+    }
+    app.setStyleSheet(QString::fromUtf8(stylesheet.readAll()));
     QDir bin(QCoreApplication::applicationDirPath());bin.cdUp();
     QDir root=bin;
     if(!bin.exists("kirby-portable.txt")) {root.cdUp();root.cdUp();}
