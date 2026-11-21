@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -12,6 +13,12 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/xattr.h>
+#endif
 
 #define CRYPTOPP_ENABLE_NAMESPACE_WEAK 1
 #include <cryptopp/aes.h>
@@ -77,28 +84,33 @@ std::size_t BoundedStringLength(const char* p, std::size_t max) {
     return n;
 }
 
-std::string Timestamp() {
-    const auto now = std::chrono::system_clock::now();
-    const auto millis =
-        std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    return std::to_string(millis);
+std::string UniqueTimestamp() {
+    const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    static std::atomic<unsigned long long> sequence{0};
+    const auto index = sequence.fetch_add(1);
+    return index == 0 ? std::to_string(micros)
+                      : std::to_string(micros) + "-" + std::to_string(index);
 }
 
-std::string FormatTimestamp(const std::string& millisText) {
+std::string FormatTimestamp(const std::string& text) {
+    std::size_t end = 0;
+    while (end < text.size() && text[end] >= '0' && text[end] <= '9') ++end;
+    const std::string microsText = text.substr(0, end);
     try {
-        const long long millis = std::stoll(millisText);
-        const std::time_t when = static_cast<std::time_t>(millis / 1000);
+        const long long micros = std::stoll(microsText);
+        const std::time_t when = static_cast<std::time_t>(micros / 1000000);
         std::tm local{};
 #ifdef _WIN32
-        if (localtime_s(&local, &when) != 0) return millisText;
+        if (localtime_s(&local, &when) != 0) return text;
 #else
-        if (!localtime_r(&when, &local)) return millisText;
+        if (!localtime_r(&when, &local)) return text;
 #endif
         char buffer[64];
         std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &local);
         return std::string(buffer);
     } catch (...) {
-        return millisText;
+        return text;
     }
 }
 
@@ -135,7 +147,31 @@ std::filesystem::path FindDolphinTitleData(const std::filesystem::path& source) 
     throw std::runtime_error("No RK5E01 Kirby save (FLF.bin) was found in that Dolphin folder");
 }
 
-void CopyTree(const std::filesystem::path& source, const std::filesystem::path& destination) {
+// Kirby's NAND store attaches four permission bytes (owner, group, other,
+// attribute) to every file: a `user.kirby.isfs` xattr on POSIX and an NTFS
+// named stream `:kirby.isfs` on Windows. Files we write into the live NAND must
+// carry the same default the runtime seeds, otherwise ISFS GetAttr reports the
+// save as corrupt. This matters on Windows (NTFS named streams) and Linux alike.
+void SetNandMetadata(const std::filesystem::path& path) {
+    const std::array<std::uint8_t, 4> metadata{3, 3, 3, 0};
+#ifdef _WIN32
+    const auto stream = path.wstring() + L":kirby.isfs";
+    HANDLE h = CreateFileW(stream.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot write save permission metadata");
+    DWORD written = 0;
+    const bool ok = WriteFile(h, metadata.data(), static_cast<DWORD>(metadata.size()), &written, nullptr) &&
+                    written == metadata.size();
+    CloseHandle(h);
+    if (!ok) throw std::runtime_error("Cannot write save permission metadata");
+#else
+    if (::setxattr(path.c_str(), "user.kirby.isfs", metadata.data(), metadata.size(), 0) != 0)
+        throw std::runtime_error("Cannot write save permission metadata");
+#endif
+}
+
+void CopyTree(const std::filesystem::path& source, const std::filesystem::path& destination,
+              bool setMetadata) {
     namespace fs = std::filesystem;
     fs::create_directories(destination);
     std::error_code ec;
@@ -148,6 +184,7 @@ void CopyTree(const std::filesystem::path& source, const std::filesystem::path& 
         } else if (it->is_regular_file()) {
             fs::create_directories(target.parent_path());
             fs::copy_file(it->path(), target, fs::copy_options::overwrite_existing);
+            if (setMetadata) SetNandMetadata(target);
         } else {
             throw std::runtime_error("Save contains an unsupported file entry");
         }
@@ -208,6 +245,7 @@ void WriteFile(const std::filesystem::path& target, const std::vector<std::uint8
     out.write(reinterpret_cast<const char*>(bytes.data()),
               static_cast<std::streamsize>(bytes.size()));
     if (!out) throw std::runtime_error("Cannot finish writing the save file");
+    SetNandMetadata(target);
 }
 std::vector<std::uint8_t> ReadFile(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
@@ -311,11 +349,15 @@ std::vector<std::string> BackupNames(const std::filesystem::path& root) {
         if (it->is_directory(e)) names.push_back(it->path().filename().string());
     }
     std::sort(names.begin(), names.end(), [](const std::string& a, const std::string& b) {
-        try {
-            return std::stoll(a) < std::stoll(b);
-        } catch (...) {
-            return a < b;
-        }
+        const auto numericPrefix = [](const std::string& s) {
+            std::size_t i = 0;
+            while (i < s.size() && s[i] >= '0' && s[i] <= '9') ++i;
+            return std::string(s, 0, i);
+        };
+        const std::string pa = numericPrefix(a), pb = numericPrefix(b);
+        if (pa.size() != pb.size()) return pa.size() < pb.size();
+        if (pa != pb) return pa < pb;
+        return a < b;
     });
     return names;
 }
@@ -347,12 +389,12 @@ std::string PublishStaging(const std::filesystem::path& root,
 
     fs::path backup;
     if (fs::exists(destination, ec)) {
-        backup = BackupDirectory(root) / Timestamp();
+        backup = BackupDirectory(root) / UniqueTimestamp();
         fs::create_directories(backup.parent_path(), ec);
         if (ec) throw std::runtime_error("Cannot create the save backup directory");
         ec.clear();
         fs::rename(destination, backup, ec);
-        if (ec) throw std::runtime_error("Cannot back up the existing save");
+        if (ec) throw std::runtime_error("Cannot back up the existing save: " + ec.message());
     }
 
     try {
@@ -398,7 +440,7 @@ std::string ImportDolphinSave(const std::filesystem::path& root,
     const auto source = FindDolphinTitleData(dolphinSource);
     const auto staging = MakeStaging(root);
     try {
-        CopyTree(source, staging);
+        CopyTree(source, staging, true);
         return PublishStaging(root, staging, "Dolphin save imported for RK5E01");
     } catch (...) {
         std::error_code cleanup;
@@ -437,7 +479,7 @@ std::string ExportSaveFolder(const std::filesystem::path& root,
     std::error_code ec;
     if (fs::equivalent(source, destination, ec))
         throw std::runtime_error("Choose a different export folder");
-    CopyTree(source, destination);
+    CopyTree(source, destination, false);
     return "Save exported to folder";
 }
 
@@ -535,7 +577,7 @@ std::string RestoreBackup(const std::filesystem::path& root, const std::string& 
     if (!fs::is_directory(backup, ec)) throw std::runtime_error("That backup no longer exists");
     const auto staging = MakeStaging(root);
     try {
-        CopyTree(backup, staging);
+        CopyTree(backup, staging, true);
         return PublishStaging(root, staging, "Backup restored");
     } catch (...) {
         std::error_code cleanup;

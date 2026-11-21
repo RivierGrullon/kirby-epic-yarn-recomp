@@ -120,7 +120,7 @@
 {"Replace", "替换", "Reemplazar"},
 {"Cancel", "取消", "Cancelar"},
 {"Replace save", "替换存档", "Reemplazar partida"},
-{"Replace the current save? A backup will be made first.", "要替换当前存档吗？会先创建备份。", "¿Reemplazar la partida actual? Se hará una copia de seguridad primero."},
+{"This will replace your current save. A backup of the current save will be made first.", "这将替换你当前的存档。会先创建当前存档的备份。", "Esto reemplazará tu partida actual. Antes se hará una copia de seguridad de la partida actual."},
 {"Save exported to .bin", "存档已导出为 .bin", "Partida exportada a .bin"},
 {"Save exported to folder", "存档已导出到文件夹", "Partida exportada a carpeta"},
 {"Backup restored", "备份已恢复", "Copia de seguridad restaurada"},

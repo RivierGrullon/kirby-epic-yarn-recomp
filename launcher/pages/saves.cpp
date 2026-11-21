@@ -55,7 +55,7 @@ Action DrawSaves(State& state) {
 
     if (state.confirmReplace) ImGui::OpenPopup("Confirm replace save");
     if (ImGui::BeginPopupModal("Confirm replace save", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextWrapped("%s", Tr("Replace the current save? A backup will be made first."));
+        ImGui::TextWrapped("%s", Tr("This will replace your current save. A backup of the current save will be made first."));
         ImGui::Spacing();
         if (ImGui::Button(Tr("Replace"))) {
             result = state.confirmAction;

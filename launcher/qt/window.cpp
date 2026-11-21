@@ -387,10 +387,15 @@ void Window::buildSaves() {
     }
 }
 bool Window::confirmReplace() {
-    const auto answer=QMessageBox::question(this,T("Replace save"),
-        T("Replace the current save? A backup will be made first."),
-        QMessageBox::Yes|QMessageBox::No,QMessageBox::No);
-    return answer==QMessageBox::Yes;
+    QMessageBox box(this);
+    box.setWindowTitle(T("Replace save"));
+    box.setIcon(QMessageBox::Warning);
+    box.setText(T("This will replace your current save. A backup of the current save will be made first."));
+    auto* replace=box.addButton(T("Replace"),QMessageBox::AcceptRole);
+    auto* cancel=box.addButton(T("Cancel"),QMessageBox::RejectRole);
+    box.setDefaultButton(cancel);
+    box.exec();
+    return box.clickedButton()==replace;
 }
 void Window::buildDiagnostics() {
     auto* d=card("Build information");QJsonObject runtime=model["runtime"].toObject();
