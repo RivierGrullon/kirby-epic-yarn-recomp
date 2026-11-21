@@ -6,8 +6,8 @@
   "name": "Kirby's Epic Yarn Recompiled",
   "game": {
     "kind": "iso_or_folder",
-    "label": "Your own USA Wii copy, RK5E01 revision 0: .iso, .wbfs, .rvz, .7z, or a complete extracted DATA folder. Kirby Setup verifies sys/main.dol, not the whole-disc hash.",
-    "check": {"ids": ["RK5E01"]}
+    "label": "Your own USA Wii copy, RK5E01 revision 0: .iso, .wbfs, .rvz, .gcz, .7z, or a complete extracted DATA folder. Kirby Setup verifies sys/main.dol, not the whole-disc hash.",
+    "check": {"file": "sys/main.dol", "ids": ["RK5E01"]}
   },
   "start": {
     "program": ["Kirby-Bridge.exe", "Kirby-Setup-linux-x86_64.AppImage", "AppRun"],
@@ -97,5 +97,9 @@
   "exit_codes": {
     "20": "Kirby isn't set up yet, or its build is missing. Set it up again from the game's page.",
     "21": "Kirby Bridge couldn't start the game. Its files may be incomplete: reinstall it from the game's page."
+  },
+  "system": {
+    "windows": { "version": "10" },
+    "linux": { "glibc": "2.39" }
   }
 }

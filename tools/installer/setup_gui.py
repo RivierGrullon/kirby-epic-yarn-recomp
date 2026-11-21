@@ -99,7 +99,7 @@ class SetupWindow(QMainWindow):
         self.source.setAccessibleName('Game source')
         source_card = Card('&Your game copy', '#e6c586', self.source)
         source_card.body.addWidget(self.source)
-        formats = 'Choose a Wii disc image (.wbfs, .iso, .rvz) or a .7z archive.'
+        formats = 'Choose a Wii disc image (.wbfs, .iso, .rvz, .gcz) or a .7z archive.'
         self.source.setToolTip(formats)
         self.file_button = FabricButton('Choose disc…')
         self.file_button.setToolTip(formats)
@@ -276,7 +276,7 @@ class SetupWindow(QMainWindow):
                          'Choose your game copy and installation folder.')
 
     def choose_file(self):
-        filters = [self.text('Wii disc images')+' (*.wbfs *.iso *.rvz *.7z)', self.text('All files')+' (*)']
+        filters = [self.text('Wii disc images')+' (*.wbfs *.iso *.rvz *.gcz *.7z)', self.text('All files')+' (*)']
         value = choose_path(self, 'Choose your disc image', filters=filters)
         if value:self.source.setText(value)
 

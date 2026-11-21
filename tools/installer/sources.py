@@ -93,8 +93,8 @@ def inspect_source(selected, job):
         return dict(result, source=str(source), source_kind="directory")
     if not source.is_file():
         raise ValueError(f"Selected source does not exist: {source}")
-    if source.suffix.lower() not in (".7z", ".wbfs", ".iso", ".rvz"):
-        raise ValueError("Select a DATA folder, WBFS, ISO, RVZ, or 7z containing one WBFS")
+    if source.suffix.lower() not in (".7z", ".wbfs", ".iso", ".rvz", ".gcz"):
+        raise ValueError("Select a DATA folder, WBFS, ISO, RVZ, GCZ, or 7z containing one WBFS")
     source = source.resolve(strict=True)
     digest, stamp = _hash_source(source, job)
     cache = job.workspace / "sources" / digest
