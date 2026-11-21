@@ -46,6 +46,7 @@ constexpr std::uint32_t kFileHeaderMagic = 0x03ADF17E;
 constexpr std::size_t kBlockSize = 0x40;
 constexpr std::uint32_t kMaxEntries = 4096;
 constexpr std::uint32_t kBannerSize = 0x72A0;   // BNR_SZ + one icon (minimum valid).
+constexpr std::uint32_t kFullBannerMax = 0xF0A0;  // BNR_SZ + eight icons.
 constexpr std::uint32_t kFullCertSize = 0x3C0;
 constexpr std::uint32_t kNgId = 0x0403AC68;
 constexpr std::uint8_t kPermissions = 0x3F;     // owner/group/other read-write.
@@ -149,11 +150,11 @@ std::filesystem::path FindDolphinTitleData(const std::filesystem::path& source) 
 
 // Kirby's NAND store attaches four permission bytes (owner, group, other,
 // attribute) to every file: a `user.kirby.isfs` xattr on POSIX and an NTFS
-// named stream `:kirby.isfs` on Windows. Files we write into the live NAND must
-// carry the same default the runtime seeds, otherwise ISFS GetAttr reports the
-// save as corrupt. This matters on Windows (NTFS named streams) and Linux alike.
+// named stream `:kirby.isfs` on Windows. The game creates its save files with
+// {owner=read-write, group=read, other=none, attr=0}; system files use the
+// runtime's {3,3,3,0} default. Match the save convention so GetAttr matches.
 void SetNandMetadata(const std::filesystem::path& path) {
-    const std::array<std::uint8_t, 4> metadata{3, 3, 3, 0};
+    const std::array<std::uint8_t, 4> metadata{3, 1, 0, 0};
 #ifdef _WIN32
     const auto stream = path.wstring() + L":kirby.isfs";
     HANDLE h = CreateFileW(stream.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -296,7 +297,22 @@ void WriteBinIntoStaging(const std::filesystem::path& bin, const std::filesystem
     if (length < 0 || static_cast<std::uint64_t>(length) < kHeaderSize + kBkHeaderSize)
         throw std::runtime_error("This .bin is too small to be a Dolphin Wii save");
 
-    in.seekg(static_cast<std::streamoff>(kHeaderSize));
+    // Decrypt the lead Header and recover the save banner. Dolphin stores
+    // banner.bin there (not in the file list); the game expects it in the data
+    // directory alongside the save files.
+    {
+        std::vector<std::uint8_t> encHeader(kHeaderSize);
+        in.read(reinterpret_cast<char*>(encHeader.data()), encHeader.size());
+        if (!in) throw std::runtime_error("Cannot read the .bin save header");
+        std::vector<std::uint8_t> header;
+        DecryptSd(kInitialIv.data(), encHeader.data(), encHeader.size(), header);
+        const std::uint32_t bannerSize = ReadBe32(header.data() + 8);
+        if (bannerSize > 0 && bannerSize <= kFullBannerMax) {
+            const std::vector<std::uint8_t> banner(header.begin() + 32, header.begin() + 32 + bannerSize);
+            WriteFile(staging / "banner.bin", banner);
+        }
+    }
+
     std::array<std::uint8_t, kBkHeaderSize> bk{};
     in.read(reinterpret_cast<char*>(bk.data()), bk.size());
     if (!in) throw std::runtime_error("Cannot read the .bin save header");
