@@ -40,6 +40,9 @@ QDoubleSpinBox#fabricNumber::up-button {
     subcontrol-origin:border;subcontrol-position:center right;right:5px;width:26px;height:28px;
 }
 QDoubleSpinBox#fabricNumber QLineEdit {background:transparent;border:0;padding:0;}
+QLineEdit#backupName {background:#fffdf7;border:1px solid #cfcbb9;border-radius:9px;padding:6px 10px;min-height:22px;}
+QLineEdit#backupName:focus {border:2px solid #aa6680;}
+QLineEdit#backupName:disabled {color:#92958a;background:#eeede4;}
 QPlainTextEdit {background:#f5f4e9;border:1px solid #d8d5c6;border-radius:9px;padding:8px;}
 QTabBar::tab {background:#edeedc;border-radius:8px;padding:7px 15px;margin-right:5px;}
 QTabBar::tab:selected {background:#f0d3de;color:#713e50;}
