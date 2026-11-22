@@ -169,8 +169,11 @@ void ProbeSdlController(CpuContext& cpu, bool monitorPhysical, const ControlBind
         ConfigureMotion(motionSettings);
         check(WPADSetDataFormat(0, WPAD_FMT_CORE_ACC_DPD) == WPAD_ERR_NONE, "Motion report format rejected");
         check(WPADControlDpd(0, 1, nullptr) == WPAD_ERR_NONE, "Pointer enable rejected");
-        pump();
-        const float gyro[]{0, -.5f, 0}, gravity[]{9.80665f, 0, 0};
+        report();
+        const auto sensorMidX = [&] { return (Memory::Read16(output+8) + Memory::Read16(output+16)) / 2; };
+        const auto initialX = sensorMidX();
+        const auto initialY = Memory::Read16(output+10);
+        const float gyro[]{.4f, -.5f, 0}, gravity[]{9.80665f, 0, 0};
         for (int sample = 0; sample < 45; ++sample) {
             check(SDL_SendJoystickVirtualSensorData(device.joystick, SDL_SENSOR_GYRO, SDL_GetTicksNS(), gyro, 3), SDL_GetError());
             check(SDL_SendJoystickVirtualSensorData(device.joystick, SDL_SENSOR_ACCEL, SDL_GetTicksNS(), gravity, 3), SDL_GetError());
@@ -178,12 +181,29 @@ void ProbeSdlController(CpuContext& cpu, bool monitorPhysical, const ControlBind
         }
         check(int16_t(Memory::Read16(output+4)) < -240 && std::abs(int16_t(Memory::Read16(output+6))) < 20,
               "Sideways tilt did not reach guest acceleration");
-        check(Memory::Read8(output+14) == 0 && Memory::Read16(output+8) < 475,
-              "Gyro pointer did not reach guest IR objects");
+        const auto leftDot = Memory::Read16(output+8), rightDot = Memory::Read16(output+16);
+        check(Memory::Read16(output+12) && Memory::Read16(output+20) &&
+              rightDot - leftDot == 128 && sensorMidX() < initialX && Memory::Read16(output+10) > initialY,
+              "Rightward yaw and upward pitch did not aim the guest pointer right and up");
         PADBlockInput(true); report();
         check(Memory::Read16(output+4) == 0 && Memory::Read16(output+6) == 256 && Memory::Read8(output+14) == 255,
               "Blocked motion leaked into guest reports");
         PADBlockInput(false);
+        motionSettings.pointer = PointerSource::Mouse;
+        ConfigureMotion(motionSettings);
+        for (float corner : {-1.f, 0.f, 1.f}) {
+            aurora::gamepad::set_mouse_pointer(corner, -corner, true);
+            report();
+            const float centerX = (Memory::Read16(output+8) + Memory::Read16(output+16)) * .5f;
+            const float centerY = Memory::Read16(output+10);
+            check(Memory::Read16(output+12) && Memory::Read16(output+20) &&
+                  std::abs((511.5f - centerX) / (512 * .44f) - corner) < .005f &&
+                  std::abs((.20f - (centerY - 383.5f) / 512) / .44f + corner) < .005f,
+                  "Mouse position differs from the guest KPAD screen projection");
+        }
+        aurora::gamepad::set_mouse_pointer(0, 0, false);
+        report();
+        check(!Memory::Read16(output+12) && !Memory::Read16(output+20), "Mouse outside game image left IR dots visible");
         motionSettings.tilt = false; motionSettings.pointer = PointerSource::Disabled;
         ConfigureMotion(motionSettings); report();
         check(Memory::Read16(output+4) == 0 && Memory::Read16(output+6) == 256 && Memory::Read8(output+14) == 255,

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "kirby/input/motion_device.h"
+#include "kirby/input/wpad.h"
 #include <aurora/aurora.h>
 #include "kirby/app/events.h"
 #include <aurora/input.hpp>
 #include <aurora/wpad.h>
 #include <dolphin/pad.h>
 #include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_mouse.h>
 #include <chrono>
 #include <optional>
 
@@ -15,6 +17,15 @@ std::optional<MotionSettings> configured;
 std::array<MotionDevice, PAD_CHANMAX> devices;
 std::chrono::steady_clock::time_point lastUpdate;
 bool recenterKeyDown = false;
+bool UsesMouse(const MotionDevice& device, const MotionSettings& settings) {
+    return settings.pointer == PointerSource::Mouse ||
+        (settings.pointer == PointerSource::Gyro && !device.gyroRead);
+}
+}
+bool MousePointerConfirmDown() {
+    return configured && UsesMouse(devices[0], *configured) && !PADIsInputBlocked() &&
+        !aurora::input::captured_above(aurora::input::mouse_source().id, aurora::input::kGameLayerPriority) &&
+        (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK);
 }
 void ConfigureMotion(const MotionSettings& settings) {
     ValidateMotionSettings(settings); configured = settings;
@@ -50,11 +61,15 @@ void UpdateControllerMotion() {
         }
         const Vec acceleration{tilt[0], tilt[1], tilt[2]};
         aurora_wpad_set_acceleration(port, &acceleration, nullptr);
-        if (settings.pointer == PointerSource::Mouse || (settings.pointer == PointerSource::Gyro && !device.gyroRead)) {
+        if (UsesMouse(device, settings)) {
             aurora_wpad_set_pointer(port, nullptr);
         } else {
-            const AuroraWpadPointer pointer{device.state.x, device.state.y, active &&
-                ((settings.pointer == PointerSource::Gyro && device.gyroRead) ||
+            // Positive SDL yaw/pitch aims left/up. Aurora screen coordinates
+            // grow right/down, just like the Qt pointer preview.
+            const bool gyro = settings.pointer == PointerSource::Gyro;
+            const AuroraWpadPointer pointer{gyro ? -device.state.x : device.state.x,
+                gyro ? -device.state.y : device.state.y, active &&
+                ((gyro && device.gyroRead) ||
                  (settings.pointer == PointerSource::RightStick && pad))};
             aurora_wpad_set_pointer(port, &pointer);
         }

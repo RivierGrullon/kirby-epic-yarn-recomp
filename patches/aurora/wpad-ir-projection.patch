@@ -1,0 +1,37 @@
+--- a/aurora/lib/revolution/wpad/wpad.cpp
++++ b/aurora/lib/revolution/wpad/wpad.cpp
+@@ -211,10 +211,15 @@
+ 				p.valid && std::isfinite(p.x) && std::isfinite(p.y) && std::abs(p.x) <= 1.f && std::abs(p.y) <= 1.f;
+ 
+ 			if (p.valid) {
+-				const auto x = static_cast<s16>((p.x + 1) * 511.5f);
+-				const auto y = static_cast<s16>((p.y + 1) * 383.5f);
+-				core.obj[0] = {static_cast<s16>(std::max(0, x - 32)), y, 8, 0};
+-				core.obj[1] = {static_cast<s16>(std::min(1023, x + 32)), y, 8, 1};
++				// RK5E01's KPAD projects the sensor-bar midpoint relative to
++				// (0, 0.20), with a 0.44 half-screen in 512-pixel camera units.
++				// A 128-pixel bar separation represents about 2.08 m and keeps
++				// both emitters visible even when pointing at a screen corner.
++				constexpr float halfScreen = 0.44f, sensorHeight = 0.20f;
++				const auto x = std::lround(511.5f - 512.f * halfScreen * p.x);
++				const auto y = static_cast<s16>(std::lround(383.5f + 512.f * (sensorHeight - halfScreen * p.y)));
++				core.obj[0] = {static_cast<s16>(x - 64), y, 8, 0};
++				core.obj[1] = {static_cast<s16>(x + 64), y, 8, 1};
+ 			}
+ 		}
+ 	}
+--- a/aurora/lib/window.cpp
++++ b/aurora/lib/window.cpp
+@@ -200,8 +200,10 @@
+ 	float height = static_cast<float>(size.native_fb_height);
+ #ifdef AURORA_ENABLE_GX
+ 	const auto& source = webgpu::present_source();
+-	const auto viewport = webgpu::calculate_present_viewport(size.native_fb_width, size.native_fb_height,
+-		source.size.width, source.size.height);
++	float aspect = 0.f;
++	const auto viewport = get_present_aspect_ratio(aspect)
++		? webgpu::calculate_present_viewport_for_aspect(size.native_fb_width, size.native_fb_height, aspect)
++		: webgpu::calculate_present_viewport(size.native_fb_width, size.native_fb_height, source.size.width, source.size.height);
+ 	left = viewport.left;
+ 	top = viewport.top;
+ 	width = viewport.width;

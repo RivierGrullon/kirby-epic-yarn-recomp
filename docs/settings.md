@@ -177,6 +177,8 @@ to a sideways Wii Remote with the D-pad at the left.
   reversal. Devices without an accelerometer stay neutral.
 - **Pointer source** selects mouse, gyroscope, right stick or disabled. Gyroscope
   is the default and falls back to the mouse on player 1 when sensors are absent.
+  With the mouse pointer active, move within the game image to aim and left-click
+  to press Wii A in the HOME Menu.
   Gyro/stick sensitivity and X/Y inversion apply to their respective pointer;
   their deadzones are independent of movement bindings.
 - Click the right stick to recenter the pointer in game. **Keyboard motion** adds

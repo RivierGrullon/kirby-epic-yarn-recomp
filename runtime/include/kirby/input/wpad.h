@@ -8,6 +8,7 @@ bool AcceptWpadRegistration(uint32_t address, const char* name) noexcept;
 void VerifyWpadRegistrations();
 void PollWpad(CpuContext& cpu, bool force = false);
 void SetWpadWindowActive(bool active);
+bool MousePointerConfirmDown();
 void ConfigureControllerDefaults(); // Must precede Aurora's PADInit.
 void ConfigureControlBindings(const ControlBindings& bindings);
 void ApplyConfiguredControlBindings(); // After WPAD/PAD initialization.
