@@ -3,6 +3,7 @@
 // Reuse WiiCompiled's pinned GPL TOML helpers, not its product defaults or global
 // config singleton. See dependencies.json and docs/references.md for attribution.
 #include "runtime_config.h"
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
@@ -25,6 +26,8 @@ void Validate(const Settings& settings) {
     if (settings.gameLanguage && settings.gameLanguage != Settings::English && settings.gameLanguage != Settings::French &&
         settings.gameLanguage != Settings::Spanish)
         throw std::runtime_error("kirby.game_language must be 1 (English), 3 (French) or 4 (Spanish)");
+    if (static_cast<size_t>(settings.buttonPrompts.style) >= ButtonIconStyleNames.size())
+        throw std::runtime_error("Invalid controller.button_icons style");
     ValidateControlBindings(settings.controls);
     ValidateMotionSettings(settings.motion);
     if (!ValidResolutionScale(settings.resolutionScale))
@@ -85,6 +88,19 @@ Settings Parse(const std::string& text, const fs::path& file, Settings defaults)
         defaults.fullscreen = *value;
     }
     if (gpuCopies) defaults.gpuResidentCopies = *gpuCopies;
+    if (present("controller", "dynamic_button_prompts")) {
+        auto value = FindConfigValue<bool>(document, "controller", "dynamic_button_prompts");
+        if (!value) throw std::runtime_error("controller.dynamic_button_prompts must be a boolean");
+        defaults.buttonPrompts.enabled = *value;
+    }
+    if (present("controller", "button_icons")) {
+        auto value = FindConfigValue<std::string>(document, "controller", "button_icons");
+        if (!value) throw std::runtime_error("controller.button_icons must be a string");
+        auto index = std::ranges::find(ButtonIconStyleNames, *value);
+        if (index == ButtonIconStyleNames.end())
+            throw std::runtime_error("controller.button_icons must be auto, xbox, playstation, switch or keyboard");
+        defaults.buttonPrompts.style = static_cast<ButtonIconStyle>(index - ButtonIconStyleNames.begin());
+    }
     for (const auto& [key, destination] : std::array{
             std::pair{"stick_activation", &defaults.controls.stickActivation},
             std::pair{"trigger_activation", &defaults.controls.triggerActivation}}) {
@@ -170,6 +186,9 @@ std::string Update(std::string text, const Settings& settings) {
     std::ostringstream volume;
     volume << std::setprecision(std::numeric_limits<float>::max_digits10) << settings.masterVolume / 100;
     set("audio", "volume", volume.str());
+    set("controller", "dynamic_button_prompts", settings.buttonPrompts.enabled ? "true" : "false");
+    set("controller", "button_icons", RuntimeConfigFile::FormatString(std::string(
+        ButtonIconStyleNames.at(static_cast<size_t>(settings.buttonPrompts.style)))));
     set("video", "vsync", settings.vsync ? "true" : "false");
     set("video", "fullscreen", settings.fullscreen ? "true" : "false");
     set("video", "resolution_scale", std::to_string(settings.resolutionScale));

@@ -235,3 +235,12 @@ The native launcher's `launcher/assets/launcher-ui.ttf` is a static subset of
 weight 500, covering the Chinese, English and Spanish interfaces of the
 launcher and Kirby Setup. It is
 distributed under the [SIL Open Font License 1.1](licenses/LICENSE-launcher-font.txt).
+
+## Controller and keyboard icons
+
+The PNGs in `runtime/assets/button_icons/` come from Kenney’s **Input Prompts**
+(CC0 1.0), as adapted for NSMBWiicompiled at revision
+`0c01832a26aa2559ffd6b6ca489decf22f05c306`. That project fills enclosed
+areas and draws the PlayStation Create and Options icons in its import script.
+[Kenney Input Prompts](https://kenney.nl/assets/input-prompts) ·
+[NSMBWiicompiled notices](https://github.com/ral1009/NSMBWiicompiled/blob/0c01832a26aa2559ffd6b6ca489decf22f05c306/THIRD-PARTY-NOTICES.md)

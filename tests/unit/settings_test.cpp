@@ -39,13 +39,17 @@ int main() {
     settings.resolutionScale = 3;
     settings.msaaSamples = 4;
     settings.fullscreen = true;
+    settings.buttonPrompts = {true, Kirby::ButtonIconStyle::Switch};
     Kirby::SaveSettings(file, settings);
     const auto loaded = Kirby::LoadSettings(file);
     Check(loaded.gameData == data && loaded.masterVolume == 37.5f &&
           !loaded.vsync && loaded.gpuResidentCopies, "Settings did not round-trip");
     Check(loaded.resolutionScale == 3 && loaded.msaaSamples == 4, "Image quality settings did not round-trip");
+    Check(loaded.buttonPrompts.enabled && loaded.buttonPrompts.style == Kirby::ButtonIconStyle::Switch,
+          "Button icon preference did not round-trip");
     Check(loaded.fullscreen, "Fullscreen preference did not round-trip");
     Write(file, "[kirby]\nschema_version = 1\n");
+    Check(!Kirby::LoadSettings(file).buttonPrompts.enabled, "Existing settings must retain Wii icons");
     Check(!Kirby::LoadSettings(file).fullscreen, "Older settings should default to windowed mode");
     Kirby::SaveSettings(file, settings);
     for (const int samples : {1,4}) for (const bool fxaa : {false,true}) {
@@ -121,7 +125,8 @@ int main() {
     Check(Kirby::LoadSettings(file).controls == settings.controls,
           "Activation endpoints did not survive numeric serialization");
 
-    for (const auto* invalid : {"[broken", "[kirby]\nschema_version = 99\n",
+    for (const auto* invalid : {"[broken", "[kirby]\nschema_version = 1\n[controller]\nbutton_icons = \"invalid\"\n",
+            "[kirby]\nschema_version = 1\n[controller]\ndynamic_button_prompts = 1\n", "[kirby]\nschema_version = 99\n",
             "[kirby]\nschema_version = 1\n[video]\nresolution_scale = 0\n",
             "[kirby]\nschema_version = 1\n[video]\nresolution_scale = 7\n",
             "[kirby]\nschema_version = 1\n[video]\nresolution_scale = 9\n",

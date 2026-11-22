@@ -258,3 +258,7 @@
 {"Right stick right", "右摇杆向右", "Palanca derecha a la derecha"},
 {"Right stick up", "右摇杆向上", "Palanca derecha hacia arriba"},
 {"Right stick down", "右摇杆向下", "Palanca derecha hacia abajo"},
+{"In-game button icons", "游戏内按键图标", "Iconos de botones en el juego"},
+{"Use controller and keyboard icons", "使用手柄和键盘图标", "Usar iconos de mando y teclado"},
+{"Icon style", "图标样式", "Estilo de iconos"},
+{"Last used device", "上次使用的设备", "Último dispositivo usado"},

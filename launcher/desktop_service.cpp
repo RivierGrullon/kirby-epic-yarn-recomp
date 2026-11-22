@@ -19,6 +19,7 @@ Json Config(const Kirby::Settings& c) {
     const auto& m = c.motion;
     return {{"volume",c.masterVolume},{"scale",c.resolutionScale},{"aa",(c.msaaSamples==4?2:0)+int(c.fxaa)},
         {"gameLanguage",c.gameLanguage.value_or(Kirby::Settings::English)},{"fullscreen",c.fullscreen},{"vsync",c.vsync},{"performance",c.gpuResidentCopies},
+        {"dynamicPrompts",c.buttonPrompts.enabled},{"buttonIcons",int(c.buttonPrompts.style)},
         {"stick",c.controls.stickActivation},{"trigger",c.controls.triggerActivation},
         {"tilt",m.tilt},{"invertTilt",m.invertTilt},{"gain",m.tiltGain},{"pointer",int(m.pointer)},
         {"sensitivity",m.sensitivity},{"invertX",m.invertX},{"invertY",m.invertY},
@@ -37,6 +38,8 @@ void Change(Kirby::Settings& c, const std::string& key, const Json& value) {
     } else if (key=="fullscreen") value.get_to(c.fullscreen);
     else if (key=="vsync") value.get_to(c.vsync);
     else if (key=="performance") value.get_to(c.gpuResidentCopies);
+    else if (key=="dynamicPrompts") value.get_to(c.buttonPrompts.enabled);
+    else if (key=="buttonIcons") c.buttonPrompts.style = static_cast<Kirby::ButtonIconStyle>(value.get<int>());
     else if (key=="stick") value.get_to(c.controls.stickActivation);
     else if (key=="trigger") value.get_to(c.controls.triggerActivation);
     else if (key=="tilt") value.get_to(m.tilt);

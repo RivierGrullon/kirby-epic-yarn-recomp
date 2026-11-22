@@ -67,6 +67,15 @@ void Window::buildControls() {
 }
 
 void Window::buildBindings() {
+    auto* prompts=card("In-game button icons");
+    auto* enabled=check(prompts,"dynamicPrompts","Use controller and keyboard icons");
+    auto* styles=new QWidget;
+    auto* fields=new QVBoxLayout(styles);
+    fields->setContentsMargins(0,0,0,0);
+    prompts->addWidget(styles);
+    select(fields,"buttonIcons","Icon style",{T("Last used device"),"Xbox","PlayStation","Nintendo Switch",T("Keyboard")},{0,1,2,3,4});
+    styles->setEnabled(enabled->isChecked());
+    connect(enabled,&QCheckBox::toggled,styles,&QWidget::setEnabled);
     auto* keys=card("Button bindings","Select a binding, then press the new input. Gamepad bindings apply to all players; keyboard bindings apply to player 1. Launcher navigation stays unchanged.");
     bindingUi.message=new QLabel;bindingUi.message->setWordWrap(true);keys->addWidget(bindingUi.message);
     auto* actions=new QHBoxLayout;keys->addLayout(actions);

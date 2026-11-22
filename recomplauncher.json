@@ -38,6 +38,15 @@
       "defaults": {"kirby/game_language": "1"}
     },
     {
+      "id": "dynamic_button_prompts", "label": "Controller and keyboard icons",
+      "help": "Show controller or keyboard icons for the saved bindings on supported in-game prompts.",
+      "choices": [
+        {"label": "Original Wii icons", "set": {"controller/dynamic_button_prompts": "false"}},
+        {"label": "Use controller and keyboard icons", "set": {"controller/dynamic_button_prompts": "true"}}
+      ],
+      "defaults": {"controller/dynamic_button_prompts": "false"}
+    },
+    {
       "id": "window", "label": "Window mode",
       "help": "Alt+Enter switches modes during play. Big Picture starts fullscreen.",
       "choices": [
