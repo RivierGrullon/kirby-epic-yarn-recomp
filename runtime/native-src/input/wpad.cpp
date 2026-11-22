@@ -55,11 +55,6 @@ void Connected(int32_t chan, int32_t result) {
 void Extended(int32_t chan, int32_t result) {
     events.push_back({channels[chan].extension, uint32_t(chan), uint32_t(result), false});
 }
-void Sampled(int32_t chan) {
-    Event event{channels[chan].sampling, uint32_t(chan), 0, true};
-    WPADRead(chan, &event.report);
-    events.push_back(event);
-}
 void DpdDone(int32_t chan, int32_t result) {
     auto& callbacks=dpdCallbacks[chan];
     if (callbacks.empty()) throw std::runtime_error("DPD completion has no pending request");
@@ -102,13 +97,25 @@ uint16_t HorizontalButtons(uint16_t buttons) {
     for (auto [host,remote] : mapping) if (buttons & host) result |= remote;
     return result;
 }
+void ReadReport(uint32_t chan, WPADStatus& report) {
+    WPADRead(chan, &report);
+    report.button = HorizontalButtons(report.button);
+    // Accept clicks on port 0 while the game is receiving a visible mouse IR target.
+    if (chan == 0 && report.obj[0].size && Kirby::MousePointerConfirmDown())
+        report.button |= WPAD_BUTTON_A;
+}
+void Sampled(int32_t chan) {
+    Event event{channels[chan].sampling, uint32_t(chan), 0, true};
+    ReadReport(chan, event.report);
+    events.push_back(event);
+}
 void WriteReport(uint32_t chan, uint32_t address, const WPADStatus* snapshot = nullptr) {
     CheckChannel(chan);
     static_assert(sizeof(WPADStatus) == 0x2A && offsetof(WPADStatus, err) == 0x29);
     Ram(address, 0x2A);
     WPADStatus status{};
-    if (snapshot) status = *snapshot; else WPADRead(chan, &status);
-    Memory::Write16(address, HorizontalButtons(status.button));
+    if (snapshot) status = *snapshot; else ReadReport(chan, status);
+    Memory::Write16(address, status.button);
     Memory::Write16(address+2, status.accX);
     Memory::Write16(address+4, status.accY);
     Memory::Write16(address+6, status.accZ);
