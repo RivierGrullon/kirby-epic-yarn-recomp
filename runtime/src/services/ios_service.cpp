@@ -180,6 +180,45 @@ std::optional<int32_t> IosServices::Submit(uint32_t address, bool asynchronous) 
         }
         return 0;
     }
+    if (handle->second.device == Device::Fs && command == 7 && arg == 4) {
+        // ISFS_ReadDir uses 1 input/1 output for a count, or 2/2 for packed names.
+        const auto inputs = Read(req+16), vector = Read(req+24);
+        if ((inputs != 1 && inputs != 2) || Read(req+20) != inputs || !vector || (vector & 3)) return -101;
+        const auto* vectors = resolve_(vector, inputs * 16);
+        if (!vectors || Read(vectors+4) != 64 || Read(vectors+12) != 4) return -101;
+        const auto path = Read(vectors);
+        const auto* input = path ? resolve_(path, 64) : nullptr;
+        const auto* end = input ? static_cast<const uint8_t*>(std::memchr(input, 0, 64)) : nullptr;
+        if (!end) return -101;
+
+        const auto* countVector = vectors + (inputs == 1 ? 8 : 24);
+        const auto countAddress = Read(countVector);
+        auto* count = countAddress && Read(countVector+4) == 4 ? resolve_(countAddress, 4) : nullptr;
+        if (!count) return -101;
+        uint32_t capacity = UINT32_MAX;
+        uint8_t* output = nullptr;
+        if (inputs == 2) {
+            const auto limitAddress = Read(vectors+8), namesAddress = Read(vectors+16), size = Read(vectors+20);
+            const auto* limit = limitAddress ? resolve_(limitAddress, 4) : nullptr;
+            if (!limit) return -101;
+            capacity = Read(limit);
+            if (uint64_t(capacity) * 13 != size) return -101;
+            if (size && (!namesAddress || !(output = resolve_(namesAddress, size)))) return -101;
+        }
+        std::vector<std::string> names;
+        const auto result = nand_->ReadDirectory(std::string(reinterpret_cast<const char*>(input), end-input), names);
+        if (result) return result;
+        const auto returned = std::min<size_t>(capacity, names.size());
+        if (output) {
+            for (size_t i = 0; i < returned; ++i) {
+                const auto bytes = names[i].size() + 1;
+                std::memcpy(output, names[i].c_str(), bytes);
+                output += bytes;
+            }
+        }
+        Write(count, static_cast<uint32_t>(returned));
+        return 0;
+    }
     if (handle->second.device == Device::Fs && command == 7 && arg == 12) {
         const auto vector = Read(req+24);
         if (Read(req+16) != 1 || Read(req+20) != 2 || !vector || (vector & 3)) return -101;

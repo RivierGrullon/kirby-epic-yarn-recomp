@@ -88,8 +88,8 @@ int Parent(int root, const std::string& path, bool create, std::string& leaf) {
         start = end + 1;
     }
 }
-int32_t CountDirectory(int fd, uint64_t& clusters, uint64_t& inodes, unsigned depth) {
-    if (depth > 32 || ++inodes > UINT32_MAX) return -108;
+template <typename Visitor>
+int32_t VisitDirectory(int fd, Visitor visit) {
     // A fresh open description gives each query an independent directory cursor.
     const int copy = openat(fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (copy < 0) return Error();
@@ -102,16 +102,22 @@ int32_t CountDirectory(int fd, uint64_t& clusters, uint64_t& inodes, unsigned de
         if (!std::strcmp(entry->d_name, ".") || !std::strcmp(entry->d_name, "..")) continue;
         struct stat st{};
         if (fstatat(fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) < 0) return Error();
-        if (S_ISDIR(st.st_mode)) {
-            Fd child{openat(fd, entry->d_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)};
-            if (child.value < 0) return Error();
-            const auto result = CountDirectory(child.value, clusters, inodes, depth+1);
-            if (result) return result;
-        } else if (S_ISREG(st.st_mode)) {
-            clusters += (uint64_t(st.st_size) + 0x3FFF) / 0x4000;
-            if (++inodes > UINT32_MAX || clusters > UINT32_MAX) return -108;
-        } else return -102;
+        if (!S_ISDIR(st.st_mode) && !S_ISREG(st.st_mode)) return -102;
+        const auto result = visit(entry->d_name, st);
+        if (result) return result;
     }
+}
+int32_t CountDirectory(int fd, uint64_t& clusters, uint64_t& inodes, unsigned depth) {
+    if (depth > 32 || ++inodes > UINT32_MAX) return -108;
+    return VisitDirectory(fd, [&](const char* name, const struct stat& st) -> int32_t {
+        if (S_ISDIR(st.st_mode)) {
+            Fd child{openat(fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)};
+            if (child.value < 0) return Error();
+            return CountDirectory(child.value, clusters, inodes, depth+1);
+        }
+        clusters += (uint64_t(st.st_size) + 0x3FFF) / 0x4000;
+        return ++inodes > UINT32_MAX || clusters > UINT32_MAX ? -108 : 0;
+    });
 }
 void CreateDefault(int root, const std::string& path, std::span<const uint8_t> bytes) {
     std::string leaf;
@@ -282,6 +288,29 @@ int32_t NandStore::Usage(const std::string& path, uint32_t& clusters, uint32_t& 
 }
 int32_t NandStore::CreateFile(const std::string& path, std::array<uint8_t,4> metadata) const {
     return Create(path,metadata,false);
+}
+int32_t NandStore::ReadDirectory(const std::string& path, std::vector<std::string>& names) const {
+    if (path != "/" && !ValidPath(path)) return -101;
+    std::string leaf;
+    Fd parent{path == "/" ? dup(rootFd_) : Parent(rootFd_, path, false, leaf)};
+    if (parent.value < 0) return Error();
+    Fd node{openat(parent.value, path == "/" ? "." : leaf.c_str(), O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)};
+    if (node.value < 0) return Error();
+    struct stat st{};
+    if (fstat(node.value, &st) < 0) return Error();
+    // NANDGetType distinguishes a regular file from a directory using this result.
+    if (!S_ISDIR(st.st_mode)) return -101;
+    std::vector<std::string> entries;
+    const auto result = VisitDirectory(node.value, [&](const char* name, const struct stat&) {
+        if (std::strlen(name) > 12) return -101;
+        entries.emplace_back(name);
+        return 0;
+    });
+    if (!result) {
+        std::sort(entries.begin(), entries.end());
+        names = std::move(entries);
+    }
+    return result;
 }
 int32_t NandStore::CreateDirectory(const std::string& path, std::array<uint8_t,4> metadata) const {
     return Create(path,metadata,true);

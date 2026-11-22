@@ -74,6 +74,25 @@ int main() {
         Check(getxattr((root/"shared2/new").c_str(),"user.kirby.isfs",metadata.data(),4)==4 &&
               metadata==std::array<uint8_t,4>{3,1,0,7},"directory permissions and attributes persist as metadata");
         Check(create("/shared2/new")==-105,"existing directory is not silently recreated");
+        auto readDirectory = [&](const char* path, bool list) {
+            std::strcpy(reinterpret_cast<char*>(ram.data()+512), path);
+            Put(32,7); Put(40,fs); Put(44,4); Put(48,list ? 2 : 1); Put(52,list ? 2 : 1); Put(56,640);
+            Put(640,512); Put(644,64); Put(648,800); Put(652,4);
+            Put(656,1024); Put(660,26); Put(664,800); Put(668,4);
+        };
+        readDirectory("/shared2/new", false);
+        Check(submit()==0 && Get(800)==0, "ReadDir counts an empty directory");
+        readDirectory("/shared2/sys/SYSCONF", false); Put(800,99);
+        Check(submit()==-101 && Get(800)==99, "NANDGetType recognizes a regular file without changing the count");
+        readDirectory("/missing", false);
+        Check(submit()==-106, "ReadDir distinguishes missing paths from files");
+        readDirectory("/shared2", true); Put(800,2); ram[1032]=0xCD;
+        Check(submit()==0 && Get(800)==2 && !std::memcmp(ram.data()+1024,"new\0sys\0",8) && ram[1032]==0xCD,
+              "ReadDir packs names and honors an aliased SDK count");
+        Put(800,1); Put(660,13); ram[1028]=0xCD;
+        Check(submit()==0 && Get(800)==1 && ram[1028]==0xCD, "ReadDir respects the caller's entry limit");
+        Put(660,12); ram[1024]=0xCD;
+        Check(submit()==-101 && ram[1024]==0xCD && Get(800)==1, "ReadDir rejects short vectors before writing");
         Check(create("/missing/new")==-106,"create does not invent missing parents");
         Check(create("/../outside")==-101,"create rejects traversal");
         create("/shared2/invalid"); ram[512+0x46]=4;

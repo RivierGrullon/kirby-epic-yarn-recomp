@@ -33,6 +33,7 @@ std::array<Channel, 4> channels;
 std::deque<Event> events;
 std::array<std::deque<uint32_t>,4> dpdCallbacks;
 bool initialized = false, polling = false, windowActive = false;
+bool loadedSystemSettings = false;
 std::chrono::steady_clock::time_point lastPoll;
 
 void CheckChannel(uint32_t chan) {
@@ -71,6 +72,14 @@ void InfoDone(int32_t chan, int32_t result) {
     if (result == WPAD_ERR_NONE) { event.infoOutput=request.output; event.info=request.info; }
     events.push_back(event);
     request.busy = false;
+}
+void CompleteImmediately(CpuContext* ctx, uint32_t callback, uint32_t chan, int32_t result) {
+    if (!callback) return;
+    CpuContext scratch = *ctx;
+    scratch.gpr[3] = chan;
+    scratch.gpr[4] = result;
+    CpuContextScope scope(&scratch);
+    InvokeIndirectCpu(callback, &scratch);
 }
 void WriteInfo(uint32_t address, const WPADInfo& info) {
     Ram(address, 0x18);
@@ -127,6 +136,7 @@ extern "C" void KirbyWPADInit() {
         WPADSetExtensionCallback(i, Extended);
         WPADSetSamplingCallback(i, Sampled);
     }
+    loadedSystemSettings = false;
     initialized = true;
     std::cout << "[kirby] WPAD initialized with Aurora native controller backend\n";
 }
@@ -177,6 +187,20 @@ extern "C" void KirbyWPADGetAccGravityUnit(uint32_t chan, uint32_t type, uint32_
 extern "C" void KirbyWPADControlMotor(uint32_t chan, uint32_t command) {
     CheckChannel(chan); WPADControlMotor(chan, command);
 }
+extern "C" uint32_t KirbyWPADIsSpeakerEnabled(uint32_t chan) {
+    CheckChannel(chan); return WPADIsSpeakerEnabled(chan);
+}
+extern "C" void KirbyWPADControlSpeaker(CpuContext* ctx) {
+    const auto chan = ctx->gpr[3], command = ctx->gpr[4], callback = ctx->gpr[5];
+    CheckChannel(chan);
+    // Aurora has no Remote speaker. The SDK completes a redundant disable or
+    // a rejected command synchronously, without submitting a Bluetooth request.
+    auto result = WPADProbe(chan, nullptr);
+    if (result == WPAD_ERR_NONE && command != 0)
+        result = WPADControlSpeaker(chan, command, nullptr);
+    CompleteImmediately(ctx, callback, chan, result);
+    ctx->gpr[3] = result;
+}
 extern "C" uint32_t KirbyWPADIsDpdEnabled(uint32_t chan) {
     CheckChannel(chan); return WPADIsDpdEnabled(chan);
 }
@@ -190,9 +214,8 @@ extern "C" void KirbyWPADControlDpd(CpuContext* ctx) {
         dpdCallbacks[chan].push_back(callback);
         // Aurora exposes pointer enablement; the report serializer owns the format.
         result=WPADControlDpd(chan,command ? 1 : 0,DpdDone);
-    } else if (callback) {
-        CpuContext scratch=*ctx; scratch.gpr[3]=chan; scratch.gpr[4]=result;
-        CpuContextScope scope(&scratch); InvokeIndirectCpu(callback,&scratch);
+    } else {
+        CompleteImmediately(ctx, callback, chan, result);
     }
     ctx->gpr[3]=result;
 }
@@ -210,12 +233,9 @@ extern "C" void KirbyWPADGetInfoAsync(CpuContext* ctx) {
     if (result == WPAD_ERR_NONE) {
         request.output=output; request.callback=callback; request.busy=true;
         result=WPADGetInfoAsync(chan,&request.info,InfoDone);
-    } else if (callback) {
+    } else {
         // The SDK calls failure callbacks immediately, with the caller's EE state.
-        CpuContext scratch=*ctx;
-        scratch.gpr[3]=chan; scratch.gpr[4]=result;
-        CpuContextScope scope(&scratch);
-        InvokeIndirectCpu(callback,&scratch);
+        CompleteImmediately(ctx, callback, chan, result);
     }
     ctx->gpr[3]=result;
 }
@@ -228,6 +248,20 @@ void PollWpad(CpuContext& cpu, bool force) {
     if (!force && now-lastPoll < std::chrono::milliseconds(5)) return;
     struct Guard { Guard() { polling = true; } ~Guard() { polling = false; } } guard;
     lastPoll = now;
+    // Native WPADInit skips the SDK's Bluetooth initialization. Seed the
+    // translated preferences before HOME reads and later saves them to SYSCONF.
+    if (!loadedSystemSettings) {
+        CpuContext scratch = cpu;
+        CpuContextScope scope(&scratch);
+        InvokeIndirectCpu(KirbyBootConfig::ScCheckStatus, &scratch);
+        if (scratch.gpr[3] == 0) {
+            InvokeIndirectCpu(KirbyBootConfig::SCGetWpadMotorMode, &scratch);
+            InvokeIndirectCpu(KirbyBootConfig::WPADEnableMotor, &scratch);
+            InvokeIndirectCpu(KirbyBootConfig::SCGetWpadSpeakerVolume, &scratch);
+            InvokeIndirectCpu(KirbyBootConfig::WPADSetSpeakerVolume, &scratch);
+            loadedSystemSettings = true;
+        }
+    }
     // Aurora's noexcept update only queues host events. Invoke guest callbacks
     // afterwards, at a boundary where translated resident registers are flushed.
     if (windowActive) PollHostEvents();
@@ -300,6 +334,11 @@ PPC_NATIVE_OVERRIDE_VOID(806B5520, KirbyWPADGetAccGravityUnit, (uint32_t chan, u
 static_assert(KirbyBootConfig::WPADControlMotor == 0x806B5C90u);
 PPC_NATIVE_OVERRIDE_VOID(806B5C90, KirbyWPADControlMotor, (uint32_t chan, uint32_t command), (chan, command));
 
+static_assert(KirbyBootConfig::WPADIsSpeakerEnabled == 0x806B64A0u);
+PPC_NATIVE_OVERRIDE(806B64A0, KirbyWPADIsSpeakerEnabled, uint32_t, (uint32_t chan), (chan));
+static_assert(KirbyBootConfig::WPADControlSpeaker == 0x806B64F0u);
+PPC_NATIVE_OVERRIDE_VOID(806B64F0, KirbyWPADControlSpeaker, (CpuContext* ctx), (ctx));
+
 static_assert(KirbyBootConfig::WPADGetDpdSensitivity == 0x806B7F60u);
 PPC_NATIVE_OVERRIDE(806B7F60, KirbyWPADGetDpdSensitivity, uint32_t, (), ());
 
@@ -327,6 +366,8 @@ constexpr std::pair<uint32_t, const char*> hooks[]{
     {KirbyBootConfig::WPADSetAutoSamplingBuf, "KirbyWPADSetAutoSamplingBuf"},
     {KirbyBootConfig::WPADGetAccGravityUnit, "KirbyWPADGetAccGravityUnit"},
     {KirbyBootConfig::WPADControlMotor, "KirbyWPADControlMotor"},
+    {KirbyBootConfig::WPADIsSpeakerEnabled, "KirbyWPADIsSpeakerEnabled"},
+    {KirbyBootConfig::WPADControlSpeaker, "KirbyWPADControlSpeaker"},
     {KirbyBootConfig::WPADGetDpdSensitivity, "KirbyWPADGetDpdSensitivity"},
     {KirbyBootConfig::WPADiGetMplsStatus, "KirbyWPADiGetMplsStatus"},
     {KirbyBootConfig::WPADDisconnect, "KirbyWPADDisconnect"},
@@ -361,6 +402,9 @@ void ProbeWpad(CpuContext& cpu) {
     PollWpad(cpu, true);
     check(call(C::WPADProbe, 1, output) == uint32_t(-1) && Memory::Read32(output) == 253,
           "Absent native controller was reported connected");
+    Memory::Write32(used, 0);
+    check(call(C::WPADControlSpeaker, 1, 1, C::WPADSetCallbackByKPAD) == uint32_t(WPAD_ERR_NO_CONTROLLER)
+          && Memory::Read32(used) == 1, "Disconnected speaker request did not fail synchronously");
     std::memset(Ram(output, 0x20), 0xCD, 0x20);
     Memory::Write32(used, 0);
     check(call(C::WPADGetInfoAsync, 1, output+4, C::WPADSetCallbackByKPAD) == uint32_t(-1)
@@ -384,6 +428,11 @@ void ProbeWpad(CpuContext& cpu) {
           "Original sampling callback failed or changed the caller CPU");
     check(call(C::WPADProbe, 1, output) == 0 && Memory::Read32(output) == 0,
           "Native controller was not exposed as a core Wii Remote");
+    Memory::Write32(used, 0);
+    check(call(C::WPADControlSpeaker, 1, 1, C::WPADSetCallbackByKPAD) == uint32_t(WPAD_ERR_INVALID)
+          && Memory::Read32(used) == 1 && call(C::WPADIsSpeakerEnabled, 1) == 0,
+          "HOME Menu speaker enable did not report the unavailable speaker");
+    check(call(C::WPADControlSpeaker, 1, 0, 0) == 0, "Disabling an inactive speaker failed");
     check(call(C::WPADSetDataFormat, 1, 2) == 0, "Core accelerometer format failed");
     PollWpad(cpu, true);
     std::memset(Ram(output, 0x2E), 0xCD, 0x2E);

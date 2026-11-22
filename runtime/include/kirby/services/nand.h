@@ -39,6 +39,7 @@ public:
     std::pair<int32_t, std::shared_ptr<NandFile>> Open(const std::string& path, uint32_t mode) const;
     void SetLanguage(uint8_t language);
     int32_t Usage(const std::string& path, uint32_t& clusters, uint32_t& inodes) const;
+    int32_t ReadDirectory(const std::string& path, std::vector<std::string>& names) const;
     int32_t CreateFile(const std::string& path, std::array<uint8_t,4> metadata) const;
     int32_t CreateDirectory(const std::string& path, std::array<uint8_t,4> metadata) const;
     int32_t Attributes(const std::string& path, std::array<uint8_t,4>& metadata) const;
