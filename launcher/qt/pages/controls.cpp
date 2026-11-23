@@ -8,7 +8,6 @@
 #include <QJsonArray>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QTabBar>
 #include <algorithm>
 
 namespace Yarn {
@@ -59,8 +58,11 @@ void Window::buildControllerGuide() {
 }
 
 void Window::buildControls() {
-    auto* tabs=new QTabBar;tabs->setExpanding(false);tabs->addTab(T("Button bindings"));tabs->addTab(T("Motion"));
-    tabs->setCurrentIndex(controlTab);pages->addWidget(tabs);
+    auto* tabs=new YarnTabs;
+    tabs->addTab(T("Input settings"));
+    tabs->addTab(T("Motion"));
+    tabs->setCurrentIndex(controlTab);
+    pages->addWidget(tabs,0,Qt::AlignLeading);
     connect(tabs,&QTabBar::currentChanged,this,[this](int i){controlTab=i;navigate(Controls);});
     if (controlTab==0) buildBindings();
     else buildMotion();
@@ -95,9 +97,11 @@ void Window::buildBindings() {
         }
         bindingUi.buttons.append(pair);
     }
-    auto* levels=card("Activation thresholds","For actions assigned to an axis, choose how far to move the stick or trigger before the action activates.");
+    auto* levels=card("Sticks and triggers","For actions assigned to an axis, choose how far to move the stick or trigger before the action activates.");
     number(levels,"stick","Stick activation",.05,.95,.05);number(levels,"trigger","Trigger activation",.05,.95,.05);
-    action(levels,"Reset controls",[this]{request("resetControls");});
+    auto* resetRow=new QHBoxLayout;pages->addLayout(resetRow);
+    action(resetRow,"Reset controls",[this]{request("resetControls");});
+    resetRow->addStretch();
 }
 
 void Window::updateControls() {

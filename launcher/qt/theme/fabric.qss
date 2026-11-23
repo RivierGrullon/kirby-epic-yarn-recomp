@@ -41,5 +41,3 @@ QDoubleSpinBox#fabricNumber::up-button {
 }
 QDoubleSpinBox#fabricNumber QLineEdit {background:transparent;border:0;padding:0;}
 QPlainTextEdit {background:#f5f4e9;border:1px solid #d8d5c6;border-radius:9px;padding:8px;}
-QTabBar::tab {background:#edeedc;border-radius:8px;padding:7px 15px;margin-right:5px;}
-QTabBar::tab:selected {background:#f0d3de;color:#713e50;}

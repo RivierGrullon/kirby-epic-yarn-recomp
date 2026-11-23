@@ -261,6 +261,9 @@ a = "J"
                                           "west": 0x400, "dpad_left": 8, "dpad_right": 4,
                                           "dpad_up": 2, "dpad_down": 1, "guide": 0x8000}.items():
                         self.assertEqual(values[("gamepad", name)], buttons)
+                    for direction in ("up", "down", "left", "right"):
+                        self.assertEqual(values[("axis", f"left_stick_{direction}")],
+                                         values[("gamepad", f"dpad_{direction}")])
                     for name, buttons in {"J": 0x100, "Space": 0, "Escape": 0x10,
                                           "Tab": 0x1000, "Left Ctrl": 0x200, "Left": 8,
                                           "Right": 4, "Up": 2, "Down": 1, "X": 0x800, "Z": 0x400, "F1": 0x8000}.items():
@@ -289,7 +292,8 @@ up = "right_stick_up"
             self.assertEqual(len(samples), 4, result.stdout)
             for profile, values in samples.items():
                 with self.subTest(profile=profile):
-                    for name, buttons in {"left_stick_left": 0x100, "left_stick_right": 0,
+                    for name, buttons in {"left_stick_left": 0x100, "left_stick_right": 4,
+                                          "left_stick_up": 0, "left_stick_down": 1,
                                           "right_stick_up": 2, "right_stick_down": 0,
                                           "left_trigger": 0, "right_trigger": 0x200}.items():
                         self.assertEqual(values[("axis", name)], buttons)
