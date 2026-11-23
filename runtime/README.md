@@ -110,7 +110,7 @@ positional Xbox face-button defaults before PAD initialization, preserving the
 existing axis layout. Video launches apply the shared settings after PAD
 initialization; isolated SDK probes retain their existing defaults.
 
-`patches/aurora/controller-binding-overrides.patch` adds a binding overload that
+`patches/aurora/02-controller-binding-overrides.patch` adds a binding overload that
 replaces selected physical controls rather than appending alternatives. It keeps
 Aurora's per-port routing, capture, virtual producers and device source resolution.
 An explicit shared-keyboard option enables keyboard actions alongside a controller
@@ -176,7 +176,7 @@ Display quality uses shared `video.resolution_scale` (1–6 or 8) and `msaa_samp
 multisampled attachments; presentation retains 16:9 independently of EFB size.
 Display copies and eligible packed RGBA8 effect textures retain their scaled GPU
 images. RAM readback still packs the guest's native dimensions and strides.
-`patches/aurora/scaled-copy-filter.patch` keeps the vertical filter taps one
+`patches/aurora/07-scaled-copy-filter.patch` keeps the vertical filter taps one
 render pixel apart in those scaled copies. Previously their spacing grew with
 the resolution multiplier, softening the image even at 8x. This follows the
 scaled-VRAM-copy spacing in Dolphin's
@@ -187,13 +187,13 @@ hardware-exact native-filter path at enhanced resolutions.
 The GPU quality fixture checks a one-render-pixel line with nonidentity filter
 taps in both display and RGBA8 texture copies, including MSAA, so it detects
 blur even when texture dimensions are correct.
-`patches/aurora/msaa-copy-readback.patch` resolves color before copy/readback,
+`patches/aurora/05-msaa-copy-readback.patch` resolves color before copy/readback,
 uses depth sample zero consistently with Aurora's existing depth snapshots, and
 adds multisampled depth-copy shader/layout variants. It also removes invalid
 copy usage flags from multisampled render attachments. The GPU fixture accepts
 `--gpu-quality SCALE SAMPLES` to check actual framebuffer/copy sizes, edge
 coverage, EFB color/depth peeks and existing copy-coherence behavior. The
-`fxaa-presentation.patch` adds directional FXAA to the final presentation copy,
+`04-fxaa-presentation.patch` adds directional FXAA to the final presentation copy,
 after output resampling and before ImGui overlays. It preserves brightness and
 does not change guest-visible copy bytes. `--gpu-fxaa` checks the actual shader
 against diagonal and uniform images, including disable and dimming behavior.
@@ -217,7 +217,7 @@ Linux retains the newer SDL process launcher and internal SHA-1 verification. Ga
 revision, size and hash validation before guest execution. Native registry audits
 compare names by content, independently of compiler string-literal merging.
 
-`patches/wiicompiled/windows-fail-closed.patch` rejects unmapped Windows guest
+`patches/wiicompiled/09-windows-fail-closed.patch` rejects unmapped Windows guest
 faults after the existing copy/code-protection handlers, rather than allocating
 new guest RAM. Build junctions and Windows SDK discovery live in `tools/build_native.py`.
 See [Windows bring-up](../docs/bringup.md#windows-x64-port-2026-11-14) for evidence

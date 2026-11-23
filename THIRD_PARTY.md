@@ -41,7 +41,7 @@ used as a behavior reference at revision `db2afcbdf8f5175a6b8414d9f5e21c978775f6
 its source files are not linked into the native product. Review copies, retaining
 their original copyright and SPDX notices, are under ignored `local/references/dolphin/`.
 
-`patches/aurora/controller-binding-overrides.patch` extends Aurora's PAD binding
+`patches/aurora/02-controller-binding-overrides.patch` extends Aurora's PAD binding
 adapter with replacement controls and opt-in shared keyboard/controller input.
 The changes in that patch are provided under Aurora's MIT license. Its original
 copyright and license notices remain in the pinned source tree. Kirby's GPL
@@ -164,7 +164,7 @@ No source from WiindowsPlay, NWiiRecomp or ResortCompiled has been imported or l
 The directory/name cleanup preserves the licenses and notices of all existing components.
 
 Stage 19 reuses WiiCompiled's existing AXWii mixer and native audio backend (GPL-3.0),
-with the owned `ax-hardware.patch` applied only to the ignored runtime snapshot.
+with the owned `04-ax-hardware.patch` applied only to the ignored runtime snapshot.
 The task loader and IRQ boundary use verified RK5E01 symbols and DOL bytes. No foreign
 game globals or boot patches are enabled. AXWii microcode identity and mailbox behavior
 were cross-checked against the pinned Dolphin `DSPHLE/UCodes/{ROM,AX,AXWii}.cpp` and
@@ -178,7 +178,7 @@ Dolphin `VideoCommon/BPMemory.h`. NAND usage semantics reference its
 local reference copies retain the Dolphin copyright/license notice. Authored adapters
 and tests are GPL-3.0-only.
 
-Stage 20 adds `patches/aurora/preserve-efb.patch` to the pinned Aurora recording
+Stage 20 adds `patches/aurora/00-preserve-efb.patch` to the pinned Aurora recording
 backend (MIT, copyright Luke Street). It exposes an explicit operation to load
 existing EFB attachments after a host submission boundary. Kirby uses it when
 resuming GX after readback or VI presentation. The build copies the pinned Aurora
@@ -208,12 +208,12 @@ is authored GPL-3.0-only. ZeldaWWHDRecomp's SDL3/ImGui frontend and documentatio
 organization were reviewed as references; no MPL source, graphics or branding was
 copied. Pinned review links and reuse boundaries are in `docs/references.md`.
 
-`patches/wiicompiled/ax-retail-memory.patch` adapts WiiCompiled's GPL-3.0 AX mixer
+`patches/wiicompiled/05-ax-retail-memory.patch` adapts WiiCompiled's GPL-3.0 AX mixer
 memory windows to the configured retail MEM2 extent. Its source notices remain
 unchanged. The synthetic MEM2 voice test uses RK5E01 AXPB offsets from
 Swiftshine/key's CC0 `src/revolution/AX/AXPB.h`; no disc audio is included in tests.
 
-`patches/aurora/xfb-yuyv-readback.patch` extends Aurora's existing compute readback
+`patches/aurora/01-xfb-yuyv-readback.patch` extends Aurora's existing compute readback
 shader and layout metadata. Aurora's MIT license and copyright notices remain in
 the pinned source tree. The authored YUYV packing follows the same Dolphin-referenced
 coefficients and quantization as this project's CPU encoder; no game shader or
@@ -221,7 +221,7 @@ game asset is included. The CPU encoder remains the synthetic regression oracle.
 
 The Windows host adapter, launcher process/input verification, settings writes
 and synthetic Windows fixtures are authored GPL-3.0-only code using Windows APIs.
-`patches/wiicompiled/windows-fail-closed.patch` modifies the pinned GPL-3.0
+`patches/wiicompiled/09-windows-fail-closed.patch` modifies the pinned GPL-3.0
 WiiCompiled runtime snapshot and retains its source notices. No source from the
 separate KEY-Recomp runtime is imported. The Windows build uses locally installed
 Microsoft Windows SDK C++/WinRT headers under their SDK license; those headers
