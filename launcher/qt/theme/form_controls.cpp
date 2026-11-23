@@ -2,12 +2,92 @@
 #include "theme/form_controls.h"
 #include "theme/patchwork.h"
 #include <QPainter>
+#include <QPainterPath>
 #include <QListView>
 #include <QStyledItemDelegate>
 #include <QStyleOptionSpinBox>
 #include <algorithm>
 
 namespace Yarn {
+namespace {
+void drawYarnBall(QPainter& p,QPointF center,QColor yarn) {
+    p.save();
+    p.translate(center);
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(yarn.darker(126),1.6,Qt::SolidLine,Qt::RoundCap));
+    QPainterPath tail(QPointF(4,6));
+    tail.cubicTo(8,12,11,4,14,7);
+    p.drawPath(tail);
+
+    QPainterPath ball;
+    ball.addEllipse(QPointF(0,0),8.5,8.5);
+    p.setBrush(yarn);
+    p.drawPath(ball);
+    p.setClipPath(ball,Qt::IntersectClip);
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(yarn.lighter(155),1.25,Qt::SolidLine,Qt::RoundCap));
+    QPainterPath strands;
+    for (int offset : {-4,0,4}) {
+        strands.moveTo(-10,offset);
+        strands.quadTo(-2,offset-1,3+offset,-9);
+        strands.moveTo(-5+offset,9);
+        strands.quadTo(-4+offset,4,7+offset,-2);
+    }
+    p.drawPath(strands);
+    p.restore();
+}
+}
+
+YarnTabs::YarnTabs() {
+    setDrawBase(false);
+    setExpanding(false);
+    setMouseTracking(true);
+    setCursor(Qt::PointingHandCursor);
+}
+
+QSize YarnTabs::tabSizeHint(int index) const {
+    QFont labelFont=font();
+    labelFont.setBold(true);
+    const QFontMetrics metrics(labelFont);
+    return {metrics.horizontalAdvance(tabText(index))+58,std::max(47,metrics.height()+23)};
+}
+
+void YarnTabs::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    const QRectF tape=QRectF(rect()).adjusted(1,7,-1,-7);
+    const qreal middle=tape.center().y();
+    const QPolygonF ribbon{tape.topLeft(),tape.topRight(),{tape.right()-5,middle},
+                           tape.bottomRight(),tape.bottomLeft(),{tape.left()+5,middle}};
+    p.setPen(QPen(QColor("#c8b998"),1));
+    p.setBrush(QColor("#f0e5ca"));
+    p.drawPolygon(ribbon);
+    p.setPen(QPen(QColor("#bfae8d"),1,Qt::DashLine,Qt::RoundCap));
+    for (qreal y : {tape.top()+3,tape.bottom()-3})
+        p.drawLine(QPointF(tape.left()+6,y),QPointF(tape.right()-6,y));
+
+    const int hovered=underMouse()?tabAt(mapFromGlobal(QCursor::pos())):-1;
+    for (int i=0;i<count();++i) {
+        const bool selected=i==currentIndex();
+        const QRectF patch=QRectF(tabRect(i)).adjusted(6,2,-6,-4);
+        if (selected) {
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor("#c5a596"));
+            p.drawRoundedRect(patch.translated(0,2),10,10);
+            p.setBrush(QColor(i==hovered?"#f2c9d2":"#edbfcb"));
+            p.setPen(QPen(QColor(hasFocus()?"#82435c":"#b27a8c"),hasFocus()?2:1));
+            p.drawRoundedRect(patch,10,10);
+            drawStitch(p,patch.adjusted(4,4,-4,-4),QColor("#fff4e7"),7);
+        }
+        drawYarnBall(p,{patch.left()+18,middle},QColor(selected?"#b75c7b":"#89a193"));
+        QFont labelFont=font();
+        labelFont.setBold(selected);
+        p.setFont(labelFont);
+        p.setPen(QColor(selected?"#603646":i==hovered?"#324c3e":"#566357"));
+        p.drawText(patch.adjusted(33,0,-7,0),Qt::AlignCenter,tabText(i));
+    }
+}
+
 SewnSwitch::SewnSwitch() {
     setFixedSize(58,30);setCursor(Qt::PointingHandCursor);setFocusPolicy(Qt::StrongFocus);
 }

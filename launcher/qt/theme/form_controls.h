@@ -4,8 +4,17 @@
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QPushButton>
+#include <QTabBar>
 
 namespace Yarn {
+class YarnTabs : public QTabBar {
+public:
+    YarnTabs();
+protected:
+    QSize tabSizeHint(int index) const override;
+    void paintEvent(QPaintEvent*) override;
+};
+
 class SewnSwitch : public QCheckBox {
 public:
     SewnSwitch();

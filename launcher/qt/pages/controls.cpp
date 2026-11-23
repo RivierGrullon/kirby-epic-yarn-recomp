@@ -8,7 +8,6 @@
 #include <QJsonArray>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QTabBar>
 #include <algorithm>
 
 namespace Yarn {
@@ -59,8 +58,11 @@ void Window::buildControllerGuide() {
 }
 
 void Window::buildControls() {
-    auto* tabs=new QTabBar;tabs->setExpanding(false);tabs->addTab(T("Input settings"));tabs->addTab(T("Motion"));
-    tabs->setCurrentIndex(controlTab);pages->addWidget(tabs);
+    auto* tabs=new YarnTabs;
+    tabs->addTab(T("Input settings"));
+    tabs->addTab(T("Motion"));
+    tabs->setCurrentIndex(controlTab);
+    pages->addWidget(tabs,0,Qt::AlignLeading);
     connect(tabs,&QTabBar::currentChanged,this,[this](int i){controlTab=i;navigate(Controls);});
     if (controlTab==0) buildBindings();
     else buildMotion();
