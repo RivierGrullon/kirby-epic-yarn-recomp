@@ -35,6 +35,24 @@
 namespace Kirby {
 namespace {
 std::optional<ControlBindings> configuredBindings;
+
+void addGamepadBinding(std::vector<aurora::binding::Binding>& bindings, aurora::binding::ControlId target,
+                       const std::string_view token, const ControlBindings& settings) {
+    using namespace aurora::binding;
+    const auto native = ControllerNames::FindNativeButton(token)->nativeButton;
+    Binding binding;
+    binding.target = target;
+    if (PADIsAxisButton(native)) {
+        using Direction = PhysicalInput::GamepadAxis::Direction;
+        const auto axis = static_cast<SDL_GamepadAxis>(PADAxisButtonAxis(native));
+        binding.input.control = PhysicalInput::GamepadAxis{
+            axis, PADAxisButtonNegative(native) ? Direction::Negative : Direction::Positive};
+        binding.threshold = axis >= SDL_GAMEPAD_AXIS_LEFT_TRIGGER ? settings.triggerActivation : settings.stickActivation;
+    } else {
+        binding.input.control = PhysicalInput::GamepadButton{static_cast<SDL_GamepadButton>(native)};
+    }
+    bindings.push_back(std::move(binding));
+}
 }
 void ConfigureControlBindings(const ControlBindings& bindings) {
     ValidateControlBindings(bindings);
@@ -54,18 +72,7 @@ void ApplyConfiguredControlBindings() {
         for (size_t i = 0; i < GameActions.size(); ++i) {
             const auto& token = configuredBindings->gamepad[i];
             if (token != "disabled") {
-                const auto native = ControllerNames::FindNativeButton(token)->nativeButton;
-                Binding binding;
-                binding.target = targets[i];
-                if (PADIsAxisButton(native)) {
-                    using Direction = PhysicalInput::GamepadAxis::Direction;
-                    binding.input.control = PhysicalInput::GamepadAxis{
-                        static_cast<SDL_GamepadAxis>(PADAxisButtonAxis(native)),
-                        PADAxisButtonNegative(native) ? Direction::Negative : Direction::Positive};
-                    const bool trigger = PADAxisButtonAxis(native) >= SDL_GAMEPAD_AXIS_LEFT_TRIGGER;
-                    binding.threshold = trigger ? configuredBindings->triggerActivation : configuredBindings->stickActivation;
-                } else binding.input.control = PhysicalInput::GamepadButton{static_cast<SDL_GamepadButton>(native)};
-                bindings.push_back(std::move(binding));
+                addGamepadBinding(bindings, targets[i], token, *configuredBindings);
             }
             const auto& key = configuredBindings->keyboard[i];
             if (port == 0 && key != "disabled") {
@@ -73,6 +80,16 @@ void ApplyConfiguredControlBindings() {
                 binding.target = targets[i];
                 binding.input.control = PhysicalInput::Key{SDL_GetScancodeFromName(key.c_str())};
                 bindings.push_back(std::move(binding));
+            }
+        }
+        // Add stick alternatives only for default directions whose axis is still free.
+        for (const auto& [action, stick] : {
+                std::pair{GameAction::Up, "left_stick_up"}, {GameAction::Down, "left_stick_down"},
+                {GameAction::Left, "left_stick_left"}, {GameAction::Right, "left_stick_right"}}) {
+            const auto i = static_cast<size_t>(action);
+            const auto& gamepad = configuredBindings->gamepad;
+            if (gamepad[i] == GameActions[i].defaultGamepad && std::ranges::find(gamepad, stick) == gamepad.end()) {
+                addGamepadBinding(bindings, targets[i], stick, *configuredBindings);
             }
         }
         // The shared TOML schema owns bindings. Do not select Aurora's separate

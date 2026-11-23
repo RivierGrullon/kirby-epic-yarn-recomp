@@ -87,6 +87,11 @@ levels. Use **Save settings** to
 persist changes; they apply on the next game launch. Launcher navigation uses its
 own standard controls and is unaffected by gameplay remapping.
 
+By default, both the D-pad and the left stick move Kirby. Each stick direction
+uses the **Stick activation** threshold. Rebinding or clearing a movement action
+removes its automatic stick binding. Assigning a left-stick direction to another
+action gives that action exclusive use of that direction.
+
 **Stick activation** and **Trigger activation** choose how far an axis assigned
 to an action must move before that action becomes pressed. Both default to 50%
 and accept 5-95%. Lower values activate earlier; higher values require more
