@@ -364,7 +364,7 @@ reproduced this failure; logs are `exi-probe-flat-read-crash.log` and
 `exi-flat-read-crash.log` under `build-logs/`. The instruction and its preceding
 channel-stride calculation were checked against the verified DOL.
 
-`runtime/wiicompiled-flat-mmio.patch` routes flat loads in the MMIO window to the
+`patches/wiicompiled/02-flat-mmio.patch` routes flat loads in the MMIO window to the
 existing width-specific slow handlers. Ordinary RAM loads retain the direct path.
 This fixes the runtime contract for dynamically addressed registers without modifying
 generated game code or enabling a signal handler that creates zero-filled device pages.
@@ -1362,7 +1362,7 @@ Evidence is retained locally in `build-logs/stage12-build.log`, `compile.log`,
 `stage12-startup-final.log` and `stage12-startup-final-repeat.log`.
 
 Added files: `runtime/kirby_gx_fifo.h`, `runtime/kirby_gx_fifo.cpp`,
-`runtime/kirby_gx_bridge.cpp`, `runtime/wiicompiled-gx-wpar.patch`,
+`runtime/kirby_gx_bridge.cpp`, `patches/wiicompiled/03-gx-wpar.patch`,
 `tests/gx_fifo_test.cpp`. Updated files: `runtime/kirby_interrupts.cpp`,
 `runtime/kirby_main.cpp`, `runtime/kirby_targets.cmake`, `tests/interrupts_test.cpp`,
 `README.md`, `THIRD_PARTY.md` and this report. No new native guest-function overrides
@@ -2136,7 +2136,7 @@ Authored changes are grouped under `runtime/{include/kirby,src}/devices` (DSP, A
 audio DMA), `runtime/native-src/{devices,input,threading}`, `runtime/src/graphics`
 (draws, palettes and readback polling), `runtime/src/services` and matching headers
 (NAND usage/delete), `tools/audits/{audio,scheduler,wpad}.py`, `tools/kirby.py`,
-`tools/build_native.py`, `cmake/native_targets.cmake`, `patches/wiicompiled/ax-hardware.patch`,
+`tools/build_native.py`, `cmake/native_targets.cmake`, `patches/wiicompiled/04-ax-hardware.patch`,
 matching unit/integration tests, the READMEs, `THIRD_PARTY.md` and this report.
 The pinned vendor checkout remains unchanged. Game data and generated code stay ignored.
 
@@ -2163,7 +2163,7 @@ host-frame boundary bug independently of the game.
 Aurora initializes each new recording pass with attachment clears. Starting a new
 host frame after VI presentation therefore erased EFB draws that the game had not
 yet copied. A separate submission after CopyDisplay also imposed an extra clear
-regardless of the guest's clear flag. `patches/aurora/preserve-efb.patch` adds an
+regardless of the guest's clear flag. `patches/aurora/00-preserve-efb.patch` adds an
 explicit operation to load color/depth attachments on a resumed EFB pass;
 `gx_xfb.cpp` calls it after these two boundaries. Initial window initialization
 retains its initial clear. Guest-requested copy clears remain recorded normally.
@@ -2211,7 +2211,7 @@ LD_LIBRARY_PATH="$PWD/local/host-libs" build/native/kirby_gx_renderer_test --gpu
 LD_LIBRARY_PATH="$PWD/local/host-libs" build/native/WiiCompiled --video
 ```
 
-Changed files in this stage: `patches/aurora/preserve-efb.patch`,
+Changed files in this stage: `patches/aurora/00-preserve-efb.patch`,
 `tools/build_native.py`, `cmake/native_targets.cmake` (renderer debug information),
 `runtime/src/graphics/{gx_xfb,xfb}.cpp`,
 `tests/unit/graphics/{gx_renderer,xfb}_test.cpp`,
@@ -3015,7 +3015,7 @@ voices. A live GDB check showed `AxDspHle::g_mixMem2 == nullptr` while MEM1 was 
 `Memory::kMem2Size` is the upstream 128 MiB NDEV limit; Kirby's audited map is 64 MiB.
 The mixer's full-range lookup therefore failed, and MEM2 sample fetch returned zeros.
 
-`patches/wiicompiled/ax-retail-memory.patch` obtains the configured cached MEM2 region
+`patches/wiicompiled/05-ax-retail-memory.patch` obtains the configured cached MEM2 region
 from `Memory::DescribeRegions`, retaining its byte extent for range checks and the
 DSP wrap mask. It does not expand guest memory or change any Kirby address. The
 adapted snapshot keeps upstream GPL notices; the checked-in patch reproduces it.
@@ -3085,7 +3085,7 @@ logs retain failed assertions rather than replacing them with a success claim.
 Changed source/build files: `launcher/main.cpp`, `cmake/native_targets.cmake`,
 `tools/build_native.py`, `runtime/src/app/main.cpp`,
 `runtime/include/kirby/graphics/gx_renderer.h`, `runtime/src/graphics/gx_renderer.cpp`,
-`runtime/src/graphics/gx_draw.cpp`, `patches/wiicompiled/ax-retail-memory.patch`,
+`runtime/src/graphics/gx_draw.cpp`, `patches/wiicompiled/05-ax-retail-memory.patch`,
 `tests/integration/ax_probe.cpp`, `tests/integration/test_native_bootstrap.py`,
 `tests/integration/test_native_video.py`, new `tests/integration/test_launcher.py`
 and `tests/unit/graphics/gx_renderer_test.cpp`. Documentation changes are listed
@@ -3111,7 +3111,7 @@ texture-copy formats and render-worker synchronization remain intact.
 
 ### Source changes
 
-- `patches/aurora/xfb-yuyv-readback.patch`: layout metadata and compute shader;
+- `patches/aurora/01-xfb-yuyv-readback.patch`: layout metadata and compute shader;
   applied to the pinned local Aurora snapshot by the existing build helper.
 - `runtime/src/graphics/gx_xfb.cpp`: direct YUYV readback and a game-window title
   updated every 250 ms with `aurora_get_fps()`.

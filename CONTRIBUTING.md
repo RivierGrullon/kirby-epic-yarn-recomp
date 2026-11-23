@@ -27,7 +27,9 @@ and actual game/audio behavior. The title-bar FPS counter alone is insufficient.
 - Verify RK5E01 addresses and layouts against the DOL and community symbols.
   Another game's hook or memory constant is not evidence for Kirby.
 - Keep upstream checkouts intact. Use `patches/` for shared-runtime changes and
-  retain licenses and attribution when reusing source.
+  retain licenses and attribution when reusing source. Give each new patch the
+  next two-digit prefix in its dependency directory, starting at `00-`. The
+  build applies patches in filename order.
 - Add focused regression coverage for rendering, timing, memory visibility or
   input behavior that changes. Record limitations of the verification.
 

@@ -1120,7 +1120,7 @@ presentation waits remain costs to investigate.
 ### GPU XFB packing
 
 Phase measurements found approximately 1.6–1.9 ms per 640x480 display copy in the
-CPU RGBA8-to-YUYV conversion. `patches/aurora/xfb-yuyv-readback.patch` adds a
+CPU RGBA8-to-YUYV conversion. `patches/aurora/01-xfb-yuyv-readback.patch` adds a
 readback-only format, separate from guest GX format numbers. Its compute shader
 packs two adjacent pixels into Y0/U/Y1/V using the existing encoder's integer
 coefficients and both rounding steps. Display readback falls from 1,228,800 to
@@ -1179,7 +1179,7 @@ MEM2 pointer. Kirby maps 64 MiB, so that range failed and `g_mixMem2` remained n
 The voice accelerator consequently fetched zeros from MEM2 even with active voices.
 The live pointer capture is `stage31-mem2-audio.log`.
 
-`patches/wiicompiled/ax-retail-memory.patch` reads the configured region extent,
+`patches/wiicompiled/05-ax-retail-memory.patch` reads the configured region extent,
 retains it for mixer bounds checks and uses it for the DSP MEM2 wrap mask. It does
 not expand guest RAM. The regression failed before the patch on a MEM2 byte fetch;
 afterwards it verifies both boundaries and a complete constant PCM16 voice whose
@@ -2075,7 +2075,7 @@ indexed-array prefixes up to 16 MiB, and GPU-resident copies retain multiple
 uploads in one recording frame. The same overflow was reproduced with a
 synthetic indexed draw without any game data.
 
-`patches/aurora/kirby-storage-budget.patch` raises the shared storage budget to
+`patches/aurora/06-kirby-storage-budget.patch` raises the shared storage budget to
 32 MiB. Aurora uses this value for its GPU buffer, all mapped staging regions,
 and the offsets of subsequent staging data. This adds 24 MiB to GPU storage and
 24 MiB to each of five staging buffers: **144 MiB of additional allocations**.
