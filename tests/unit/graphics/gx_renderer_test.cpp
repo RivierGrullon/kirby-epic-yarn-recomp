@@ -41,6 +41,7 @@ void Bp(Kirby::GxRenderer& renderer, uint32_t value) {
     const uint8_t packet[]{0x61,uint8_t(value >> 24),uint8_t(value >> 16),uint8_t(value >> 8),uint8_t(value)};
     renderer.Feed(packet);
 }
+#ifdef __APPLE__
 void ReadbackNotifications() {
     namespace rb = aurora::gfx::readback;
     const auto stream = rb::create_stream();
@@ -72,6 +73,7 @@ void ReadbackNotifications() {
     rb::complete_job(*destroyed, expected);
     Check(!staleNotified, "destroyed readback streams do not report successful publication");
 }
+#endif
 // Inspect the retained GPU copy at its actual resolution, before native RAM packing.
 std::vector<uint8_t> ReadCopyPixels(const aurora::gfx::TextureHandle& texture) {
     const unsigned rowBytes = texture->size.width * 4;
@@ -1025,7 +1027,9 @@ std::weak_ptr<aurora::gfx::TextureRef> GpuXfb(bool startHidden = false, int reso
 }
 int main(int argc, char** argv) {
     try {
+#ifdef __APPLE__
         ReadbackNotifications();
+#endif
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-fxaa") { GpuFxaa(); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb") { GpuXfb(); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb-hidden") {

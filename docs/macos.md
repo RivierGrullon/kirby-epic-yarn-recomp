@@ -139,12 +139,14 @@ existing memory-coherence checks. It does not lower the original game's clock or
 discard frames to hide slowdown. The RAM requirement for compilation is separate
 from CPU/GPU performance while playing.
 
-Synchronous GPU copies previously slept for a fixed 1 ms between completion
+On macOS, synchronous GPU copies previously slept for a fixed 1 ms between completion
 polls. Each copy job can now signal the waiting thread after its immutable packet
 is published. A completed callback wakes the caller early; Dawn polling stays on
 the render worker, with the same 5-second timeout and final worker fence. Copies
 still verify their sequence, payload and CPU-visible bytes. Synthetic completion
 and race tests establish the wakeup contract, not a measured gameplay FPS gain.
+Windows and Linux keep their existing polling loop and readback job layout; this
+notification optimization is compiled only on Apple platforms.
 
 Before accepting Intel performance, compare the old and new build on the same
 Mac, scene, camera, isolated save and settings, with the window visible. Start at
