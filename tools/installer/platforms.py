@@ -6,6 +6,7 @@ import stat
 import sys
 
 WINDOWS = os.name == 'nt'
+MACOS = sys.platform == 'darwin'
 
 
 def host_environment(*library_directories):
@@ -27,7 +28,7 @@ def host_environment(*library_directories):
 
 def executable_name(target=None):
     target = target or ('windows' if WINDOWS else 'linux')
-    if target not in ('windows', 'linux'):
+    if target not in ('windows', 'linux', 'macos'):
         raise ValueError(f'Unsupported native target: {target}')
     return 'WiiCompiled.exe' if target == 'windows' else 'WiiCompiled'
 

@@ -7,6 +7,7 @@ import tempfile
 import shutil
 import subprocess
 import unittest
+from dataclasses import replace
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
 from installer.setup_layout import Bundle, prepare_destination, finish_destination, update_game_data
@@ -74,6 +75,12 @@ class SetupLayoutTests(unittest.TestCase):
         self.assertFalse((root/'local/user/save').exists())
         for name in ('Play Kirby.sh','Play Kirby.cmd'):
             self.assertFalse((self.destination/name).exists())
+
+    def test_setup_can_build_the_frontend_after_preparing_its_sources(self):
+        shutil.rmtree(self.frontend)
+        root = prepare_destination(replace(self.bundle, bundled_frontend=False), self.destination)
+        self.assertTrue((root/'tools/kirby.py').is_file())
+        self.assertFalse((root/'build/native/qt-launcher').exists())
 
     def test_retry_preserves_installed_saves_and_outputs(self):
         root=prepare_destination(self.bundle,self.destination)

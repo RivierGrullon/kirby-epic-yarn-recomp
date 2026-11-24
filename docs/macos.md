@@ -3,7 +3,7 @@
 macOS support is experimental. The build entry point supports **native x86_64
 on Intel** and **native arm64 on Apple Silicon**, with Metal graphics. Neither
 architecture is declared gameplay-validated by the presence of a passing CI job.
-The existing Linux and Windows release installers remain the published packages.
+Releases can package Kirby Setup for Intel and Apple Silicon without game data.
 
 ## Prerequisites
 
@@ -22,7 +22,21 @@ SDK for your architecture from Microsoft. Run Terminal and Python natively;
 Rosetta sessions and cross-compilation are rejected to prevent mixed libraries.
 A Mac Intel build is not an ARM build. Run the same command on each type of Mac.
 
-## Build
+## Kirby Setup
+
+Open **Kirby Setup.app** from the release ZIP. Select your disc image or
+extracted DATA folder and an installation destination, then choose **Install**.
+Setup extracts and verifies the data, compiles the game and launcher, checks game
+startup, and installs **Play Kirby.command** in the chosen destination. Open the
+launcher from Setup or use that command later.
+
+The installer uses the native tools listed above. It finds Qt with Homebrew
+or the `KIRBY_QT_PREFIX` environment variable, and finds Dolphin development builds
+that include the command-line extractor
+in Applications or `dolphin-tool` on PATH. The Setup bundle is ad-hoc signed.
+It contains the Setup UI and source snapshot, and builds the launcher locally.
+
+## Developer build
 
 From the repository checkout (replace the example DATA path):
 
@@ -80,8 +94,8 @@ automatically moved; use the launcher's save export/import tools.
 
 **This compiled application is for local use.** It contains translated game
 code generated from your disc. Do not attach it to public releases. A public
-Mac Setup installer that builds from each user's own disc, including automated
-toolchain downloads, is a separate follow-up. Developer ID signing and
+Mac Setup ZIP contains only the installer and project sources. Automated
+installation of the macOS toolchain is a follow-up. Developer ID signing and
 notarization are also not supplied by this patch. There is no universal binary
 or claim of cross-architecture gameplay compatibility yet.
 

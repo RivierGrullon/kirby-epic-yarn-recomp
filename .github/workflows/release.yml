@@ -119,3 +119,36 @@ jobs:
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
           gh release upload "$env:RELEASE_TAG" --clobber $archive "$archive.sha256"
+
+  macos:
+    name: macOS ${{ matrix.arch }} setup
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: macos-15-intel, arch: x86_64}
+          - {runner: macos-15, arch: arm64}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install -r tools/requirements-setup.txt
+      - name: Package and test macOS Setup
+        env:
+          SETUP_ARCH: ${{ matrix.arch }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          [[ "$version" =~ ^[A-Za-z0-9._-]+$ ]] || exit 1
+          archive="Kirby-Setup-$version-macos-$SETUP_ARCH.zip"
+          python3 tools/macos/package_setup.py --arch "$SETUP_ARCH" --output "local/releases/$archive"
+          (cd local/releases && shasum -a 256 "$archive" > "$archive.sha256")
+      - name: Attach macOS Setup to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" local/releases/*.zip local/releases/*.sha256

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Independent PyQt window; all extraction/build work belongs to the worker."""
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -114,7 +115,7 @@ class SetupWindow(QMainWindow):
         source_card.body.addLayout(choices)
         form.addWidget(source_card)
 
-        self.destination = QLineEdit(str(Path.home()/'Games/Kirby Native'))
+        self.destination = QLineEdit(str(Path.home()/('Applications/Kirby Native' if sys.platform == 'darwin' else 'Games/Kirby Native')))
         self.destination.setAccessibleName('Installation folder')
         location = Card('&Installation folder', '#a8c8d8', self.destination)
         self.destination_button = FabricButton('Browse…')
@@ -336,8 +337,17 @@ class SetupWindow(QMainWindow):
             self.root=preparation.root
             worker=self.bundle.runtime/('kirby-setup-worker.exe' if os.name=='nt' else 'kirby-setup-worker')
             command=[str(worker)] if worker.is_file() else [sys.executable,'-X','utf8','-u',str(self.root/'tools/install.py')]
-            if sys.platform=='linux':command.append('--supervise')
-            if getattr(sys,'frozen',False) and not worker.is_file():raise ValueError('The setup worker is missing. Extract the complete setup package again.')
+            if sys.platform == 'darwin':
+                python = (shutil.which('python3.12') or shutil.which('python3.13') or
+                          shutil.which('python3.14') or shutil.which('python3.11') or shutil.which('python3'))
+                if not python:
+                    raise ValueError('Install Python 3.11 or later and add it to PATH.')
+                command = [python, '-X', 'utf8', '-u', str(self.root/'tools/install.py')]
+            else:
+                if sys.platform == 'linux':
+                    command.append('--supervise')
+                if getattr(sys,'frozen',False) and not worker.is_file():
+                    raise ValueError('The setup worker is missing. Extract the complete setup package again.')
             if self.controller is not None:self.controller.deleteLater()
             self.controller=Controller(self.root,command,self)
             self.controller.changed.connect(self.render);self.controller.finished.connect(self.finished)
@@ -424,7 +434,7 @@ class SetupWindow(QMainWindow):
                     self.caption(self.open_button, 'Play game')
                 self.launcher=self.root/'build/native'/('kirby-launcher.exe' if os.name=='nt' else 'kirby-launcher')
                 try:
-                    shortcuts=[] if self.managed else create_shortcuts(self.root,self.destination_path,desktop=self.desktop_shortcut.isChecked())
+                    shortcuts=[] if self.managed or sys.platform == 'darwin' else create_shortcuts(self.root,self.destination_path,desktop=self.desktop_shortcut.isChecked())
                     for path in shortcuts:self.details.appendPlainText('Created shortcut: '+str(path))
                 except (OSError,ValueError) as error:
                     session.label='Your installation is ready. Could not create shortcuts: '+str(error)
