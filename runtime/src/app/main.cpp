@@ -20,6 +20,7 @@
 #include "kirby/graphics/pos_matrix.h"
 #include "kirby/app/build_info.h"
 #include "kirby/app/events.h"
+#include "kirby/graphics/button_prompts.h"
 #include "kirby/app/frame_log.h"
 #include "kirby/settings.h"
 #include "kirby/platform/command_line.h"
@@ -166,6 +167,7 @@ int main(int argc, char** argv) {
     bool volumeOverride = false, dataOverride = false, vsyncOverride = false, copiesOverride = false;
     bool explicitConfig = false;
     Kirby::ControlBindings controlBindings;
+    Kirby::ButtonPromptSettings buttonPrompts;
     Kirby::MotionSettings motionSettings;
     std::filesystem::path frameLogPath;
     std::filesystem::path audioLogPath;
@@ -213,6 +215,7 @@ int main(int argc, char** argv) {
         try {
             const auto settings = Kirby::LoadSettings(configPath);
             controlBindings = settings.controls;
+            buttonPrompts = settings.buttonPrompts;
             motionSettings = settings.motion;
             gameLanguage = settings.gameLanguage;
             resolutionScale = settings.resolutionScale;
@@ -229,7 +232,7 @@ int main(int argc, char** argv) {
     }
     if (mode == "--print-settings") {
         std::cout << Kirby::FormatSettings({dataRoot, masterVolume, vsync, gpuResidentCopies, controlBindings, motionSettings,
-                                           resolutionScale, msaaSamples, fxaa, fullscreen, gameLanguage});
+                                           resolutionScale, msaaSamples, fxaa, fullscreen, gameLanguage, buttonPrompts});
         return 0;
     }
 #ifdef _WIN32
@@ -275,6 +278,7 @@ int main(int argc, char** argv) {
     struct StackCleanup {
         std::unique_ptr<Kirby::GxRenderer>& renderer;
         ~StackCleanup() {
+            Kirby::StopButtonPrompts();
             if (renderer) renderer->ObservePresentation({});
             Kirby::Devices().ObserveVideo({});
             Kirby::SetAudioTrace(nullptr);
@@ -810,6 +814,7 @@ int main(int argc, char** argv) {
             });
             if (mode == "--video" || mode == "--video-hidden") {
                 renderer->OpenWindow(mode == "--video-hidden", vsync, resolutionScale, msaaSamples, fxaa, fullscreen);
+                if (buttonPrompts.enabled) Kirby::StartButtonPrompts(controlBindings, buttonPrompts.style);
                 renderer->SetGpuResidentTextureCopies(gpuResidentCopies);
                 renderer->SetGpuResidentDisplayCopies(gpuResidentCopies);
                 renderer->SetTextureSnapshotReuse(gpuResidentCopies);

@@ -89,12 +89,17 @@ class LauncherTests(unittest.TestCase):
                                {"cmd":"bind","action":4,"keyboard":True},
                                {"cmd":"key","key":"F10","down":True},
                                {"cmd":"key","key":"F10","down":False},
-                               {"cmd":"change","key":"gameLanguage","value":3}, {"cmd":"save"}])
+                               {"cmd":"change","key":"gameLanguage","value":3},
+                               {"cmd":"change","key":"dynamicPrompts","value":True},
+                               {"cmd":"change","key":"buttonIcons","value":2}, {"cmd":"save"}])
             self.assertEqual(replies[0]["state"]["lang"], 1)
             self.assertTrue(replies[3]["input"]["keyboardCapture"])
             state = session([{"cmd":"hello"}])[0]["state"]
             self.assertEqual((state["lang"],state["config"]["volume"],state["bindings"][4][2]), (2,37,"F10"))
             self.assertEqual(state["config"]["gameLanguage"], 3)
+            self.assertFalse(replies[0]["state"]["config"]["dynamicPrompts"])
+            self.assertTrue(state["config"]["dynamicPrompts"])
+            self.assertEqual(state["config"]["buttonIcons"], 2)
             preference = root/"local/user/launcher-language.txt"
             for saved, expected in (("zh-CN", 0), ("en", 1), ("unknown", 1), ("", 1)):
                 with self.subTest(saved=saved):

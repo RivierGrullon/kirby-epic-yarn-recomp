@@ -69,6 +69,27 @@ writes an absolute path. A missing settings file uses defaults without creating 
 file during direct game launch or inspection. Saves keep their existing location;
 changing a DATA folder does not move or replace them.
 
+## In-game button icons
+
+In **Advanced settings → Controls → Button bindings**, enable **Use controller and
+keyboard icons**, choose an icon style and save before launching the game.
+Button icons follow the binding for each action. For example, the cutscene
+**Skip** prompt uses **Pause / Plus**, which defaults to Options on a DualSense
+and Escape on a keyboard. Dialogs use **Jump / Confirm**.
+
+The game replaces button symbols in mini-help bars, game text, door-entry
+prompts, animated tutorial signs, transformation guides and the HOME controller
+legend. Bindings without a packaged icon use a text label. Wrist-strap and grip
+illustrations still depict the Wii Remote.
+
+The default is off. With **Last used device**, a mapped keyboard input or a
+player 1 gamepad button or axis selects the icon family. A fixed style uses the
+bindings for that device. For an unrecognized controller, automatic mode uses
+SDL's face-button labels where available and otherwise the Xbox layout.
+The settings are `dynamic_button_prompts = false` and
+`button_icons = "auto"` under `[controller]`. Other style values are
+`xbox`, `playstation`, `switch` and `keyboard`.
+
 ## Control bindings
 
 Open **Controls**, select an action's gamepad or keyboard slot, then press the new

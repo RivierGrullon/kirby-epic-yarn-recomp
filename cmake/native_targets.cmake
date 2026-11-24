@@ -272,6 +272,10 @@ add_test(NAME kirby_xfb COMMAND kirby_xfb_test)
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/native-src/input/wpad.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/src/input/controller_mapping.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/src/input/controller_motion.cpp")
+include("${KIRBY_PROJECT_ROOT}/cmake/button_icons.cmake")
+target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/button_prompts.cpp"
+    "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/button_prompt_art.cpp")
+target_include_directories(WiiCompiled PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/kirby-generated")
 target_link_libraries(WiiCompiled PRIVATE aurora::wpad absl::flat_hash_map)
 
 target_sources(WiiCompiled PRIVATE "${KIRBY_PROJECT_ROOT}/runtime/src/threading/continuations.cpp"

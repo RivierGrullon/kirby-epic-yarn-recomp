@@ -9,3 +9,10 @@ The image demonstrates a rendered scene, not frame rate or whole-game support.
 Game artwork and trademarks belong to their respective owners and are not
 licensed under this repository's GPL source-code license. No texture packs,
 extracted assets or raw recordings are included here.
+
+The two Skip captures show the opening cutscene in the native Linux game. The
+before image shows the reported Wii + prompt. The after image shows the same
+prompt with PlayStation icons enabled and Pause / Plus bound to Options on a
+DualSense.
+
+[Original prompt](skip-wii.png) · [PlayStation prompt](skip-dualsense.jpg)

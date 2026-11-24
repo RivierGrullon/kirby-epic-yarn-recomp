@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "kirby/graphics/gx_renderer.h"
+#include "kirby/graphics/button_prompt_textures.h"
 #include "gx/command_processor.hpp"
 #include "gx/pipeline.hpp"
 #include "gx/shader_info.hpp"
@@ -36,7 +37,12 @@ void GxRenderer::CacheTextureBinding(unsigned slot,std::span<const uint8_t> memo
     using namespace aurora::gx;
     auto& texture=g_gxState.loadedTextures[slot];
     texture.texObjId=0;
+    const auto observeSource = [&] {
+        if (observeButtonPromptTexture)
+            observeButtonPromptTexture(texture.format(), texture.width(), texture.height(), memory);
+    };
     if (!textureSnapshotReuse_ || memory.size()>8*1024*1024) {
+        observeSource();
         g_gxState.dirty |= DirtyTextures;
         return;
     }
@@ -76,6 +82,7 @@ void GxRenderer::CacheTextureBinding(unsigned slot,std::span<const uint8_t> memo
                        !std::ranges::equal(paletteBytes,entry.palette))) {
         if (!keyMiss) ++textureCacheMetrics_.contentChanges;
         textureCacheMetrics_.snapshotBytes += memory.size()+paletteBytes.size();
+        observeSource();
         entry.key=key;
         entry.bytes.assign(memory.begin(),memory.end());
         entry.palette.assign(paletteBytes.begin(),paletteBytes.end());

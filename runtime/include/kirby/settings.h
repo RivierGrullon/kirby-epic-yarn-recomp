@@ -9,6 +9,14 @@
 #include <string>
 
 namespace Kirby {
+enum class ButtonIconStyle { Auto, Xbox, PlayStation, Switch, Keyboard };
+inline constexpr std::array<std::string_view,5> ButtonIconStyleNames{
+    "auto", "xbox", "playstation", "switch", "keyboard"
+};
+struct ButtonPromptSettings {
+    bool enabled = false;
+    ButtonIconStyle style = ButtonIconStyle::Auto;
+};
 struct Settings {
     std::filesystem::path gameData = "disc/DATA";
     float masterVolume = 100;
@@ -25,6 +33,7 @@ struct Settings {
     // Wii SYSCONF language IDs supported by the USA disc.
     static constexpr int English = 1, French = 3, Spanish = 4;
     std::optional<int> gameLanguage; // An unset preference keeps the existing Wii language.
+    ButtonPromptSettings buttonPrompts{};
 };
 
 // Errors throw without modifying the source file. Relative DATA paths are
