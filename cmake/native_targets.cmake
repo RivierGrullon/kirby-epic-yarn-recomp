@@ -268,6 +268,9 @@ target_link_libraries(kirby_gx_renderer_test PRIVATE kirby_gx_renderer
 target_include_directories(kirby_gx_renderer_test PRIVATE "${MKW_AURORA_DIR}/lib")
 target_compile_features(kirby_gx_renderer_test PRIVATE cxx_std_20)
 add_test(NAME kirby_gx_renderer COMMAND kirby_gx_renderer_test)
+add_executable(kirby_readback_wait_test "${KIRBY_PROJECT_ROOT}/tests/unit/graphics/readback_wait_test.cpp")
+target_compile_features(kirby_readback_wait_test PRIVATE cxx_std_20)
+add_test(NAME kirby_readback_wait COMMAND kirby_readback_wait_test)
 add_executable(kirby_xfb_test "${KIRBY_PROJECT_ROOT}/tests/unit/graphics/xfb_test.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/xfb.cpp")
 target_compile_features(kirby_xfb_test PRIVATE cxx_std_20)

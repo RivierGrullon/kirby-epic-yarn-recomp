@@ -105,7 +105,13 @@ or claim of cross-architecture gameplay compatibility yet.
 
 The macOS workflow uses separate Intel and ARM runners. It compiles/runs the
 pinned runtime's host tests, Kirby's NAND/disc and process tests, the native
-launcher and the Qt frontend, without any game assets. It uploads no game build.
+launcher, Qt frontend and production renderer, without any game assets. Renderer
+CPU contracts check successful readback notification, published bytes, stale jobs
+and destroyed streams. It uploads no game build. These checks do not need a GPU.
+
+The manual workflow's **run_metal_checks** option additionally runs the synthetic
+GPU suite: native and scaled/MSAA copies, CPU-visible memory and FXAA pixels. It
+requires an actual Metal device; a hosted runner without one cannot validate it.
 
 On **each real Mac**, also verify:
 
@@ -119,3 +125,60 @@ On **each real Mac**, also verify:
 
 Record model, CPU, GPU, macOS, toolchain versions, scene and logs. The build's
 `--build-info` command identifies the exact source and dependencies tested.
+
+## Intel performance status
+
+A MacBook Pro 2020 with an Intel i5, 16 GB RAM and macOS Sequoia has been reported
+to launch the game with substantial frame-rate drops. This is a startup report,
+not a minimum specification or a stable-gameplay result. The year and CPU family
+alone do not identify the exact Intel GPU. Apple Silicon gameplay remains to be
+validated separately.
+
+The port retains Metal, native Intel v3/v2 selection, the M1 ARM baseline and the
+existing memory-coherence checks. It does not lower the original game's clock or
+discard frames to hide slowdown. The RAM requirement for compilation is separate
+from CPU/GPU performance while playing.
+
+Synchronous GPU copies previously slept for a fixed 1 ms between completion
+polls. Each copy job can now signal the waiting thread after its immutable packet
+is published. A completed callback wakes the caller early; Dawn polling stays on
+the render worker, with the same 5-second timeout and final worker fence. Copies
+still verify their sequence, payload and CPU-visible bytes. Synthetic completion
+and race tests establish the wakeup contract, not a measured gameplay FPS gain.
+
+Before accepting Intel performance, compare the old and new build on the same
+Mac, scene, camera, isolated save and settings, with the window visible. Start at
+1x internal resolution, MSAA/FXAA off and experimental GPU copies on; keep those
+settings identical between builds. Warm the shaders, use AC power and keep Low
+Power Mode and other host conditions identical. Repeat a moving level segment,
+not only the title screen. Capture with the existing diagnostic arguments:
+
+```bash
+/absolute/path/to/WiiCompiled --video --game-data /absolute/path/to/DATA \
+  --config /absolute/path/to/test-settings.toml --volume 0 \
+  --frame-log /absolute/path/to/new-frames.csv
+python3 tools/frame_stats.py /absolute/path/to/new-frames.csv --start 120 --end 180
+```
+
+Run from a separate writable test directory to keep diagnostic saves isolated;
+use absolute paths for the executable, config and DATA. The time window above is
+an example: select the same actual gameplay segment in each trace. Report the
+submission rate, p95/p99 intervals, readback count, worker waits and exact GPU.
+Those timings separate submission stalls from guest work; they do not measure
+physical display scanout. Audio and normal game speed also need a real check.
+
+The renderer checks can be built separately from a translated game. Point
+`KIRBY_AURORA_DIR` at the pinned **build snapshot with all Kirby Aurora patches
+applied**, rather than an unmodified upstream checkout:
+
+```bash
+cmake -S tests/renderer -B build/renderer-checks -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+  -DKIRBY_AURORA_DIR=/absolute/path/to/patched/aurora
+cmake --build build/renderer-checks --parallel 2
+ctest --test-dir build/renderer-checks --output-on-failure
+build/renderer-checks/kirby_gx_renderer_test --gpu-xfb-hidden
+build/renderer-checks/kirby_gx_renderer_test --gpu-quality 2 4
+build/renderer-checks/kirby_gx_renderer_test --gpu-fxaa
+```

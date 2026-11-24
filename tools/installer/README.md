@@ -105,6 +105,21 @@ probe with initialized controller/audio services. Probes use dummy audio, zero
 volume and temporary user data. They do not certify visible smoothness, audible
 sync, Fountain Gardens gameplay or whole-game compatibility.
 
+The hidden video probe has a 35-second startup deadline. After all three
+controller/audio/draw markers and a frame-log row are observed, POSIX sends
+SIGTERM once and allows a separate 10 seconds for shutdown. A zero exit status
+and completed output are required; a descendant retaining the output pipe
+cannot extend this deadline. A shutdown crash, timeout, output-limit failure or
+cancellation fails verification and cleans the owned process group. Windows
+retains its existing Job Object stop after readiness; these POSIX checks do not
+claim graceful Windows resource teardown.
+
+The setup log records the shutdown request, its deadline, and successful exit.
+The runtime separately logs XFB release, entry into Aurora shutdown, and completed
+graphics shutdown. If shutdown stalls, the last boundary helps locate the next
+investigation. A `Device was destroyed` message during Aurora cleanup alone does
+not identify a crash or a spontaneous device loss.
+
 Only a verified bundle is copied to `local/setup/installations/SHA256/`, with a
 manifest identifying the source, checkout, toolchain and artifact hashes. The
 worker then atomically replaces `local/user/installation.json`, retaining the

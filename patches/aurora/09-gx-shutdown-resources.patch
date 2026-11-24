@@ -1,0 +1,16 @@
+--- a/aurora/lib/gx/gx.cpp
++++ b/aurora/lib/gx/gx.cpp
+@@ -784,6 +784,13 @@
+ 
+ void shutdown() noexcept {
+   // TODO we should probably store this all in g_state.gx instead
++  g_gxState.displayCopyProduced = false;
++  g_gxState.displayCopyTexture.reset();
++  g_emptyTextureBindGroup = {};
++  sEmptyTextureView = {};
++  sEmptyTexture = {};
++  sEmptySampler = {};
++  sPipelineLayout = {};
+   sTextureBindGroupLayout = {};
+   for (auto& item : g_gxState.textures) {
+     item.ref.reset();

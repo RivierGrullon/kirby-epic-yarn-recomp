@@ -1,0 +1,42 @@
+--- a/aurora/lib/gfx/readback/readback.hpp
++++ b/aurora/lib/gfx/readback/readback.hpp
+@@ -102,6 +102,10 @@
+   JobKind kind = JobKind::Efb;
+   uint32_t outputBytes = 0;
+ 
++  // Optional notification after a successful packet has been published. Set
++  // before submitting the job; invoked outside the stream mutex.
++  std::function<void()> onComplete;
++
+   // EFB gather inputs
+   wgpu::TextureView depthView;
+   wgpu::TextureView colorView;
+--- a/aurora/lib/gfx/readback/readback.cpp
++++ b/aurora/lib/gfx/readback/readback.cpp
+@@ -161,14 +161,19 @@
+   std::memcpy(packet.payload.data(), data.data(), data.size());
+ 
+   std::shared_ptr<const Packet> released;
+-  std::lock_guard lock{g_mutex};
+-  auto* stream = find_stream_locked(packet.stream);
+-  if (stream == nullptr || (stream->latest && stream->latest->sequence >= packet.sequence)) {
+-    return; // destroyed, or a newer capture completed first
++  {
++    std::lock_guard lock{g_mutex};
++    auto* stream = find_stream_locked(packet.stream);
++    if (stream == nullptr || (stream->latest && stream->latest->sequence >= packet.sequence)) {
++      return; // destroyed, or a newer capture completed first
++    }
++    released = std::exchange(stream->latest, job.packet);
++    const double latencyMs = std::chrono::duration<double, std::milli>(Clock::now() - packet.recordedAt).count();
++    TracyPlot("aurora: readbackLatencyMs", latencyMs);
+   }
+-  released = std::exchange(stream->latest, job.packet);
+-  const double latencyMs = std::chrono::duration<double, std::milli>(Clock::now() - packet.recordedAt).count();
+-  TracyPlot("aurora: readbackLatencyMs", latencyMs);
++  if (job.onComplete) {
++    job.onComplete();
++  }
+ }
+ 
+ void fail_job(Job& job, std::string_view reason) noexcept { Log.warn("capture failed: {}", reason); }
