@@ -141,7 +141,7 @@ def main():
                                 f"-DPython3_EXECUTABLE={sys.executable}",
                                 "-DAURORA_SDL3_PROVIDER=vendor",
                                 f"-DAURORA_SDL3_LINKAGE={'shared' if args.target == 'windows' else 'static'}",
-                                f"-DKIRBY_PROJECT_ROOT={ROOT}",
+                                f"-DKIRBY_PROJECT_ROOT={ROOT.as_posix()}",
                                 f"-DKIRBY_GENERATED_ROOT={layout.generated}",
                                 f"-DKIRBY_PROFILE_DAWN_CALLS={'ON' if args.profile_dawn_calls else 'OFF'}",
                                 f"-DCMAKE_PROJECT_mkw_recompiled_INCLUDE={ROOT / 'cmake/native_project.cmake'}",
