@@ -68,7 +68,10 @@ def verify_native(job,root,executable,data_root,identity):
         def ready():
             if len(seen)!=len(markers) or not frames.is_file():return False
             with frames.open('rb') as stream:return len(stream.read(8192).splitlines())>=2
-        run_process(job,[executable,'--video-hidden',*options,'--frame-log',frames],timeout=35,
+        # Device/cache teardown has its own bounded allowance, matching the
+        # native video integration check. A crash or timeout escalation still fails;
+        # Windows retains its existing Job Object stop after verified readiness.
+        run_process(job,[executable,'--video-hidden',*options,'--frame-log',frames],timeout=35,stop_timeout=10,
                     cwd=directory,env=environment,on_output=observe,stop_when=ready)
         if not ready():
             raise ValueError('Native startup did not submit a verified first frame')

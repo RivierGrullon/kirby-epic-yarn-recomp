@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Exclusive setup jobs and cancellable, shell-free external tools."""
 import os
+import math
 from pathlib import Path
 import re
 import signal
@@ -98,28 +99,46 @@ class Job:
 
 
 def run_process(job, command, *, capture_limit=0,timeout=None,cancellable=True,log_output=True,
-                env=None,cwd=None,on_output=None,stop_when=None):
-    """Log a tool's merged output; terminate its owned process group on failure."""
+                env=None,cwd=None,on_output=None,stop_when=None,stop_timeout=5):
+    """Log output and clean the owned process group on failure.
+
+    With stop_when, timeout bounds startup and stop_timeout separately bounds
+    shutdown, including EOF from any inherited output pipes. Readiness
+    requests shutdown; only a zero process exit status can complete the probe.
+    """
+    if stop_when is not None and (not isinstance(stop_timeout,(int,float)) or
+                                 not math.isfinite(stop_timeout) or stop_timeout<=0):
+        raise ValueError('Shutdown timeout must be finite and positive')
     started=time.monotonic()
     process=None
     stopping=None
     tree=None
-    def check():
+    def check(*,request_stop=True):
         nonlocal stopping
         if cancellable:
             job.check_cancel()
-        if timeout is not None and time.monotonic()-started>=timeout:
+        now=time.monotonic()
+        if stopping is not None:
+            if now-stopping>=stop_timeout:
+                message=(f'Native startup probe did not stop after verification '
+                         f'(shutdown exceeded {stop_timeout:g} seconds); see {job.log_path}')
+                if log_output:
+                    job.write_log(f'[setup] {message}\n'.encode())
+                raise TimeoutError(message)
+            return
+        if timeout is not None and now-started>=timeout:
             raise TimeoutError(f"{Path(command[0]).name} timed out after {timeout} seconds")
-        if process is not None and stop_when is not None:
-            if stopping is None and stop_when():
-                stopping=time.monotonic()
+        if request_stop and process is not None and stop_when is not None:
+            if stop_when():
+                stopping=now
+                if log_output:
+                    job.write_log(f'[setup] Native startup verified; requesting shutdown '
+                                  f'(deadline {stop_timeout:g} seconds)\n'.encode())
                 if WINDOWS:
                     tree.stop()
                 else:
                     try:os.killpg(process.pid,signal.SIGTERM)
                     except ProcessLookupError:pass
-            if stopping is not None and time.monotonic()-stopping>5 and process.poll() is None:
-                raise TimeoutError('Native startup probe did not stop after verification')
     check()
     if WINDOWS:
         from .windows_process import ProcessTree
@@ -149,9 +168,13 @@ def run_process(job, command, *, capture_limit=0,timeout=None,cancellable=True,l
         while process.poll() is None:
             check()
             time.sleep(0.05)
-        check()
+        # The final read/wait may itself cross a deadline. Recheck it without
+        # starting a new shutdown after the child has already been reaped.
+        check(request_stop=False)
         if process.returncode:
             raise ValueError(f"{Path(command[0]).name} exited with code {process.returncode}; see {job.log_path}")
+        if stopping is not None and log_output:
+            job.write_log(b'[setup] Native startup probe exited successfully after verification\n')
         return bytes(captured)
     except BaseException:
         if process is not None:
@@ -163,14 +186,17 @@ def run_process(job, command, *, capture_limit=0,timeout=None,cancellable=True,l
                 process.wait()
             else:
                 # Keep the leader unreaped until signalling, including when a tool forks.
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    process.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    pass
+                if stopping is None:
+                    try:
+                        os.killpg(process.pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        process.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        pass
+                # A verified probe already received SIGTERM. Do not re-enter its
+                # cleanup handler or extend its grace period after a failure.
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
