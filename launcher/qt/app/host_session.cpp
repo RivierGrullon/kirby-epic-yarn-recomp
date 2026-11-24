@@ -49,11 +49,14 @@ void Window::receive() {
         }
         const bool first=!ready;
         const bool wasRunning=model["running"].toBool();
+        const bool hadSave=model["saveFound"].toBool();
         input=reply["input"].toObject();
         if(reply.contains("state")) {model=reply["state"].toObject();config=model["config"].toObject();ready=true;}
         if(first || cmd=="reload" || cmd=="resetControls" || cmd=="resetMotion" || cmd=="data" ||
            (page==Diagnostics && reply.contains("state") && cmd!="change")) navigate(page,true);
-        if(page==Saves && (cmd=="importSave" || cmd=="exportSave" || cmd=="restoreBackup" || cmd=="deleteBackup"))
+        if(page==Saves && (cmd=="importSave" || cmd=="exportSave" || cmd=="createBackup" ||
+                          cmd=="restoreBackup" || cmd=="deleteBackup" ||
+                          wasRunning!=model["running"].toBool() || hadSave!=model["saveFound"].toBool()))
             navigate(page,true);
         if(cmd=="save") {needsSave=false;if(closing){finishing=true;close();}}
         if(cmd!="poll" && cmd!="hello")notice({});

@@ -252,9 +252,14 @@ different working directory uses a different local user directory.
 - **Export** writes the current save either as a folder of raw files or as a Dolphin
   `data.bin` (AES-encrypted with the Wii SD key). The `.bin` round-trips with this launcher
   and imports into Dolphin; its save banner is blank because the recomp stores no banner.
-- **Backups** lists every previous save by the date it was replaced. Restore swaps the
+- **Create backup** in **Saves** copies your saved progress while the game is closed.
+  Give it a name (up to 64 characters), such as "Before the boss". Named backups show
+  their name and date and remain until you delete them. They copy the on-disk save,
+  not your exact position inside a level.
+- **Backups** also lists previous saves by the date they were replaced. Restore swaps the
   current save for one of them (backing up the current save first) and Delete removes it.
-  Only the 10 most recent backups are kept.
+  Only the 10 most recent automatic backups are kept; named backups are excluded
+  from that limit. Older automatic backups remain compatible.
 
 ## Documentation
 

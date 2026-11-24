@@ -30,7 +30,11 @@ jobs:
       - name: Install Linux desktop test libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libegl1 libgl1 libopengl0 libxkbcommon0 libfontconfig1 libx11-6 desktop-file-utils libglib2.0-bin
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1 libopengl0 libxkbcommon0 libfontconfig1 libx11-6 desktop-file-utils libglib2.0-bin libcrypto++-dev
+      - name: Compile and run save backup tests
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror -Ilauncher tests/unit/save_manager_test.cpp launcher/save_manager.cpp -lcryptopp -o "$RUNNER_TEMP/save-manager-test"
+          "$RUNNER_TEMP/save-manager-test"
       - name: Install setup UI dependencies
         run: python -m pip install -r tools/requirements-setup.txt
       - name: Verify Qt runtime

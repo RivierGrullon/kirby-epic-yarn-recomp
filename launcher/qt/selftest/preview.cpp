@@ -6,8 +6,10 @@
 #include <QDoubleSpinBox>
 #include <QJsonArray>
 #include <QLineEdit>
+#include <QLabel>
 #include <QPixmap>
 #include <QPushButton>
+#include <QScrollArea>
 
 namespace Yarn {
 bool Window::preview(const QString& directory) {
@@ -19,6 +21,10 @@ bool Window::preview(const QString& directory) {
     QJsonArray rows;
     rows.append(QJsonArray{"Move up","D-pad Up","Up"});rows.append(QJsonArray{"Jump / Confirm","South (A / Cross)","Space"});
     model["bindings"]=rows;show();
+    const QString backupLabel=QString::fromUtf8("Before the boss / 中文 <backup>");
+    model["saveFound"]=true;
+    model["backups"]=QJsonArray{QJsonObject{{"name","1763830000000000"},{"timestamp","2026-11-22 12:00:00"},{"label",backupLabel}},
+                                QJsonObject{{"name","1763820000000000"},{"timestamp","2026-11-22 09:00:00"}}};
     for(int i=0;i<3;++i) {
         setLanguage(i);
         for(int compact=0;compact<2;++compact) {
@@ -26,12 +32,35 @@ bool Window::preview(const QString& directory) {
             for(int j=0;j<Count;++j) {
                 navigate(static_cast<Page>(j));QApplication::processEvents();
                 if(j==Display && sheet->findChildren<QComboBox*>().size()!=2)return false;
+                if(j==Saves) {
+                    auto* name=sheet->findChild<QLineEdit*>("backupName");
+                    auto* create=sheet->findChild<QPushButton*>("createBackup");
+                    if(!name || !create || !name->isEnabled() || create->isEnabled())return false;
+                    name->setText("   ");if(create->isEnabled())return false;
+                    name->setText(backupLabel);if(!create->isEnabled())return false;
+                    bool found=false;
+                    for(auto* text:sheet->findChildren<QLabel*>())
+                        if(text->text()==backupLabel && text->textFormat()==Qt::PlainText)found=true;
+                    if(!found)return false;
+                    model["running"]=true;navigate(Saves);
+                    if(sheet->findChild<QLineEdit*>("backupName")->isEnabled() ||
+                       sheet->findChild<QPushButton*>("createBackup")->isEnabled())return false;
+                    model["running"]=false;model["saveFound"]=false;navigate(Saves);
+                    if(sheet->findChild<QLineEdit*>("backupName")->isEnabled())return false;
+                    model["saveFound"]=true;navigate(Saves);QApplication::processEvents();
+                    if(sheet->minimumSizeHint().width()>scroll->viewport()->width())return false;
+                }
                 const auto snapshot=grab();
                 if(snapshot.isNull())return false;
                 constexpr std::array fileNames{"home","install","graphics","bindings","saves","diagnostics","basic","controller"};
                 if(!directory.isEmpty()) {
                     const auto name=QString("%1-%2%3.png").arg(QStringList{"zh","en","es"}[i],fileNames[j],compact?"-compact":"");
                     if(!snapshot.save(QDir(directory).filePath(name)))return false;
+                    if(j==Saves) {
+                        scroll->ensureWidgetVisible(sheet->findChild<QLineEdit*>("backupName"),0,40);
+                        QApplication::processEvents();
+                        if(!grab().save(QDir(directory).filePath("backups-"+name)))return false;
+                    }
                 }
             }
             controlTab=1;navigate(Controls);QApplication::processEvents();

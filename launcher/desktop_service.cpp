@@ -192,6 +192,9 @@ int DesktopService(State& s,
                 const auto path=FromUtf8(request.at("path").get<std::string>());
                 s.saveImportStatus = request.value("folder",false) ? ExportSaveFolder(s.root,path)
                                                                    : ExportSaveBin(s.root,path);
+            } else if (command=="createBackup") {
+                if (s.gameRunning) throw std::runtime_error("Game running");
+                s.saveImportStatus=CreateBackup(s.root,request.at("label").get<std::string>());
             } else if (command=="restoreBackup") {
                 if (s.gameRunning) throw std::runtime_error("Game running");
                 s.saveImportStatus=RestoreBackup(s.root,request.at("name").get<std::string>());
@@ -241,7 +244,7 @@ int DesktopService(State& s,
             }
             Json backups=Json::array();
             for (const auto& backup : ListBackups(s.root))
-                backups.push_back({{"name",backup.name},{"timestamp",backup.timestamp}});
+                backups.push_back({{"name",backup.name},{"timestamp",backup.timestamp},{"label",backup.label}});
             Json state={{"config",Config(s.config)},{"bindings",bindings},{"lang",int(language)},
                 {"dirty",s.settingsDirty},{"running",s.gameRunning},{"gameStatus",s.gameStatus},
                 {"verified",s.dataVerified},{"dataStatus",s.dataStatus},{"settingsError",s.settingsError},

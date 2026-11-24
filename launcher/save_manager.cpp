@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <ctime>
@@ -34,6 +35,8 @@ constexpr std::uint32_t kTitleIdHi = 0x524b3545;   // "RK5E" (title ID, no versi
 constexpr std::uint64_t kTitleId = (std::uint64_t(kTitleType) << 32) | kTitleIdHi;
 constexpr const char* kSaveFile = "FLF.bin";
 constexpr std::size_t kMaxBackups = 10;
+constexpr const char* kBackupLabel = "backup-name.txt";
+constexpr std::size_t kMaxLabelBytes = 256;
 
 // Dolphin "data.bin" Wii save export layout (Core/HW/WiiSaveStructs.h). Only the
 // plaintext BkHeader and FileHDR records plus the SD-key-encrypted payloads are
@@ -153,8 +156,8 @@ std::filesystem::path FindDolphinTitleData(const std::filesystem::path& source) 
 // named stream `:kirby.isfs` on Windows. The game creates its save files with
 // {owner=read-write, group=read, other=none, attr=0}; system files use the
 // runtime's {3,3,3,0} default. Match the save convention so GetAttr matches.
-void SetNandMetadata(const std::filesystem::path& path) {
-    const std::array<std::uint8_t, 4> metadata{3, 1, 0, 0};
+void SetNandMetadata(const std::filesystem::path& path,
+                     const std::array<std::uint8_t, 4>& metadata = {3, 1, 0, 0}) {
 #ifdef _WIN32
     const auto stream = path.wstring() + L":kirby.isfs";
     HANDLE h = CreateFileW(stream.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -171,10 +174,41 @@ void SetNandMetadata(const std::filesystem::path& path) {
 #endif
 }
 
+std::array<std::uint8_t, 4> ReadNandMetadata(const std::filesystem::path& path) {
+    std::array<std::uint8_t, 4> metadata{};
+#ifdef _WIN32
+    HANDLE h = CreateFileW((path.wstring() + L":kirby.isfs").c_str(), GENERIC_READ,
+                          FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                          FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        if (GetLastError() != ERROR_FILE_NOT_FOUND && GetLastError() != ERROR_PATH_NOT_FOUND)
+            throw std::runtime_error("Cannot read save permission metadata");
+    } else {
+        LARGE_INTEGER length{};
+        DWORD count = 0;
+        const bool ok = GetFileSizeEx(h, &length) && length.QuadPart == 4 &&
+                        ReadFile(h, metadata.data(), 4, &count, nullptr) && count == 4;
+        CloseHandle(h);
+        if (!ok) throw std::runtime_error("Cannot read save permission metadata");
+        return metadata;
+    }
+#else
+    const auto count = ::getxattr(path.c_str(), "user.kirby.isfs", metadata.data(), metadata.size());
+    if (count == 4) return metadata;
+    if (count >= 0 || errno != ENODATA)
+        throw std::runtime_error("Cannot read save permission metadata");
+#endif
+    // Old exports may not have host metadata. Use the existing NAND defaults.
+    return std::filesystem::is_directory(path) ? std::array<std::uint8_t, 4>{3, 3, 3, 0}
+                                             : std::array<std::uint8_t, 4>{3, 1, 0, 0};
+}
+
 void CopyTree(const std::filesystem::path& source, const std::filesystem::path& destination,
-              bool setMetadata) {
+              bool setMetadata, bool preserveMetadata = false) {
     namespace fs = std::filesystem;
+    if (fs::is_symlink(source)) throw std::runtime_error("Save contains unsupported symbolic links");
     fs::create_directories(destination);
+    if (preserveMetadata) SetNandMetadata(destination, ReadNandMetadata(source));
     std::error_code ec;
     for (fs::recursive_directory_iterator it(source, ec), end; !ec && it != end; it.increment(ec)) {
         const auto relative = fs::relative(it->path(), source);
@@ -182,10 +216,12 @@ void CopyTree(const std::filesystem::path& source, const std::filesystem::path& 
         if (it->is_symlink()) throw std::runtime_error("Save contains unsupported symbolic links");
         if (it->is_directory()) {
             fs::create_directories(target);
+            if (preserveMetadata) SetNandMetadata(target, ReadNandMetadata(it->path()));
         } else if (it->is_regular_file()) {
             fs::create_directories(target.parent_path());
             fs::copy_file(it->path(), target, fs::copy_options::overwrite_existing);
-            if (setMetadata) SetNandMetadata(target);
+            if (setMetadata) SetNandMetadata(target, preserveMetadata ? ReadNandMetadata(it->path())
+                                                                   : std::array<std::uint8_t, 4>{3, 1, 0, 0});
         } else {
             throw std::runtime_error("Save contains an unsupported file entry");
         }
@@ -362,7 +398,8 @@ std::vector<std::string> BackupNames(const std::filesystem::path& root) {
     for (fs::directory_iterator it(BackupDirectory(root), ec), end; !ec && it != end;
          it.increment(ec)) {
         std::error_code e;
-        if (it->is_directory(e)) names.push_back(it->path().filename().string());
+        const auto name = it->path().filename().string();
+        if (!name.starts_with(".creating-") && it->is_directory(e)) names.push_back(name);
     }
     std::sort(names.begin(), names.end(), [](const std::string& a, const std::string& b) {
         const auto numericPrefix = [](const std::string& s) {
@@ -385,8 +422,23 @@ bool ValidBackupName(std::string_view name) {
     return true;
 }
 
+bool NamedBackup(const std::filesystem::path& backup) {
+    std::error_code ec;
+    return std::filesystem::is_regular_file(backup / kBackupLabel, ec);
+}
+
+std::string BackupLabel(const std::filesystem::path& backup) {
+    if (!NamedBackup(backup)) return {};
+    std::ifstream in(backup / kBackupLabel, std::ios::binary);
+    std::array<char, kMaxLabelBytes + 1> bytes{};
+    in.read(bytes.data(), bytes.size());
+    if (in.bad() || in.gcount() > static_cast<std::streamsize>(kMaxLabelBytes)) return {};
+    return std::string(bytes.data(), static_cast<std::size_t>(in.gcount()));
+}
+
 void PruneBackups(const std::filesystem::path& root) {
     auto names = BackupNames(root);  // Oldest first.
+    std::erase_if(names, [&](const auto& name) { return NamedBackup(BackupDirectory(root) / name); });
     while (names.size() > kMaxBackups) {
         std::error_code ec;
         std::filesystem::remove_all(BackupDirectory(root) / names.front(), ec);
@@ -581,8 +633,37 @@ std::vector<BackupEntry> ListBackups(const std::filesystem::path& root) {
     std::vector<BackupEntry> out;
     auto names = BackupNames(root);  // Oldest first.
     for (auto it = names.rbegin(); it != names.rend(); ++it)
-        out.push_back({*it, FormatTimestamp(*it)});
+        out.push_back({*it, FormatTimestamp(*it), BackupLabel(BackupDirectory(root) / *it)});
     return out;
+}
+
+std::string CreateBackup(const std::filesystem::path& root, const std::string& label) {
+    namespace fs = std::filesystem;
+    const auto first = label.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) throw std::runtime_error("Enter a backup name");
+    const auto clean = label.substr(first, label.find_last_not_of(" \t\r\n") - first + 1);
+    if (clean.size() > kMaxLabelBytes || std::any_of(clean.begin(), clean.end(), [](unsigned char c) {
+            return c < 0x20 || c == 0x7f;
+        })) throw std::runtime_error("Backup name is too long or contains control characters");
+    if (!HasSave(root)) throw std::runtime_error("There is no save to back up yet");
+    const auto directory = BackupDirectory(root);
+    fs::create_directories(directory);
+    const auto id = UniqueTimestamp();
+    const auto staging = directory / (".creating-" + id);
+    if (!fs::create_directory(staging)) throw std::runtime_error("Cannot create the save backup directory");
+    try {
+        CopyTree(SaveDataDirectory(root), staging / "data", true, true);
+        std::ofstream out(staging / kBackupLabel, std::ios::binary);
+        out.write(clean.data(), static_cast<std::streamsize>(clean.size()));
+        out.close();
+        if (!out) throw std::runtime_error("Cannot write the backup name");
+        fs::rename(staging, directory / id);
+    } catch (...) {
+        std::error_code cleanup;
+        fs::remove_all(staging, cleanup);
+        throw;
+    }
+    return "Backup created";
 }
 
 std::string RestoreBackup(const std::filesystem::path& root, const std::string& name) {
@@ -591,9 +672,12 @@ std::string RestoreBackup(const std::filesystem::path& root, const std::string& 
     const auto backup = BackupDirectory(root) / name;
     std::error_code ec;
     if (!fs::is_directory(backup, ec)) throw std::runtime_error("That backup no longer exists");
+    const auto source = NamedBackup(backup) ? backup / "data" : backup;
+    if (!fs::is_regular_file(source / kSaveFile, ec))
+        throw std::runtime_error("That backup contains no save");
     const auto staging = MakeStaging(root);
     try {
-        CopyTree(backup, staging, true);
+        CopyTree(source, staging, true, true);
         return PublishStaging(root, staging, "Backup restored");
     } catch (...) {
         std::error_code cleanup;

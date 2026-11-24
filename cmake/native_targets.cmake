@@ -379,6 +379,13 @@ target_include_directories(kirby_binding_capture_test PRIVATE "${KIRBY_PROJECT_R
 target_link_libraries(kirby_binding_capture_test PRIVATE kirby_settings ${AURORA_SDL3_TARGET})
 add_test(NAME kirby_binding_capture COMMAND kirby_binding_capture_test)
 
+add_executable(kirby_save_manager_test "${KIRBY_PROJECT_ROOT}/tests/unit/save_manager_test.cpp"
+    "${KIRBY_PROJECT_ROOT}/launcher/save_manager.cpp")
+target_include_directories(kirby_save_manager_test PRIVATE "${KIRBY_PROJECT_ROOT}/launcher")
+target_compile_features(kirby_save_manager_test PRIVATE cxx_std_20)
+target_link_libraries(kirby_save_manager_test PRIVATE mkw::cryptopp)
+add_test(NAME kirby_save_manager COMMAND kirby_save_manager_test)
+
 # Only owned targets and the patched upstream runtime need these headers.
 # Generated translation targets keep their existing include paths.
 get_property(kirby_build_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)

@@ -7,11 +7,12 @@
 namespace Launcher {
 // One save backup under local/save-backups/RK5E01/.
 struct BackupEntry {
-    std::string name;       // Directory name (epoch milliseconds, sortable).
+    std::string name;       // Directory ID (epoch microseconds, sortable).
     std::string timestamp;  // Human-readable local time for display.
+    std::string label;      // User label; empty for automatic/legacy backups.
 };
 
-// The live save directory and the backup root inside the local NAND.
+// The live NAND save directory and the separate backup root.
 std::filesystem::path SaveDataDirectory(const std::filesystem::path& root);
 std::filesystem::path BackupDirectory(const std::filesystem::path& root);
 
@@ -28,6 +29,10 @@ std::string ExportSaveFolder(const std::filesystem::path& root,
                              const std::filesystem::path& destination);
 std::string ExportSaveBin(const std::filesystem::path& root,
                           const std::filesystem::path& destination);
+
+// Copy the on-disk save without replacing it. Named backups are kept until deleted.
+// The caller must ensure the game is stopped, as with import/export/restore.
+std::string CreateBackup(const std::filesystem::path& root, const std::string& label);
 
 // List backups newest first, restore one, or delete one.
 std::vector<BackupEntry> ListBackups(const std::filesystem::path& root);
