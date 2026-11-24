@@ -13,20 +13,34 @@
    wgpu::TextureView depthView;
 --- a/aurora/lib/gfx/readback/readback.cpp
 +++ b/aurora/lib/gfx/readback/readback.cpp
-@@ -160,6 +160,16 @@
+@@ -158,17 +158,30 @@
+     fail_job(job, "mapped size does not match the output");
+     return;
    }
    std::memcpy(packet.payload.data(), data.data(), data.size());
  
 +#ifdef __APPLE__
-+  // Declared before the stream lock: destruction notifies only after the lock
-+  // is released. Successful publication moves job.packet into the stream.
++  // Construct before the lock so successful publication notifies after unlock.
 +  struct CompletionNotifier {
 +    Job& job;
++    bool published = false;
 +    ~CompletionNotifier() {
-+      if (!job.packet && job.onComplete) job.onComplete();
++      if (published && job.onComplete) job.onComplete();
 +    }
 +  } completion{job};
 +#endif
    std::shared_ptr<const Packet> released;
    std::lock_guard lock{g_mutex};
    auto* stream = find_stream_locked(packet.stream);
+   if (stream == nullptr || (stream->latest && stream->latest->sequence >= packet.sequence)) {
+     return; // destroyed, or a newer capture completed first
+   }
+   released = std::exchange(stream->latest, job.packet);
++#ifdef __APPLE__
++  completion.published = true;
++#endif
+   const double latencyMs = std::chrono::duration<double, std::milli>(Clock::now() - packet.recordedAt).count();
+   TracyPlot("aurora: readbackLatencyMs", latencyMs);
+ }
+ 
+ void fail_job(Job& job, std::string_view reason) noexcept { Log.warn("capture failed: {}", reason); }
