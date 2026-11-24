@@ -72,10 +72,15 @@ jobs:
           PY
       - name: Compile and run upstream memory and context tests
         run: |
+          cpu_options=()
+          if [[ "$TARGET_ARCH" == x86_64 ]]; then
+            profile=$(PYTHONPATH=tools python3 -c 'from macos.toolchain import intel_cpu_profile; print(intel_cpu_profile())')
+            cpu_options+=("-DMKW_X86_CPU_PROFILE=$profile")
+          fi
           cmake -S local/macos-upstream/runtime -B build/macos-runtime-tests -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
             -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" \
-            -DMKW_BUILD_PRODUCTS=OFF -DMKW_PLATFORM_TESTS_ONLY=ON -DMKW_X86_CPU_PROFILE=v2
+            -DMKW_BUILD_PRODUCTS=OFF -DMKW_PLATFORM_TESTS_ONLY=ON "${cpu_options[@]}"
           cmake --build build/macos-runtime-tests --parallel 3
           ctest --test-dir build/macos-runtime-tests --output-on-failure
       - name: Compile Kirby filesystem, worker and launcher tests

@@ -9,6 +9,7 @@ import sys
 
 from installer.jobs import run_process
 from .build_macos import preflight
+from .toolchain import intel_cpu_profile
 
 
 class MacSetupTools:
@@ -38,6 +39,8 @@ class MacSetupTools:
                         ('cmake', '--version'), ('ninja', '--version'), ('dotnet', '--version')):
             identity.update(run_process(self.job, command, capture_limit=8192))
         identity.update(self.arch.encode('ascii'))
+        if self.arch == 'x86_64':
+            identity.update(intel_cpu_profile().encode('ascii'))
         identity.update(str(self.qt_prefix).encode('utf-8'))
         identity.update((self.qt_prefix/'lib/cmake/Qt6/Qt6ConfigVersion.cmake').read_bytes())
         return identity.hexdigest()

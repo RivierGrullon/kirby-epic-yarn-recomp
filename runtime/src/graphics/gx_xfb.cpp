@@ -273,6 +273,14 @@ void GxRenderer::CopyDisplay(uint32_t value) {
     // Each RAM destination owns a snapshot; Aurora's default single texture would
     // otherwise overwrite the previous XFB before VI switches to the next one.
     state.displayCopyTexture.reset();
+#ifdef __APPLE__
+    // Aurora checks the scaled texture dimensions before writing the new frame.
+    // Recycle only this RAM destination after resolving overlapping copies above.
+    if (resident) {
+        const auto previous = xfb_->entries.find(copy.address);
+        if (previous != xfb_->entries.end()) state.displayCopyTexture = previous->second.texture;
+    }
+#endif
     gx::fifo::handle_bp(value);
     const auto texture = state.displayCopyTexture;
     if (!texture) throw std::runtime_error("Aurora did not create the display-copy texture");

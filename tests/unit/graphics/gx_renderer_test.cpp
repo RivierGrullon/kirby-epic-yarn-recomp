@@ -845,7 +845,15 @@ void GpuXfb(bool startHidden = false, int resolutionScale = 1, int msaaSamples =
           std::equal(red.begin(),red.end(),memory.begin()+0x14400),
           "two resident display destinations preserve their own pre-clear and post-clear pixels");
     const auto overwriteStart=renderer.Readbacks();
-    Bp(renderer,0x52004003); Bp(renderer,0x52004003);
+    Bp(renderer,0x52004003);
+#ifdef __APPLE__
+    const auto retainedDisplay = aurora::gx::g_gxState.displayCopyTexture;
+#endif
+    Bp(renderer,0x52004003);
+#ifdef __APPLE__
+    Check(retainedDisplay == aurora::gx::g_gxState.displayCopyTexture,
+          "Metal reuses the display texture on repeated copies to the same resident XFB");
+#endif
     Check(renderer.Readbacks()==overwriteStart,"replacing the same full resident XFB does not download obsolete frames");
     renderer.FlushTextureCopiesForRange(0x14400,0);
     renderer.FlushTextureCopiesForRange(0x18000,32);

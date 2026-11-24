@@ -63,8 +63,10 @@ working directory. These probes do not validate Metal gameplay.
 | Apple Silicon | `build/macos-arm64/` | `local/releases/Kirby-macOS-arm64.app` |
 
 Use `--deployment-target 14.0` (for example) when your dependencies require a
-higher minimum OS. Intel uses the runtime's x86-64-v2 profile; Apple Silicon
-uses the M1 instruction baseline rather than tuning for a newer build host.
+higher minimum OS. On Intel, Setup selects x86-64-v3 when native Clang detects
+all required extensions. Other Intel Macs use x86-64-v2. A game built with
+v3 requires a v3-capable CPU if you move it to another Mac. Apple Silicon
+builds use the M1 instruction baseline.
 CMake caches and runtime snapshots are separate for the two architectures.
 Do not run different builds concurrently in one checkout.
 

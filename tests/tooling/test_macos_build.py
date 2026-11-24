@@ -45,7 +45,17 @@ class MacBuildTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 apple.macos_options('arm64',invalid)
         self.assertIn('-DCMAKE_OSX_ARCHITECTURES=arm64',apple.macos_options('arm64','13.0'))
-        self.assertIn('-DMKW_X86_CPU_PROFILE=v2',apple.macos_options('x86_64','13.0'))
+        with patch.object(apple.subprocess, 'run') as probe:
+            self.assertFalse(any('X86_CPU_PROFILE' in opt for opt in apple.macos_options('arm64', '13.0')))
+            probe.assert_not_called()
+
+    def test_intel_build_selects_supported_instruction_profile(self):
+        v3 = 'AVX AVX2 BMI BMI2 F16C FMA LZCNT MOVBE'.split()
+        for features, expected in [(v3, 'v3'), ([f for f in v3 if f != 'MOVBE'], 'v2'), ([], 'v2')]:
+            macros = ''.join(f'#define __{feature}__ 1\n' for feature in features)
+            result = subprocess.CompletedProcess([], 0, stdout=macros)
+            with self.subTest(features=features), patch.object(apple.subprocess, 'run', return_value=result):
+                self.assertIn('-DMKW_X86_CPU_PROFILE=' + expected, apple.macos_options('x86_64', '13.0'))
 
     def test_reject_wrong_cpu_and_nonexecutables(self):
         with tempfile.TemporaryDirectory() as temporary:
