@@ -39,7 +39,15 @@ GxRenderer::GxRenderer(GxStream::Resolve resolve, WriteMemory write) : resolve_(
         write(address, bytes);
     };
 }
-GxRenderer::~GxRenderer() { if (initialized_) { CloseXfb(); aurora_shutdown(); } }
+GxRenderer::~GxRenderer() {
+    if (initialized_) {
+        std::cerr << "[kirby] releasing native XFB resources\n";
+        CloseXfb();
+        std::cerr << "[kirby] shutting down Aurora graphics and host services\n";
+        aurora_shutdown();
+        std::cerr << "[kirby] native graphics shutdown complete\n";
+    }
+}
 void GxRenderer::OpenWindow(bool startHidden, bool vsync, int resolutionScale, int msaaSamples, bool fxaa, bool fullscreen) {
     if (initialized_) throw std::runtime_error("Aurora window is already initialized");
     if (!ValidResolutionScale(resolutionScale) || (msaaSamples != 1 && msaaSamples != 4))

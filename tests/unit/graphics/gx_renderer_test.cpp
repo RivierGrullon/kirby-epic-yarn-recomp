@@ -14,6 +14,7 @@
 #include <bit>
 #include <atomic>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <cstring>
 #include <SDL3/SDL_video.h>
@@ -193,8 +194,9 @@ void GpuFxaa() {
     std::cout << checks << " FXAA presentation checks passed; diagonal blend pixels=" << blended << '\n';
 }
 
-void GpuXfb(bool startHidden = false, int resolutionScale = 1, int msaaSamples = 1, bool waitForTrace = false,
-            bool largeIndexedArray = false) {
+std::weak_ptr<aurora::gfx::TextureRef> GpuXfb(bool startHidden = false, int resolutionScale = 1,
+                                             int msaaSamples = 1, bool waitForTrace = false,
+                                             bool largeIndexedArray = false) {
     if (waitForTrace) {
 #ifndef TRACY_ENABLE
         throw std::runtime_error("GPU trace test requires TRACY_ENABLE=ON");
@@ -346,7 +348,7 @@ void GpuXfb(bool startHidden = false, int resolutionScale = 1, int msaaSamples =
               std::equal(indexedBlue.begin(), indexedBlue.end(), memory.begin()+0x1000+2*64+24*2),
               "multiple indexed arrays exceeding 8 MiB retain independent GPU snapshots");
         std::cout << checks << " large indexed-array Vulkan checks passed\n";
-        return;
+        return {};
     }
     // CI4 texture and RGB565 palette come from guest RAM, not native GXTexObj pointers.
     std::fill_n(memory.begin()+0x400, 32, 0x11);
@@ -972,14 +974,22 @@ void GpuXfb(bool startHidden = false, int resolutionScale = 1, int msaaSamples =
     try { renderer.PollVideo({0x3000,32,4,64,0,100,true}); }
     catch (const Kirby::ExitRequested&) { exited = true; }
     Check(exited, "Native video loop propagates an SDL quit request");
+    Check(aurora::gx::g_gxState.displayCopyTexture && aurora::gx::g_emptyTextureBindGroup,
+          "The final presentation owns a display texture and GX fallback bindings");
     std::cout << checks << " Vulkan XFB checks passed (synthetic colors, not a game frame)\n";
+    return aurora::gx::g_gxState.displayCopyTexture;
 }
 }
 int main(int argc, char** argv) {
     try {
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-fxaa") { GpuFxaa(); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb") { GpuXfb(); return 0; }
-        if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb-hidden") { GpuXfb(true); return 0; }
+        if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb-hidden") {
+            const auto lastDisplayTexture = GpuXfb(true);
+            Check(lastDisplayTexture.expired(), "Renderer shutdown releases the last presented display texture");
+            Check(!aurora::gx::g_emptyTextureBindGroup, "Renderer shutdown releases GX fallback bindings");
+            return 0;
+        }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-storage-hidden") { GpuXfb(true, 1, 1, false, true); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-trace-hidden") { GpuXfb(true, 1, 1, true); return 0; }
         if (argc == 4 && std::string_view(argv[1]) == "--gpu-quality") {
