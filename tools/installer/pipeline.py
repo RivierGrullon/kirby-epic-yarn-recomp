@@ -29,7 +29,6 @@ class BuildTools:
         self.job, self.root = job, root
         self.image_id = None
         self.local = None if MACOS else WindowsTools.find(root) or PortableTools.find(root)
-        self.target = 'macos' if MACOS else 'windows' if WINDOWS else 'linux'
         if MACOS:
             from macos.setup_tools import MacSetupTools
             self.mac = MacSetupTools(job, root)
@@ -92,7 +91,8 @@ class BuildTools:
             args = windows_build_args(self.local.mingw_root, self.local.cppwinrt_include)
         if MACOS:
             args = ('--macos-arch', self.mac.arch, '--qt-prefix', str(self.mac.qt_prefix))
-        return native_command(self.target, jobs, jobs, stage=stage,
+            return native_command('macos', jobs, jobs, stage=stage, platform_args=args)
+        return native_command('windows' if WINDOWS else 'linux', jobs, jobs, stage=stage,
                               platform_args=args)
 
     def verify(self, executable, data, identity):

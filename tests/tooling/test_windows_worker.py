@@ -43,13 +43,16 @@ class WindowsBoundaryTests(unittest.TestCase):
     def test_target_names_and_keys_are_separate(self):
         self.assertEqual(executable_name('windows'), 'WiiCompiled.exe')
         self.assertEqual(executable_name('linux'), 'WiiCompiled')
-        with self.assertRaises(ValueError): executable_name('macos')
+        self.assertEqual(executable_name('macos'), 'WiiCompiled')
+        with self.assertRaises(ValueError): executable_name('unsupported')
         with tempfile.TemporaryDirectory() as directory:
             linux = build_keys(Path(directory), {}, 'a' * 64, target='linux')
             windows = build_keys(Path(directory), {}, 'a' * 64, target='windows')
+            macos = build_keys(Path(directory), {}, 'a' * 64, target='macos')
             self.assertEqual(linux['translation'], windows['translation'])
-            self.assertNotEqual(linux['cache'], windows['cache'])
-            self.assertNotEqual(linux['native'], windows['native'])
+            self.assertEqual(linux['translation'], macos['translation'])
+            for key in ('cache', 'native'):
+                self.assertEqual(len({linux[key], windows[key], macos[key]}), 3)
 
     def test_windows_resources_allow_only_hashed_dlls_and_required_dsp(self):
         dsp=dict(file='dsp_coef.bin',sha256=DSP_COEF_SHA256,size=4096)

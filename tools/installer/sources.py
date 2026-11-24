@@ -75,14 +75,14 @@ def _dolphin(source, output):
     native = shutil.which("DolphinTool.exe") if WINDOWS else shutil.which("dolphin-tool")
     if native:
         return [native]
+    if WINDOWS:
+        raise ValueError("DolphinTool.exe from Dolphin must be available on PATH")
     if sys.platform == 'darwin':
         for applications in (Path('/Applications'), Path.home() / 'Applications'):
             tool = applications / 'Dolphin.app/Contents/Helpers/dolphin-tool'
             if tool.is_file() and os.access(tool, os.X_OK):
                 return [str(tool)]
         raise ValueError("Install a recent Dolphin.app with dolphin-tool, or add dolphin-tool to PATH")
-    if WINDOWS:
-        raise ValueError("DolphinTool.exe from Dolphin must be available on PATH")
     flatpak = shutil.which("flatpak")
     if not flatpak:
         raise ValueError("Dolphin's dolphin-tool or the Dolphin Flatpak is required")
