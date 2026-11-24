@@ -7,6 +7,7 @@
 namespace Launcher {
 BuildProbe::~BuildProbe() { Stop(); }
 bool BuildProbe::Start(const std::filesystem::path& executable,const std::filesystem::path& libraries) {
+    (void)libraries;
     if (status_==BuildProbeStatus::Checking) return false;
     Cancel();
     const auto path=Utf8(std::filesystem::absolute(executable));
@@ -17,7 +18,7 @@ bool BuildProbe::Start(const std::filesystem::path& executable,const std::filesy
     if (configured) {
         configured=SDL_SetEnvironmentVariable(environment,"SDL_AUDIO_DRIVER","dummy",true) &&
             SDL_SetEnvironmentVariable(environment,"SDL_VIDEO_DRIVER","offscreen",true);
-#ifndef _WIN32
+#if defined(__linux__)
         if (!libraries.empty()) {
             const char* previous=SDL_GetEnvironmentVariable(environment,"LD_LIBRARY_PATH");
             const auto libraryPath=libraries.string()+(previous ? std::string(":")+previous : "");

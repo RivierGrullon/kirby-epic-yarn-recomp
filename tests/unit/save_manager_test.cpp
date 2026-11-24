@@ -29,6 +29,8 @@ std::string Read(const fs::path& path) {
 void WriteMetadata(const fs::path& path, const void* bytes, std::size_t size) {
 #ifdef _WIN32
     const auto result = WindowsTest::SetAttr(path.c_str(), "user.kirby.isfs", bytes, size, 0);
+#elif defined(__APPLE__)
+    const auto result = setxattr(path.c_str(), "user.kirby.isfs", bytes, size, 0, 0);
 #else
     const auto result = setxattr(path.c_str(), "user.kirby.isfs", bytes, size, 0);
 #endif
@@ -38,6 +40,8 @@ std::array<unsigned char, 4> ReadMetadata(const fs::path& path) {
     std::array<unsigned char, 4> bytes{};
 #ifdef _WIN32
     const auto count = WindowsTest::GetAttr(path.c_str(), "user.kirby.isfs", bytes.data(), bytes.size());
+#elif defined(__APPLE__)
+    const auto count = getxattr(path.c_str(), "user.kirby.isfs", bytes.data(), bytes.size(), 0, 0);
 #else
     const auto count = getxattr(path.c_str(), "user.kirby.isfs", bytes.data(), bytes.size());
 #endif

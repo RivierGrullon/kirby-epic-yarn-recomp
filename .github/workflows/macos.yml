@@ -1,0 +1,106 @@
+name: macOS portability
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: macOS ${{ matrix.arch }} host and launcher checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x86_64
+          - runner: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      TARGET_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install host test dependencies
+        run: brew install cmake ninja cryptopp nlohmann-json sdl3
+      - name: Install pinned Qt desktop SDK
+        run: |
+          python3 -m pip install aqtinstall==3.3.0
+          python3 -m aqt install-qt mac desktop 6.8.3 clang_64 \
+            --archives qtbase qttools qttranslations -O "$RUNNER_TEMP/kirby-qt-sdk"
+          echo "KIRBY_QT_PREFIX=$RUNNER_TEMP/kirby-qt-sdk/6.8.3/macos" >> "$GITHUB_ENV"
+      - name: Verify native architecture and tooling
+        run: |
+          test "$(uname -m)" = "$TARGET_ARCH"
+          python3 -m unittest discover -s tests/tooling -p test_macos_build.py -v
+          python3 -m unittest discover -s tests/tooling -p test_snapshot_patches.py -v
+      - name: Fetch pinned runtime and check patches
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, subprocess, sys
+          sys.path.insert(0, 'tools')
+          from build_native import apply_snapshot_patch
+          pin = json.loads(pathlib.Path('dependencies.json').read_text())['wiicompiled']
+          checkout = pathlib.Path('local/macos-upstream').resolve()
+          subprocess.run(['git','init',str(checkout)],check=True)
+          subprocess.run(['git','-C',str(checkout),'fetch','--depth=1',pin['url'],pin['commit']],check=True)
+          subprocess.run(['git','-C',str(checkout),'checkout','--detach','FETCH_HEAD'],check=True)
+          aurora = checkout/'aurora-main'
+          url = subprocess.check_output(['git','-C',str(checkout),'config','--file','.gitmodules',
+                                         'submodule.aurora-main.url'],text=True).strip()
+          subprocess.run(['git','init',str(aurora)],check=True)
+          subprocess.run(['git','-C',str(aurora),'fetch','--depth=1',url,pin['submodules']['aurora-main']],check=True)
+          subprocess.run(['git','-C',str(aurora),'checkout','--detach','FETCH_HEAD'],check=True)
+          for patch in sorted(pathlib.Path('patches/wiicompiled').glob('*.patch')):
+              apply_snapshot_patch(patch, checkout)
+          PY
+      - name: Compile and run upstream memory and context tests
+        run: |
+          cmake -S local/macos-upstream/runtime -B build/macos-runtime-tests -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
+            -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" \
+            -DMKW_BUILD_PRODUCTS=OFF -DMKW_PLATFORM_TESTS_ONLY=ON -DMKW_X86_CPU_PROFILE=v2
+          cmake --build build/macos-runtime-tests --parallel 3
+          ctest --test-dir build/macos-runtime-tests --output-on-failure
+      - name: Compile Kirby filesystem, worker and launcher tests
+        id: host_build
+        run: |
+          cmake -S tests/macos -B build/macos-host-tests -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
+            -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" -DCMAKE_PREFIX_PATH="$(brew --prefix)" \
+            -DKIRBY_UPSTREAM_RUNTIME="$PWD/local/macos-upstream/runtime"
+          cmake --build build/macos-host-tests --parallel 3
+      - name: Run Kirby filesystem, worker and launcher tests
+        run: |
+          ctest --test-dir build/macos-host-tests --output-on-failure
+          ctest --test-dir build/macos-host-tests --output-on-failure --repeat until-fail:5 -R '^setup_job$'
+      - name: Compile and smoke-test Qt frontend
+        id: qt_build
+        if: ${{ !cancelled() && steps.host_build.outcome == 'success' }}
+        run: |
+          cmake -S launcher/qt -B build/macos-qt-tests -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
+            -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" -DCMAKE_PREFIX_PATH="$KIRBY_QT_PREFIX"
+          cmake --build build/macos-qt-tests --parallel 3
+          build/macos-qt-tests/kirby-ui --self-test
+      - name: Package and relocate an asset-free launcher fixture
+        if: ${{ !cancelled() && steps.qt_build.outcome == 'success' }}
+        run: python3 tests/macos/smoke_bundle.py "$TARGET_ARCH" "$KIRBY_QT_PREFIX"
+      # No disc, translated source, compiled game or user save is uploaded.
+      # These checks establish host portability, not playable-game validation.

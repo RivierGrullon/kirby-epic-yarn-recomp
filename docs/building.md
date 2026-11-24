@@ -73,6 +73,11 @@ python3 tools/setup.py "/path/to/Kirby.wbfs"
 
 Docker or Podman must be running. The game itself runs on the host.
 
+## macOS (experimental)
+
+Native Intel and Apple Silicon developer builds use [the macOS build guide](macos.md).
+Use its dedicated entry point; the Linux container setup does not produce a Mac application.
+
 ## Prerequisites
 
 Windows tool downloads are automatic. Linux prerequisites, manual commands,

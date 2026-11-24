@@ -257,8 +257,14 @@ add_test(NAME kirby_gx_stream COMMAND kirby_gx_stream_test)
 add_executable(kirby_gx_renderer_test "${KIRBY_PROJECT_ROOT}/tests/unit/graphics/gx_renderer_test.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/gx_fifo.cpp"
     "${KIRBY_PROJECT_ROOT}/runtime/src/graphics/gx_stream.cpp")
+if(APPLE)
+    # Apple's linker already rescans archives and has no GNU RESCAN group.
+    set(kirby_renderer_libraries aurora::gx aurora::vi aurora::core)
+else()
+    set(kirby_renderer_libraries "$<LINK_GROUP:RESCAN,aurora::gx,aurora::vi,aurora::core>")
+endif()
 target_link_libraries(kirby_gx_renderer_test PRIVATE kirby_gx_renderer
-    "$<LINK_GROUP:RESCAN,aurora::gx,aurora::vi,aurora::core>" absl::flat_hash_map Tracy::TracyClient)
+    ${kirby_renderer_libraries} absl::flat_hash_map Tracy::TracyClient)
 target_include_directories(kirby_gx_renderer_test PRIVATE "${MKW_AURORA_DIR}/lib")
 target_compile_features(kirby_gx_renderer_test PRIVATE cxx_std_20)
 add_test(NAME kirby_gx_renderer COMMAND kirby_gx_renderer_test)
@@ -414,7 +420,9 @@ target_include_directories(kirby-launcher PRIVATE "${KIRBY_PROJECT_ROOT}/launche
 target_compile_features(kirby-launcher PRIVATE cxx_std_20)
 target_compile_definitions(kirby-launcher PRIVATE SDL_MAIN_HANDLED)
 target_link_libraries(kirby-launcher PRIVATE ${AURORA_SDL3_TARGET} kirby_settings kirby_build_info kirby_setup mkw::cryptopp)
-set_target_properties(kirby-launcher PROPERTIES BUILD_RPATH "\$ORIGIN/../../local/host-libs")
+if(NOT APPLE)
+    set_target_properties(kirby-launcher PROPERTIES BUILD_RPATH "\$ORIGIN/../../local/host-libs")
+endif()
 if(WIN32)
     target_sources(kirby-launcher PRIVATE "${KIRBY_PROJECT_ROOT}/launcher/launcher.rc")
     target_link_libraries(kirby-launcher PRIVATE shell32 bcrypt)

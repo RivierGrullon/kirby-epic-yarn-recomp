@@ -1,6 +1,6 @@
 # The frontend is its own CMake project so the Qt kit and the game's C++ ABI
 # never share a link step. A standalone build of launcher/qt works as well.
-if(EXISTS "${KIRBY_PROJECT_ROOT}/build/native/qt-launcher/.bundled-revision")
+if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/qt-launcher/.bundled-revision")
     # Packaged Setup has already installed the release's relocatable frontend.
     return()
 endif()
@@ -42,12 +42,17 @@ if(KIRBY_QT_PREFIX)
         set(qt_path "${qt_compiler_bin}:$ENV{PATH}")
     endif()
     set(qt_build "${CMAKE_CURRENT_BINARY_DIR}/kirby-qt-build")
+    set(qt_platform_options)
+    if(APPLE)
+        list(APPEND qt_platform_options "-DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}"
+            "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    endif()
     add_custom_target(kirby_qt_frontend
         COMMAND "${CMAKE_COMMAND}" -E env "PATH=${qt_path}" "${CMAKE_COMMAND}"
             -S "${KIRBY_PROJECT_ROOT}/launcher/qt" -B "${qt_build}" -G Ninja
             "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}" "-DCMAKE_CXX_COMPILER=${KIRBY_QT_CXX}"
             "-DCMAKE_PREFIX_PATH=${KIRBY_QT_PREFIX}" "-DCMAKE_BUILD_TYPE=Release"
-            "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/qt-launcher"
+            "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/qt-launcher" ${qt_platform_options}
         COMMAND "${CMAKE_COMMAND}" -E env "PATH=${qt_path}" "${CMAKE_COMMAND}" --build "${qt_build}"
         VERBATIM)
     add_dependencies(kirby-launcher kirby_qt_frontend)
