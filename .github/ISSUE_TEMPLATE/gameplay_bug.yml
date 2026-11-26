@@ -1,0 +1,68 @@
+name: Gameplay or launcher bug
+description: Report a launcher, startup or in-game problem after installation.
+body:
+  - type: markdown
+    attributes:
+      value: "Share only short, redacted excerpts. Remove usernames and personal paths. Keep disc images, game files, generated source, saves and shader caches private."
+  - type: input
+    id: version
+    attributes:
+      label: Recomp release or source commit
+      description: "Use the release tag you installed or source_revision from the installer log."
+      placeholder: "v0.2.7 or a commit hash"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version or Linux distribution and version
+      placeholder: "Windows build 26100, Bazzite 44, or macOS 15.7"
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where did it happen?
+      options:
+        - Launcher
+        - Game startup
+        - Menus
+        - In a level
+        - Other or unsure
+    validations:
+      required: true
+  - type: textarea
+    id: error-message
+    attributes:
+      label: Exact error message
+      description: "Paste the first specific error from the screen or log. If none appeared, write ‘No message’ and describe what you saw."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce and expected behavior
+      description: "Include the level or menu, what you did and what you expected to happen."
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Relevant hardware and settings
+      description: "For graphics or performance issues, include GPU, driver, resolution, VSync and Experimental performance mode. For input issues, include controller and bindings."
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Optional evidence
+      description: "Share a short redacted runtime log excerpt or a cropped screenshot if it illustrates the issue."
