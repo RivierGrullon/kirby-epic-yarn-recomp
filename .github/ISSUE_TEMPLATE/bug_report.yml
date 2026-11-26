@@ -1,32 +1,64 @@
-name: Bug report
-description: Report a reproducible native runtime, launcher or build issue.
+name: Installation or build failure
+description: Report a problem setting up, building or verifying the game.
 body:
   - type: markdown
     attributes:
-      value: "Use RK5E01 Rev 0. Do not attach game files, generated source, saves or shader caches."
+      value: "Share only short, redacted excerpts. Remove usernames and personal paths. Keep disc images, game files, generated source, saves and shader caches private."
   - type: input
-    id: revision
+    id: version
     attributes:
-      label: Commit and game revision
-      placeholder: "Commit hash; RK5E01 Rev 0; DOL hash verified"
+      label: Recomp release or source commit
+      description: "Use the release tag you installed or source_revision from the installer log."
+      placeholder: "v0.2.7 or a commit hash"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version or Linux distribution and version
+      placeholder: "Windows build 26100, Bazzite 44, or macOS 15.7"
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where did it happen?
+      options:
+        - Setup or toolchain download
+        - Game data preparation
+        - Translation
+        - Compilation (CMake or Ninja)
+        - Startup verification
+        - Unsure
     validations:
       required: true
   - type: textarea
-    id: system
+    id: error-message
     attributes:
-      label: System and settings
-      description: "Windows version or Linux distribution; CPU, GPU, driver, controller, VSync and Experimental performance mode. For setup problems, include Python version and Docker/Podman version."
+      label: Exact error message
+      description: "Paste the first specific error from the screen or log. If none appeared, write ‘No message’ and describe what you saw."
     validations:
       required: true
   - type: textarea
-    id: reproduce
+    id: steps
     attributes:
       label: Steps to reproduce
-      description: "Include the scene, expected result and actual result."
+      description: "How did you start the installer or build? Include the last action before the failure and whether this was a fresh install or a retry."
     validations:
       required: true
   - type: textarea
-    id: evidence
+    id: log
     attributes:
-      label: Logs and evidence
-      description: "Relevant excerpts or a screenshot/video. Review logs for personal paths before sharing."
+      label: Relevant installer log excerpt
+      description: "Paste a few lines around the first error from the job log or the stage log it points to (for example, compile.log). For verification failures, include the final probe and shutdown lines if available."
