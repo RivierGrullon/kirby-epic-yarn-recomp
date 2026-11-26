@@ -20,9 +20,26 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <vector>
+#endif
 
 namespace fs = std::filesystem;
 namespace {
+fs::path ExecutableDirectory() {
+#ifdef __APPLE__
+    // SDL_GetBasePath returns Contents/Resources for .app bundles, not MacOS.
+    uint32_t size=0;
+    _NSGetExecutablePath(nullptr,&size);
+    std::vector<char> path(size);
+    if (_NSGetExecutablePath(path.data(),&size)!=0)
+        throw std::runtime_error("Cannot resolve the launcher executable");
+    return fs::canonical(path.data()).parent_path();
+#else
+    return Launcher::FromUtf8(SDL_GetBasePath());
+#endif
+}
 constexpr char ExpectedSha1[] = "f4280a2b0709bfde4132be22e9f7fa8ecfa2a130";
 volatile sig_atomic_t sourceCancelled=0;
 bool Verify(const fs::path& data, std::string& status) {
@@ -89,7 +106,7 @@ GameProcess* StartGame(const fs::path& executable,const fs::path& settings,const
     const auto exe=Launcher::Utf8(executable),config=Launcher::Utf8(settings),directory=Launcher::Utf8(root);
     const char* args[]{exe.c_str(),"--video","--config",config.c_str(),nullptr};
     bool configured=log && properties && environment;
-#ifndef _WIN32
+#if defined(__linux__)
     if (configured) {
         const char* previous=SDL_GetEnvironmentVariable(environment,"LD_LIBRARY_PATH");
         const auto libraries=Launcher::Utf8(root/"local/host-libs")+(previous ? std::string(":")+previous : "");
@@ -124,7 +141,7 @@ int main(int argc, char** argv) {
     if (argc==3 && std::string_view(argv[1])=="--check-native-build") {
         try {
             Launcher::BuildProbe probe;
-            const auto root=(Launcher::FromUtf8(SDL_GetBasePath())/Launcher::GameExecutable).parent_path().parent_path().parent_path();
+            const auto root=(ExecutableDirectory()/Launcher::GameExecutable).parent_path().parent_path().parent_path();
             probe.Start(Launcher::FromUtf8(argv[2]),root/"local/host-libs");
             while (probe.Status()==Launcher::BuildProbeStatus::Checking) { probe.Poll();SDL_Delay(1); }
             if (probe.Status()==Launcher::BuildProbeStatus::Ready) { std::cout << probe.Document();return 0; }
@@ -139,7 +156,7 @@ int main(int argc, char** argv) {
         std::puts(status.c_str()); return valid ? 0 : 1;
     }
     if (argc==3 && std::string_view(argv[1])=="--check-source") {
-        const auto root=(Launcher::FromUtf8(SDL_GetBasePath())/Launcher::GameExecutable).parent_path().parent_path().parent_path();
+        const auto root=(ExecutableDirectory()/Launcher::GameExecutable).parent_path().parent_path().parent_path();
         Launcher::Setup::Job job;
         std::signal(SIGINT,[](int) { sourceCancelled=1; });
         std::signal(SIGTERM,[](int) { sourceCancelled=1; });
@@ -157,17 +174,26 @@ int main(int argc, char** argv) {
     const bool selfTest = argc == 2 && std::string_view(argv[1]) == "--self-test";
     const bool service = argc == 2 && std::string_view(argv[1]) == "--ui-service";
     if (argc != 1 && !selfTest && !service) { std::fprintf(stderr,"Usage: kirby-launcher [--self-test | --check-data DATA | --check-source SOURCE | --print-settings TOML | --build-info | --check-native-build EXECUTABLE]\n"); return 2; }
-    const fs::path developerExecutable = Launcher::FromUtf8(SDL_GetBasePath()) / Launcher::GameExecutable;
+    const fs::path developerExecutable = ExecutableDirectory() / Launcher::GameExecutable;
     const bool portable = fs::is_regular_file(developerExecutable.parent_path() / "kirby-portable.txt");
-    const fs::path root = portable ? developerExecutable.parent_path() : developerExecutable.parent_path().parent_path().parent_path();
-    if (!portable && !fs::exists(root / "tools/kirby.py")) {
+    fs::path root = portable ? developerExecutable.parent_path() : developerExecutable.parent_path().parent_path().parent_path();
+    bool macBundle=false;
+#ifdef __APPLE__
+    macBundle=fs::is_regular_file(developerExecutable.parent_path()/"kirby-macos-bundle.txt");
+    if (macBundle) {
+        char* preferences=SDL_GetPrefPath("PortingLab","KirbyEpicYarn");
+        if (!preferences) { std::cerr<<SDL_GetError()<<'\n';return 1; }
+        root=Launcher::FromUtf8(preferences);SDL_free(preferences);
+    }
+#endif
+    if (!portable && !macBundle && !fs::exists(root / "tools/kirby.py")) {
         std::fprintf(stderr,"Keep the launcher in this project's build/native or build/windows folder\n"); return 2;
     }
     if (!service) {
 #ifdef _WIN32
         const auto frontend = developerExecutable.parent_path()/"qt-launcher/kirby-ui.exe";
 #else
-        const auto frontend = developerExecutable.parent_path()/"qt-launcher/kirby-ui";
+        const auto frontend = developerExecutable.parent_path()/(macBundle?"kirby-ui":"qt-launcher/kirby-ui");
 #endif
         if (!fs::is_regular_file(frontend)) {
             std::cerr << "Qt launcher missing: " << Launcher::Utf8(frontend)
@@ -175,7 +201,11 @@ int main(int argc, char** argv) {
             return 1;
         }
         const auto program=Launcher::Utf8(frontend);
-        const char* args[]{program.c_str(),selfTest?"--self-test":nullptr,nullptr};
+        const auto host=Launcher::Utf8(developerExecutable.parent_path()/"kirby-launcher");
+        const auto userRoot=Launcher::Utf8(root);
+        const char* bundleArgs[]{program.c_str(),"--host",host.c_str(),"--root",userRoot.c_str(),selfTest?"--self-test":nullptr,nullptr};
+        const char* defaultArgs[]{program.c_str(),selfTest?"--self-test":nullptr,nullptr};
+        const auto args=macBundle?bundleArgs:defaultArgs;
         auto* ui=SDL_CreateProcess(args,false);
         if (!ui) { std::cerr<<SDL_GetError()<<'\n'; return 1; }
         int result=0;

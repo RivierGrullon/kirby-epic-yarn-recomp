@@ -3,6 +3,7 @@
 #include "kirby/graphics/gx_fifo.h"
 #include "kirby/graphics/xfb.h"
 #include "gfx/readback/copy_layout.hpp"
+#include "gfx/readback/readback.hpp"
 #include "gfx/render_worker.hpp"
 #include "kirby/app/events.h"
 #include "gx/gx.hpp"
@@ -13,6 +14,9 @@
 #include <dolphin/gx.h>
 #include <bit>
 #include <atomic>
+#include <algorithm>
+#include <future>
+#include <thread>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -37,6 +41,39 @@ void Bp(Kirby::GxRenderer& renderer, uint32_t value) {
     const uint8_t packet[]{0x61,uint8_t(value >> 24),uint8_t(value >> 16),uint8_t(value >> 8),uint8_t(value)};
     renderer.Feed(packet);
 }
+#ifdef __APPLE__
+void ReadbackNotifications() {
+    namespace rb = aurora::gfx::readback;
+    const auto stream = rb::create_stream();
+    const auto sequence = rb::next_sequence(stream);
+    auto job = rb::create_job(stream, sequence, rb::JobKind::Copy, {{1, 0, 4}}, 4);
+    const std::array<uint8_t, 4> expected{1, 2, 3, 4};
+    std::promise<bool> notified;
+    auto result = notified.get_future();
+    job->onComplete = [&] {
+        // Querying the packet here also proves the callback runs outside the
+        // stream mutex. Its bytes must be visible before notification.
+        const auto packet = rb::latest(stream);
+        notified.set_value(packet && packet->sequence == sequence &&
+                           std::ranges::equal(packet->payload, expected));
+    };
+    std::jthread producer([&] { rb::complete_job(*job, expected); });
+    Check(result.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
+          "readback completion callback publishes without holding the stream mutex");
+    Check(result.get(), "readback payload is visible when its completion callback runs");
+    producer.join();
+    auto stale = rb::create_job(stream, sequence, rb::JobKind::Copy, {{1, 0, 4}}, 4);
+    bool staleNotified = false;
+    stale->onComplete = [&] { staleNotified = true; };
+    rb::complete_job(*stale, expected);
+    Check(!staleNotified, "obsolete readbacks do not report successful publication");
+    rb::destroy_stream(stream);
+    auto destroyed = rb::create_job(stream, sequence + 1, rb::JobKind::Copy, {{1, 0, 4}}, 4);
+    destroyed->onComplete = [&] { staleNotified = true; };
+    rb::complete_job(*destroyed, expected);
+    Check(!staleNotified, "destroyed readback streams do not report successful publication");
+}
+#endif
 // Inspect the retained GPU copy at its actual resolution, before native RAM packing.
 std::vector<uint8_t> ReadCopyPixels(const aurora::gfx::TextureHandle& texture) {
     const unsigned rowBytes = texture->size.width * 4;
@@ -847,7 +884,15 @@ std::weak_ptr<aurora::gfx::TextureRef> GpuXfb(bool startHidden = false, int reso
           std::equal(red.begin(),red.end(),memory.begin()+0x14400),
           "two resident display destinations preserve their own pre-clear and post-clear pixels");
     const auto overwriteStart=renderer.Readbacks();
-    Bp(renderer,0x52004003); Bp(renderer,0x52004003);
+    Bp(renderer,0x52004003);
+#ifdef __APPLE__
+    const auto retainedDisplay = aurora::gx::g_gxState.displayCopyTexture;
+#endif
+    Bp(renderer,0x52004003);
+#ifdef __APPLE__
+    Check(retainedDisplay == aurora::gx::g_gxState.displayCopyTexture,
+          "Metal reuses the display texture on repeated copies to the same resident XFB");
+#endif
     Check(renderer.Readbacks()==overwriteStart,"replacing the same full resident XFB does not download obsolete frames");
     renderer.FlushTextureCopiesForRange(0x14400,0);
     renderer.FlushTextureCopiesForRange(0x18000,32);
@@ -982,6 +1027,9 @@ std::weak_ptr<aurora::gfx::TextureRef> GpuXfb(bool startHidden = false, int reso
 }
 int main(int argc, char** argv) {
     try {
+#ifdef __APPLE__
+        ReadbackNotifications();
+#endif
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-fxaa") { GpuFxaa(); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb") { GpuXfb(); return 0; }
         if (argc == 2 && std::string_view(argv[1]) == "--gpu-xfb-hidden") {

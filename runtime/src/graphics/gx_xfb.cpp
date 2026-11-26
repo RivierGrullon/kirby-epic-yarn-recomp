@@ -12,6 +12,9 @@
 #include "gfx/recording.hpp"
 #include "gfx/readback/readback.hpp"
 #include "gfx/readback/copy_layout.hpp"
+#ifdef __APPLE__
+#include "kirby/graphics/readback_wait.h"
+#endif
 #include "webgpu/gpu_prof.hpp"
 #include <algorithm>
 #include <cstdio>
@@ -65,6 +68,10 @@ struct GxRenderer::XfbState {
             outputs.push_back({outputs.size()+1,total,size}); total += size;
         }
         auto job = rb::create_job(stream,sequence,rb::JobKind::Copy,outputs,total);
+#ifdef __APPLE__
+        const auto completion = std::make_shared<ReadbackWait>();
+        job->onComplete = [completion] { completion->Notify(); };
+#endif
         for (size_t i=0;i<sources.size();++i) {
             const auto& source = sources[i];
             const auto fmt = *rb::format_info(source.format);
@@ -104,7 +111,16 @@ struct GxRenderer::XfbState {
             if (packet && packet->sequence == sequence) break;
             if (std::chrono::steady_clock::now() >= deadline)
                 throw std::runtime_error("Timed out waiting for GPU display-copy readback");
+#ifdef __APPLE__
+            // Keep pumping Dawn on the render worker when needed, but let a
+            // spontaneous GPU callback end the wait before the next 1 ms poll.
+            if (completion->WaitFor(std::chrono::milliseconds(1))) {
+                packet = rb::latest(stream);
+                if (packet && packet->sequence == sequence) break;
+            }
+#else
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
+#endif
         } while (true);
         aurora_wait_for_frame_worker();
         for (size_t i=0;includePending && i<pending.size();++i) {
@@ -273,6 +289,14 @@ void GxRenderer::CopyDisplay(uint32_t value) {
     // Each RAM destination owns a snapshot; Aurora's default single texture would
     // otherwise overwrite the previous XFB before VI switches to the next one.
     state.displayCopyTexture.reset();
+#ifdef __APPLE__
+    // Aurora checks the scaled texture dimensions before writing the new frame.
+    // Recycle only this RAM destination after resolving overlapping copies above.
+    if (resident) {
+        const auto previous = xfb_->entries.find(copy.address);
+        if (previous != xfb_->entries.end()) state.displayCopyTexture = previous->second.texture;
+    }
+#endif
     gx::fifo::handle_bp(value);
     const auto texture = state.displayCopyTexture;
     if (!texture) throw std::runtime_error("Aurora did not create the display-copy texture");

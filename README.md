@@ -56,6 +56,10 @@ instructions for your platform:
 | Windows x86-64 | [Automatic PowerShell build and Windows ZIP](docs/building.md#windows-x64) |
 | Linux x86-64 | [AppImage installer](#linux-appimage) or [build from source](docs/building.md#linux) |
 
+Experimental native **macOS Intel and Apple Silicon** build instructions are in
+[the macOS development guide](docs/macos.md). Public Mac installers and gameplay
+validation are pending.
+
 ## Requirements
 
 - Windows x86-64 or Linux x86-64 with a desktop session and working graphics drivers.

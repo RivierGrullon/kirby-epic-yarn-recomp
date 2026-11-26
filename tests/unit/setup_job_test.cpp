@@ -24,6 +24,42 @@ using Json=nlohmann::json;
 using namespace Launcher::Setup;
 namespace {
 void Check(bool value,const char* message) { if (!value) throw std::runtime_error(message); }
+void CheckNoChildren(const char* context,bool failedSpawn=false) {
+    (void)failedSpawn;
+#ifndef _WIN32
+#ifdef __APPLE__
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(1);
+    bool deferred=false;
+#endif
+    for (;;) {
+        int status=0;pid_t child;
+        do { errno=0;child=waitpid(-1,&status,WNOHANG); } while (child<0 && errno==EINTR);
+        const int error=errno;
+        if (child==-1 && error==ECHILD) {
+#ifdef __APPLE__
+            if (deferred) std::cout<<"Darwin completed failed-spawn cleanup without a waitable child\n";
+#endif
+            return;
+        }
+#ifdef __APPLE__
+        // XNU marks failed spawns P_LIST_DEADPARENT and reaps them internally
+        // (bsd/kern/kern_exec.c and kern_exit.c). Its asynchronous exit can
+        // briefly leave waitpid(WNOHANG) returning 0 after posix_spawnp fails.
+        // Allow only this case a bounded cleanup window. Any waitable zombie,
+        // unexpected error, or child remaining after the deadline still fails.
+        if (failedSpawn && child==0 && std::chrono::steady_clock::now()<deadline) {
+            deferred=true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
+#endif
+        throw std::runtime_error(std::string(context)+": unexpected child result="+std::to_string(child)+
+                                 ", errno="+std::to_string(error)+", status="+std::to_string(status));
+    }
+#else
+    (void)context;
+#endif
+}
 void Finish(Job& job) {
     const auto start=std::chrono::steady_clock::now();
     while (job.Current().Busy()) {
@@ -32,6 +68,7 @@ void Finish(Job& job) {
         Check(std::chrono::steady_clock::now()-start<std::chrono::seconds(5),"Setup worker did not finish");
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    CheckNoChildren("Finished setup worker");
 }
 int Child(const std::string& mode,const fs::path& workspace) {
     std::string line;std::getline(std::cin,line);const auto request=Json::parse(line);
@@ -155,10 +192,10 @@ int main(int argc,char** argv) {
         Check(job.Current().installation.has_value()==success,"Unverified installation result was accepted");
     }
     { Job owned(100);Check(owned.Start(fixture("hang"),source,directory,self),"Destructor fixture did not start"); }
-    Check(!job.Start(fixture("failure"),source,directory,"/missing/python"),"Missing Python was accepted");
-    #ifndef _WIN32
-    int status=0;errno=0;
-    Check(waitpid(-1,&status,WNOHANG)==-1 && errno==ECHILD,"Setup client leaked a child or zombie");
-    #endif
+    CheckNoChildren("Destroyed setup worker");
+    for (unsigned attempt=0;attempt<5;++attempt) {
+        Check(!job.Start(fixture("failure"),source,directory,"/missing/python"),"Missing Python was accepted");
+        CheckNoChildren("Failed setup spawn",true);
+    }
     std::cout << "Setup client: asynchronous progress, actual source, exit validation, cancellation and cleanup verified\n";
 }

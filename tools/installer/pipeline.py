@@ -17,7 +17,7 @@ from .inputs import build_keys, generated_digest, host_compile_jobs
 from .installations import InstallationStore, VERIFICATION, canonical, file_digest, read_json
 from .jobs import run_process
 from .verification import verify_native
-from .platforms import WINDOWS, executable_name, is_link
+from .platforms import MACOS, WINDOWS, executable_name, is_link
 from .portable import PortableTools
 from .windows_tools import WindowsTools, windows_build_args
 from .progress import ToolProgress
@@ -28,9 +28,14 @@ class BuildTools:
     def __init__(self, job, root):
         self.job, self.root = job, root
         self.image_id = None
-        self.local = WindowsTools.find(root) or PortableTools.find(root)
+        self.local = None if MACOS else WindowsTools.find(root) or PortableTools.find(root)
+        if MACOS:
+            from macos.setup_tools import MacSetupTools
+            self.mac = MacSetupTools(job, root)
 
     def run_tool(self, command, *, capture_limit=0, on_output=None):
+        if MACOS:
+            return self.mac.run(command, capture_limit=capture_limit, on_output=on_output)
         if self.local is None:
             return run_container(self.job, self.root, command, image_id=self.image_id,
                                  capture_limit=capture_limit, on_output=on_output).output
@@ -42,13 +47,15 @@ class BuildTools:
                            capture_limit=capture_limit, on_output=on_output)
 
     def bootstrap(self):
-        if self.local is not None:
+        if MACOS or self.local is not None:
             self.run_tool(['python3', 'tools/bootstrap.py'])
             return
         recover_containers(self.job)
         run_process(self.job, [sys.executable, self.root/'tools/bootstrap.py'], cwd=self.root)
 
     def image(self):
+        if MACOS:
+            return self.mac.identity()
         self.image_id = self.local.image_id if self.local is not None else toolchain_image(self.job)
         return self.image_id
 
@@ -62,6 +69,8 @@ class BuildTools:
         return {key: record[key] for key in ('source_revision', 'source_modified', 'source_sha256')}
 
     def jobs(self):
+        if MACOS:
+            return 2
         host = host_compile_jobs()
         if self.local is not None:
             return host
@@ -80,6 +89,9 @@ class BuildTools:
         args = ()
         if isinstance(self.local, WindowsTools):
             args = windows_build_args(self.local.mingw_root, self.local.cppwinrt_include)
+        if MACOS:
+            args = ('--macos-arch', self.mac.arch, '--qt-prefix', str(self.mac.qt_prefix))
+            return native_command('macos', jobs, jobs, stage=stage, platform_args=args)
         return native_command('windows' if WINDOWS else 'linux', jobs, jobs, stage=stage,
                               platform_args=args)
 
@@ -139,7 +151,7 @@ def execute_install(job, root, source, *, services=None):
     tools.bootstrap()
     image = tools.image()
     identity = tools.identity()
-    keys = build_keys(root, identity, image, job.check_cancel)
+    keys = build_keys(root, identity, image, job.check_cancel, target='macos' if MACOS else None)
     key = keys['cache']
     if isinstance(tools.local, WindowsTools):
         stage = windows_build_cache()/cache_directory_name(root, key)

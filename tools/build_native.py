@@ -59,9 +59,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--configure-only", action="store_true")
     parser.add_argument("--game-only", action="store_true", help="Build WiiCompiled without the launcher")
-    parser.add_argument("--target", choices=("linux", "windows"), default="windows" if os.name == "nt" else "linux")
+    parser.add_argument("--target", choices=("linux", "windows", "macos"), default="macos" if sys.platform == "darwin" else "windows" if os.name == "nt" else "linux")
     parser.add_argument("--llvm-mingw-root", type=Path, help="LLVM-MinGW installation (default: discover on PATH)")
     parser.add_argument("--cppwinrt-include", type=Path, help="Directory containing winrt/base.h (default: installed Windows SDK)")
+    parser.add_argument("--macos-arch", choices=("x86_64", "arm64"), help="Native Mac architecture (defaults to this Mac)")
+    parser.add_argument("--macos-deployment-target", default="13.0")
+    parser.add_argument("--qt-prefix", type=Path, help="Qt 6 desktop SDK prefix")
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--translated-jobs", type=int, default=2)
     parser.add_argument("--stage-root",type=Path,help="Use isolated outputs below local/setup/builds/JOB")
@@ -69,6 +72,13 @@ def main():
                         help="Instrument Linux WebGPU calls; requires an isolated --stage-root")
     args = parser.parse_args()
     try:
+        apple_options = []
+        if args.target == "macos":
+            from macos.toolchain import macos_options, macos_architecture
+            arch = macos_architecture(args.macos_arch)
+            apple_options = macos_options(arch, args.macos_deployment_target)
+        elif args.macos_arch:
+            raise ValueError("--macos-arch requires --target macos")
         if args.profile_dawn_calls and (args.stage_root is None or args.target != 'linux'):
             raise ValueError("--profile-dawn-calls requires a Linux build with --stage-root")
         mingw_root = find_windows_toolchain(args.llvm_mingw_root) if args.target == 'windows' else None
@@ -76,6 +86,9 @@ def main():
         if args.target == 'windows' and os.name != 'nt' and stage is None:
             stage = ROOT/'local/setup/builds/windows-developer'
         layout=BuildLayout(ROOT,stage)
+        if args.target == "macos" and stage is None:
+            layout.workspace = layout.root / f"local/native-workspace-macos-{arch}"
+            layout.build = layout.root / f"build/macos-{arch}"
         layout.ensure()
         if not (layout.generated / "build_shards/shards.cmake").is_file():
             raise ValueError("Run tools/kirby.py translate first")
@@ -125,7 +138,9 @@ def main():
             apply_snapshot_patch(patch, workspace)
         aurora = aurora_snapshot
         build = layout.build
-        platform_options = []
+        platform_options = apple_options
+        if args.qt_prefix:
+            platform_options.append(f"-DKIRBY_QT_PREFIX={args.qt_prefix.resolve()}")
         if os.name == "nt":
             headers = args.cppwinrt_include
             if headers is None:
@@ -148,8 +163,12 @@ def main():
                                 f"-DMKW_AURORA_DIR={aurora}",
                                 f"-DMKW_TRANSLATED_SHARD_MANIFEST={layout.generated / 'build_shards/shards.cmake'}",
                                 f"-DMKW_TRANSLATED_COMPILE_JOBS={max(1, args.translated_jobs)}", *platform_options]
-        if layout.stage is not None:
+        if layout.stage is not None or args.target == "macos":
             configure.append(f"-DCMAKE_RUNTIME_OUTPUT_DIRECTORY={build}")
+        if args.target == 'macos':
+            configure = [argument for argument in configure if not str(argument).startswith(
+                ('-DCMAKE_C_COMPILER=', '-DCMAKE_CXX_COMPILER='))]
+            configure.extend(['-DCMAKE_C_COMPILER=/usr/bin/clang', '-DCMAKE_CXX_COMPILER=/usr/bin/clang++'])
         if args.target == 'windows':
             configure = [argument for argument in configure if not str(argument).startswith(
                 ('-DCMAKE_C_COMPILER=', '-DCMAKE_CXX_COMPILER='))]

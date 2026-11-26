@@ -3,12 +3,13 @@
 import os
 from pathlib import Path
 import struct
+import platform
 import tempfile
 import tomllib
 
 from kirby import EXPECTED_SHA1
 from .jobs import run_process
-from .platforms import WINDOWS, host_environment
+from .platforms import MACOS, WINDOWS, host_environment
 
 
 def check_elf(path):
@@ -38,7 +39,11 @@ def check_pe(path):
 
 def verify_native(job,root,executable,data_root,identity):
     root=Path(root);executable=Path(executable).resolve()
-    (check_pe if WINDOWS else check_elf)(executable)
+    if MACOS:
+        from macos.package_macos import check_macho
+        check_macho(executable, platform.machine())
+    else:
+        (check_pe if WINDOWS else check_elf)(executable)
     environment=host_environment(root/'local/host-libs')
     environment['SDL_AUDIO_DRIVER']='dummy'
     document=run_process(job,[executable,'--build-info'],capture_limit=16384,timeout=10,env=environment)

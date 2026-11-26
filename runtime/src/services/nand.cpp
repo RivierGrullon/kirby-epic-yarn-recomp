@@ -50,18 +50,38 @@ bool ValidPath(std::string_view path) {
     }
     return true;
 }
+// Darwin's descriptor xattr API has an extra position/options pair.
+ssize_t ReadMetadata(int fd, void* data, size_t size) {
+#ifdef __APPLE__
+    return fgetxattr(fd,"user.kirby.isfs",data,size,0,0);
+#else
+    return fgetxattr(fd,"user.kirby.isfs",data,size);
+#endif
+}
+int WriteMetadata(int fd, const void* data, size_t size, int flags) {
+#ifdef __APPLE__
+    return fsetxattr(fd,"user.kirby.isfs",data,size,0,flags);
+#else
+    return fsetxattr(fd,"user.kirby.isfs",data,size,flags);
+#endif
+}
 void EnsureMetadata(int fd) {
     std::array<uint8_t,4> metadata{};
-    const auto size=fgetxattr(fd,"user.kirby.isfs",metadata.data(),metadata.size());
+    const auto size=ReadMetadata(fd,metadata.data(),metadata.size());
     if (size>=0) {
         if (size!=4 || metadata[0]>3 || metadata[1]>3 || metadata[2]>3)
             throw std::runtime_error("Invalid local NAND permission metadata");
         return;
     }
-    if (errno!=ENODATA) throw std::runtime_error("Cannot read local NAND permission metadata");
+#ifdef __APPLE__
+    if (errno!=ENOATTR)
+#else
+    if (errno!=ENODATA)
+#endif
+        throw std::runtime_error("Cannot read local NAND permission metadata");
     // The private single-title filesystem runs IOS requests as logical UID/GID 0.
     const std::array<uint8_t,4> defaults{3,3,3,0};
-    if (fsetxattr(fd,"user.kirby.isfs",defaults.data(),defaults.size(),XATTR_CREATE)<0 && errno!=EEXIST)
+    if (WriteMetadata(fd,defaults.data(),defaults.size(),XATTR_CREATE)<0 && errno!=EEXIST)
         throw std::runtime_error("Cannot initialize local NAND permission metadata");
 }
 // Walk relative to an owned directory descriptor. No component may follow a
@@ -250,7 +270,7 @@ std::pair<int32_t, std::shared_ptr<NandFile>> NandStore::Open(const std::string&
 void NandStore::SetLanguage(uint8_t language) {
     auto [error, file] = Open("/shared2/sys/SYSCONF", 3);
     std::array<uint8_t, 0x4000> data;
-    if (error || file->Read(data) != data.size() || std::memcmp(data.data(), "SCv0", 4) ||
+    if (error || file->Read(data) != static_cast<int32_t>(data.size()) || std::memcmp(data.data(), "SCv0", 4) ||
         std::memcmp(data.data()+data.size()-4, "SCed", 4))
         throw std::runtime_error("Cannot read Wii system configuration for game language");
     const auto be16 = [&](size_t offset) -> size_t { return data[offset] * 256u + data[offset+1]; };
@@ -325,7 +345,7 @@ int32_t NandStore::Create(const std::string& path, std::array<uint8_t,4> metadat
     Fd node{openat(parent.value,leaf.c_str(), directory ? O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC :
         O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600)};
     if (node.value<0 && !directory) return errno==EEXIST ? -105 : Error();
-    if (node.value<0 || fsetxattr(node.value,"user.kirby.isfs",metadata.data(),metadata.size(),0)<0) {
+    if (node.value<0 || WriteMetadata(node.value,metadata.data(),metadata.size(),0)<0) {
         const auto result=Error();
         if (node.value >= 0) { close(node.value); node.value = -1; }
         unlinkat(parent.value,leaf.c_str(),directory ? AT_REMOVEDIR : 0); return result;
@@ -344,7 +364,7 @@ int32_t NandStore::Attributes(const std::string& path, std::array<uint8_t,4>& me
     if (fstat(node.value,&st)<0) return Error();
     if (!S_ISREG(st.st_mode) && !S_ISDIR(st.st_mode)) return -102;
     std::array<uint8_t,4> value{};
-    const auto size=fgetxattr(node.value,"user.kirby.isfs",value.data(),value.size());
+    const auto size=ReadMetadata(node.value,value.data(),value.size());
     if (size!=4 || value[0]>3 || value[1]>3 || value[2]>3) return -103;
     metadata=value;
     return 0;

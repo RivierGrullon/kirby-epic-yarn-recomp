@@ -63,8 +63,18 @@ bool Job::Start(const std::filesystem::path& worker,const std::filesystem::path&
         workspace_=std::filesystem::absolute(workspace);
         pending_=operation==Operation::Install ? InstallRequest(identifier_,view_.source) : InspectRequest(identifier_,view_.source);
         #ifndef _WIN32
+#ifdef __APPLE__
+        if (socketpair(AF_UNIX,SOCK_STREAM,0,input) || pipe(output) || pipe(error))
+            throw std::runtime_error("Cannot open setup process pipes");
+        for (auto pair : {input,output,error}) for (int fd : {pair[0],pair[1]})
+            if (fcntl(fd,F_SETFD,FD_CLOEXEC)<0) throw std::runtime_error("Cannot protect setup pipe");
+        const int noSignal=1;
+        if (setsockopt(input[0],SOL_SOCKET,SO_NOSIGPIPE,&noSignal,sizeof(noSignal)))
+            throw std::runtime_error("Cannot protect setup socket from SIGPIPE");
+#else
         if (socketpair(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0,input) || pipe2(output,O_CLOEXEC) || pipe2(error,O_CLOEXEC))
             throw std::runtime_error("Cannot open setup process pipes");
+#endif
         // Desktop launchers may start with one of the standard descriptors closed.
         // Keep our close actions separate from the child's three dup2 targets.
         for (auto pair : {input,output,error}) for (unsigned i=0;i<2;++i) if (pair[i]<3) {
@@ -247,7 +257,11 @@ void Job::Poll() {
         const auto written=sent ? static_cast<int>(count) : -1;
         if (!sent) errno=GetLastError()==ERROR_NO_DATA ? EAGAIN : EPIPE;
 #else
+#ifdef __APPLE__
+        const auto written=send(input_,pending_.data(),pending_.size(),MSG_DONTWAIT);
+#else
         const auto written=send(input_,pending_.data(),pending_.size(),MSG_NOSIGNAL|MSG_DONTWAIT);
+#endif
 #endif
         if (written>0) pending_.erase(0,written);
         else if (written<0 && errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR) {

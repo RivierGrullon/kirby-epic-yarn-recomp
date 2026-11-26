@@ -6,6 +6,7 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
+import sys
 import tempfile
 
 from .data import DISC_CAPACITY, inspect_data
@@ -76,6 +77,12 @@ def _dolphin(source, output):
         return [native]
     if WINDOWS:
         raise ValueError("DolphinTool.exe from Dolphin must be available on PATH")
+    if sys.platform == 'darwin':
+        for applications in (Path('/Applications'), Path.home() / 'Applications'):
+            tool = applications / 'Dolphin.app/Contents/Helpers/dolphin-tool'
+            if tool.is_file() and os.access(tool, os.X_OK):
+                return [str(tool)]
+        raise ValueError("Install a recent Dolphin.app with dolphin-tool, or add dolphin-tool to PATH")
     flatpak = shutil.which("flatpak")
     if not flatpak:
         raise ValueError("Dolphin's dolphin-tool or the Dolphin Flatpak is required")

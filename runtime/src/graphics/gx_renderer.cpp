@@ -60,7 +60,11 @@ void GxRenderer::OpenWindow(bool startHidden, bool vsync, int resolutionScale, i
     config.userPath = userPath_.c_str(); config.cachePath = cachePath_.c_str();
     config.resourcesPath = userPath_.c_str();
     config.windowWidth = 960; config.windowHeight = 540;
+#if defined(__APPLE__)
+    config.desiredBackend = BACKEND_METAL;
+#else
     config.desiredBackend = BACKEND_VULKAN;
+#endif
     config.logCallback = Log; config.logLevel = LOG_INFO;
     config.vsync = vsync;
     config.msaa = msaaSamples;

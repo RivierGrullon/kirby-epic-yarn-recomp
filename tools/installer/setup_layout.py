@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tempfile
 
-from .platforms import WINDOWS, is_link
+from .platforms import MACOS, WINDOWS, is_link
 from .qt_frontend import install_bundled
 
 
@@ -21,6 +21,7 @@ class Bundle:
     revision: str
     command: tuple = ()
     packaged: bool = False
+    bundled_frontend: bool = True
 
 
 def _atomic(path, body, executable=False):
@@ -53,7 +54,7 @@ def prepare_destination(bundle, destination):
     if root.exists():
         if is_link(marker) or not marker.is_file() or json.loads(marker.read_text()) != {'revision':bundle.revision}:
             raise ValueError('This installation folder contains unrecognized files; choose another folder')
-        if bundle.packaged:
+        if bundle.packaged and bundle.bundled_frontend:
             install_bundled(bundle, root)
         if bundle.command:
             _atomic(root/'local/setup-command.json',json.dumps(dict(version=1,arguments=[*bundle.command,'--destination',str(destination)])).encode('utf-8'))
@@ -78,7 +79,7 @@ def prepare_destination(bundle, destination):
             if (bundle.runtime/name).is_file():shutil.copy2(bundle.runtime/name,runtime/name)
         libraries=staged/'local/host-libs'
         if bundle.libraries.is_dir():shutil.copytree(bundle.libraries,libraries,symlinks=False)
-        if bundle.packaged:
+        if bundle.packaged and bundle.bundled_frontend:
             install_bundled(bundle, staged)
         marker=staged/'local/setup/source.json';marker.parent.mkdir(parents=True,exist_ok=True)
         marker.write_text(json.dumps({'revision':bundle.revision})+'\n')
@@ -129,7 +130,7 @@ def finish_destination(root, destination, data_root=None):
         body=('@echo off\r\nstart "" "%~dp0'+str(relative)+'"\r\n').encode('utf-8')
     else:
         import shlex
-        shortcut=destination/'Play Kirby.sh'
+        shortcut=destination/('Play Kirby.command' if MACOS else 'Play Kirby.sh')
         body=('#!/bin/sh\ncd -- "${0%/*}" || exit 1\nexec '+shlex.quote('./'+relative.as_posix())+' "$@"\n').encode()
     _atomic(shortcut,body,executable=True)
     return shortcut

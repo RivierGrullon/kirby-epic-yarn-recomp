@@ -64,8 +64,13 @@ FileInfo Regular(const File& file) {
 #else
     struct stat info{};
     if (fstat(file.fd,&info) || !S_ISREG(info.st_mode)) throw std::runtime_error("Installation files must be regular files");
-    return {static_cast<uint64_t>(info.st_size),static_cast<uint64_t>(info.st_mtim.tv_sec),
-            static_cast<uint64_t>(info.st_mtim.tv_nsec),bool(info.st_mode&S_IXUSR)};
+#ifdef __APPLE__
+    const auto modified=info.st_mtimespec;
+#else
+    const auto modified=info.st_mtim;
+#endif
+    return {static_cast<uint64_t>(info.st_size),static_cast<uint64_t>(modified.tv_sec),
+            static_cast<uint64_t>(modified.tv_nsec),bool(info.st_mode&S_IXUSR)};
 #endif
 }
 std::string Hex(CryptoPP::SHA256& hash) {

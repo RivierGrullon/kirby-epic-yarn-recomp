@@ -44,10 +44,17 @@ int main(int argc,char** argv) {
     QDir root=bin;
     if(!bin.exists("kirby-portable.txt")) {root.cdUp();root.cdUp();}
 #ifdef Q_OS_WIN
-    const auto host=bin.filePath("kirby-launcher.exe");
+    auto host=bin.filePath("kirby-launcher.exe");
 #else
-    const auto host=bin.filePath("kirby-launcher");
+    auto host=bin.filePath("kirby-launcher");
 #endif
+    const auto launchArgs=app.arguments();
+    const int hostOption=launchArgs.indexOf("--host"),rootOption=launchArgs.indexOf("--root");
+    if(hostOption>=0 || rootOption>=0) {
+        if(hostOption<0 || rootOption<0 || hostOption+1>=launchArgs.size() || rootOption+1>=launchArgs.size()) return 2;
+        host=launchArgs[hostOption+1];root=QDir(launchArgs[rootOption+1]);
+        if(!QDir::isAbsolutePath(host) || !root.isAbsolute()) return 2;
+    }
     Yarn::Window window(root.absolutePath(),host,test);
     if(test) {
         const auto args=app.arguments();

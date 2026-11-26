@@ -168,6 +168,9 @@ void SetNandMetadata(const std::filesystem::path& path,
                     written == metadata.size();
     CloseHandle(h);
     if (!ok) throw std::runtime_error("Cannot write save permission metadata");
+#elif defined(__APPLE__)
+    if (::setxattr(path.c_str(), "user.kirby.isfs", metadata.data(), metadata.size(), 0, 0) != 0)
+        throw std::runtime_error("Cannot write save permission metadata");
 #else
     if (::setxattr(path.c_str(), "user.kirby.isfs", metadata.data(), metadata.size(), 0) != 0)
         throw std::runtime_error("Cannot write save permission metadata");
@@ -192,6 +195,11 @@ std::array<std::uint8_t, 4> ReadNandMetadata(const std::filesystem::path& path) 
         if (!ok) throw std::runtime_error("Cannot read save permission metadata");
         return metadata;
     }
+#elif defined(__APPLE__)
+    const auto count = ::getxattr(path.c_str(), "user.kirby.isfs", metadata.data(), metadata.size(), 0, 0);
+    if (count == 4) return metadata;
+    if (count >= 0 || errno != ENOATTR)
+        throw std::runtime_error("Cannot read save permission metadata");
 #else
     const auto count = ::getxattr(path.c_str(), "user.kirby.isfs", metadata.data(), metadata.size());
     if (count == 4) return metadata;

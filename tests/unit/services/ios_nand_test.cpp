@@ -13,6 +13,9 @@
 #ifdef _WIN32
 #define setxattr WindowsTest::SetAttr
 #define getxattr WindowsTest::GetAttr
+#elif defined(__APPLE__)
+#define setxattr(path,name,value,size,flags) setxattr(path,name,value,size,0,flags)
+#define getxattr(path,name,value,size) getxattr(path,name,value,size,0,0)
 #endif
 namespace {
 std::array<uint8_t,65536> ram{};

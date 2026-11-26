@@ -109,8 +109,12 @@ void Window::navigate(Page dest,bool keepScroll) {
     const int position=keepScroll?scroll->verticalScrollBar()->value():0;
     if(page==Controls && dest!=Controls && capturing)request("cancel");
     page=dest; edits.clear(); play=nullptr;gameState=nullptr;dataState=nullptr;importSaveState=nullptr;
-    // Disconnect the old page before queued callbacks can target its controls.
-    if(auto* old=scroll->takeWidget()){old->hide();old->deleteLater();}
+    if (auto* old = scroll->widget()) {
+        // Hiding the focused page can move focus through the scroll area.
+        old->hide();
+        scroll->takeWidget();
+        old->deleteLater();
+    }
     bindingUi={};
     motionUi={};
     languages=nullptr;

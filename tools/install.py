@@ -12,7 +12,7 @@ import uuid
 
 from kirby import ROOT
 from installer.jobs import Cancelled, Job
-from installer.platforms import WINDOWS, readable
+from installer.platforms import MACOS, WINDOWS, readable
 from installer.sources import inspect_source
 from installer.pipeline import execute_install
 from installer.toolchain_download import ensure_toolchain
@@ -127,7 +127,7 @@ def main():
                         environment = native.environment()
                         os.environ.clear()
                         os.environ.update(environment)
-                    else:
+                    elif not MACOS:
                         ensure_toolchain(ROOT, job)
                 result = inspect_source(selected, job)
                 if operation == "install":
